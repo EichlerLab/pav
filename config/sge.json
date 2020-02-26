@@ -1,0 +1,47 @@
+{
+    "__default__": {
+        "cpu": "1",
+        "mem": "2G",
+        "disk": "0G",
+        "rt": "04:00:00",
+        "params": ""
+    },
+
+    "pg_variant_bed": {
+        "cpu": "6",
+        "mem": "4G",
+        "rt": "96:00:00"
+    },
+    "pg_cluster_merge": {
+        "mem": "24G",
+        "rt": "12:00:00"
+    },
+    "pg_cluster": {
+        "mem": "8G",
+        "rt": "24:00:00"
+    },
+    "pg_sv": {
+        "rt": "24:00:00"
+    },
+    "pg_indel": {
+        "rt": "24:00:00"
+    },
+    "pg_snv": {
+        "rt": "24:00:00"
+    },
+
+    "align_genomecov": {
+        "mem": "4G"
+    },
+    "align_merge_h12_read_bed": {
+        "mem": "4G"
+    },
+    "align_get_read_bed": {
+        "mem": "6G"
+    },
+    "align_map": {
+        "cpu": "4",
+        "mem": "8G",
+        "rt": "24:00:00"
+    }
+}
