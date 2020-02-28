@@ -105,7 +105,8 @@ rule pg_cluster_merge:
 
 # pg_cluster
 #
-# Cluster variants.
+# Cluster variants. Overlapping alignments may generate the same call from more than one contig. This step merges them
+# to one call, but all contigs that support it are annotated.
 rule pg_cluster:
     input:
         bed='temp/{asm_name}/pg/raw/{vartype}_{hap}.bed',
@@ -403,45 +404,3 @@ rule pg_snv:
             """--condense 0 """
             """--snv {output.bed} """
             """> /dev/null"""
-
-
-#
-# INV
-#
-
-# screeninv_find_inversions
-#
-# Find inversions.
-rule screeninv_find_inversions:
-    input:
-        aln='temp/{asm_name}/screeninv/align_tlen_{hap}.cram',
-        ref=REF_FA
-    output:
-        bed=temp('temp/{asm_name}/pg/raw/inv_{hap}.bed')
-    params:
-        reference_window='5000',
-        threads='8'
-    shell:
-        """samtools view -T {input.ref} {input.aln} | """
-        """{PIPELINE_DIR}/scripts/mcst/screenInversions """
-            """/dev/stdin """
-            """{input.ref} """
-            """{output.bed} """
-            """-w {params.reference_window} """
-            """-r --noClip -j {params.threads}"""
-
-# screeninv_add_tlen
-#
-# Set TLEN field (screenInversions expects it)
-rule screeninv_add_tlen:
-    input:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
-    output:
-        aln=temp('temp/{asm_name}/screeninv/align_tlen_{hap}.cram')
-    run:
-
-        with pysam.AlignmentFile(input.aln, 'rb', reference_filename=REF_FA) as in_file:
-            with pysam.AlignmentFile(output.aln, 'wb', reference_filename=REF_FA, template=in_file) as out_file:
-                for record in in_file.fetch():
-                    record.template_length = record.reference_length
-                    out_file.write(record)

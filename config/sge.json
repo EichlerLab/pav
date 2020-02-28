@@ -4,7 +4,7 @@
         "mem": "2G",
         "disk": "0G",
         "rt": "04:00:00",
-        "params": ""
+        "params": "-l hostname=e228,testing=true"
     },
 
     "pg_variant_bed": {

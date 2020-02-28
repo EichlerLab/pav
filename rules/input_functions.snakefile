@@ -9,23 +9,52 @@ def align_input_fasta(wildcards):
     Get input FASTA file from the assembly table given an assembly name and haplotype.
     """
 
-    # Get table entry
-    if wildcards.asm_name not in ASM_TABLE.index:
-        raise RuntimeError('Cannot get input fasta for {asm_name}: No assembly table entry'.format(**wildcards))
+    if wildcards.asm_name in ASM_TABLE.index:
+        # Get table entry
 
-    asm_table_entry = ASM_TABLE.loc[wildcards.asm_name]
+        asm_table_entry = ASM_TABLE.loc[wildcards.asm_name]
 
-    # Get haplotype
-    if wildcards.hap not in {'h1', 'h2', 'h0'}:
-        raise RuntimeError('Unknown haplotype: {hap}'.format(**wildcards))
+        # Get haplotype
+        if wildcards.hap not in {'h1', 'h2', 'h0'}:
+            raise RuntimeError('Unknown haplotype: {hap}'.format(**wildcards))
 
-    haplotype_col = 'HAP{}'.format(wildcards.hap[1:])
+        haplotype_col = 'HAP{}'.format(wildcards.hap[1:])
 
-    if haplotype_col not in asm_table_entry:
-        raise RuntimeError(
-            'No haplotype column "{}" in assembly table for haplotype "{}"'.format(
-                haplotype_col, wildcards.hap
+        if haplotype_col not in asm_table_entry:
+            raise RuntimeError(
+                'No haplotype column "{}" in assembly table for haplotype "{}"'.format(
+                    haplotype_col, wildcards.hap
+                )
             )
-        )
 
-    return asm_table_entry[haplotype_col]
+        return asm_table_entry[haplotype_col]
+
+    else:
+        # Get from pattern
+        fa_pattern = config.get('asm_pattern', None)
+
+        if fa_pattern is None:
+            raise RuntimeError('Cannot get input fasta for {asm_name}: No assembly table entry and no "fa_pattern" in config'.format(**wildcards))
+
+        if '{asm_name}' not in fa_pattern:
+            raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" config entry is missing wildcard {{asm_name}}'.format(**wildcards))
+
+        if '{hap}' not in fa_pattern:
+            raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" config entry is missing wildcard {{hap}}'.format(**wildcards))
+
+        if '{sample}' in fa_pattern:
+            re_match = re.match('^([^_]+)_.*', wildcards.asm_name)
+
+            if re_match is None:
+                raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" contains wildcard {{sample}}, but sample cannot be extracted from the assembly name (expected to be at the start of the assembly name and separated by an underscore)'.format(**wildcards))
+
+            sample = re_match[1]
+        else:
+            sample = None
+
+        # Create file
+        return fa_pattern.format(
+            sample=sample,
+            asm_name=wildcards.asm_name,
+            hap=wildcards.hap
+        )
