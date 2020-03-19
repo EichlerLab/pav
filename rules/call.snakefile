@@ -6,19 +6,22 @@ Call variants from aligned contigs.
 # INS/DEL/SNV
 #
 
-### PrintGaps Post-processing ###
+
+#
+# Finalize variant calls
+#
 
 # pg_variant_bed
 #
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
-rule pg_variant_bed:
+rule call_merge_haplotypes:
     input:
-       bed1='results/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h1.bed.gz',
-       bed2='results/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
+       bed1='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h1.bed.gz',
+       bed2='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
        con_bed='results/{asm_name}/align/depth_1/regions_h12.bed'
     output:
         bed=protected('results/{asm_name}/bed/{vartype}_{svtype}_h12.bed.gz'),
-        fa=protected('results/{asm_name}/bed/fa/{vartype}_{svtype}_h12.fa.gz')
+        fa=protected('results/{asm_name}/fa/{vartype}_{svtype}_h12.fa.gz')
     run:
 
         # Get configured merge definition
@@ -75,14 +78,105 @@ rule pg_variant_bed:
         # Save BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# pg_cluster_merge
+#
+# Write and filter calls
+#
+
+# call_correct_inter_inv
+#
+# Filter variants from inside inversions
+rule call_correct_inter_inv:
+    input:
+        bed='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz',
+        bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'
+    output:
+        bed=temp('temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz'),
+        bed_dropped='results/{asm_name}/bed/dropped/interinv_{vartype}_{svtype}_{hap}.bed.gz'
+    wildcard_constraints:
+        vartype='sv|indel|snv',
+        svtype='ins|del|snv'
+    run:
+
+        # Read
+        df = pd.read_csv(input.bed, sep='\t')
+        df_inv = pd.read_csv(input.bed_inv, sep='\t')
+
+        # Build tree
+        invtree = collections.defaultdict(intervaltree.IntervalTree)
+
+        for index, row in pd.read_csv(input.bed_inv, sep='\t').iterrows():
+            invtree[row['#CHROM']][row['POS']:row['END']] = (row['ID'])
+
+        # Filter
+        filter_list = df.apply(
+            lambda row: len(invtree[row['#CHROM']][row['POS']:row['END']]) > 0, axis=1
+        )
+
+        # Write dropped
+        df.loc[filter_list].to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
+
+        # Write
+        df.loc[~ filter_list].to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+# call_inv_bed
+#
+# Make inversion call BED.
+rule call_inv_bed:
+    input:
+        bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+    output:
+        bed=temp('temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'),
+        bed_dropped='results/{asm_name}/bed/dropped/shortinv_sv_inv_{hap}.bed.gz'
+    params:
+        min_svlen=config.get('inv_min_svlen', 700)
+    run:
+
+        # Read inversions
+        df = pd.read_csv(input.bed, sep='\t')
+
+        # Filter
+        df_drop = df.loc[df['SVLEN'] < params.min_svlen]
+        df_drop.to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
+
+        df = df.loc[[index for index in df.index if index not in df_drop.index]]
+
+        df.drop_duplicates('ID', inplace=True)
+
+        # Set common columns
+        tig_region_match = re.match('^([^:]+):(\d+)-(\d+)$', df.iloc[0]['TIG_RGN_OUTER'])
+
+        df['HAP'] = wildcards.hap
+        df['TIG_N'] = 1
+        df['QUERY_ID'] = tig_region_match[1]
+        df['QUERY_POS'] = tig_region_match[2]
+        df['QUERY_END'] = tig_region_match[3]
+
+        # Add SEQ column
+        df['SEQ'] = df.apply(
+            lambda row: asmlib.seq.fa_region(
+                asmlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
+                REF_FA
+            ).upper(),
+            axis=1
+        )
+
+        # Write BED
+        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+#
+# Merge SV (ins, del), indel, SNV
+#
+
+# call_cluster_merge
 #
 # Merge variants from each chromosome.
-rule pg_cluster_merge:
+rule call_cluster_merge:
     input:
-        bed=expand('temp/{{asm_name}}/pg/clustered/by_chrom/{{vartype}}_{{svtype}}_{{hap}}/{chrom}.bed.gz', chrom=analib.ref.get_df_fai(REF_FAI).index)
+        bed=expand('temp/{{asm_name}}/pg/clustered/by_chrom/{{vartype}}_{{svtype}}_{{hap}}/{chrom}.bed.gz', chrom=analib.ref.get_df_fai(REF_FAI).index),
+        bed_dropped=expand('temp/{{asm_name}}/bed/dropped/aux_{{vartype}}_{{svtype}}_{{hap}}_{chrom}.bed.gz', chrom=analib.ref.get_df_fai(REF_FAI).index)
     output:
-        bed=temp('results/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz')
+        bed=temp('temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz'),
+        bed_dropped='results/{asm_name}/bed/dropped/aux_{vartype}_{svtype}_{hap}.bed.gz'
     wildcard_constraints:
         vartype='sv|indel|snv',
         svtype='ins|del|snv',
@@ -103,17 +197,28 @@ rule pg_cluster_merge:
             output.bed, sep='\t', index=False, compression='gzip'
         )
 
-# pg_cluster
+        # Merged dropped variants
+        pd.concat(
+            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_dropped],
+            axis=0
+        ).sort_values(
+            ['#CHROM', 'POS']
+        ).to_csv(
+            output.bed_dropped, sep='\t', index=False, compression='gzip'
+        )
+
+
+# call_variant_cluster
 #
 # Cluster variants. Overlapping alignments may generate the same call from more than one contig. This step merges them
 # to one call, but all contigs that support it are annotated.
-rule pg_cluster:
+rule call_variant_cluster:
     input:
         bed='temp/{asm_name}/pg/raw/{vartype}_{hap}.bed',
         bed_tile='results/{asm_name}/align/central_tiling_path_{hap}.bed'
     output:
         bed=temp('temp/{asm_name}/pg/clustered/by_chrom/{vartype}_{svtype}_{hap}/{chrom}.bed.gz'),
-        bed_dropped='results/{asm_name}/bed/dropped/aux_{vartype}_{svtype}_{hap}_{chrom}.bed.gz'
+        bed_dropped=temp('temp/{asm_name}/bed/dropped/aux_{vartype}_{svtype}_{hap}_{chrom}.bed.gz')
     wildcard_constraints:
         vartype='sv|indel|snv',
         svtype='ins|del|snv',
@@ -350,12 +455,14 @@ rule pg_cluster:
         df_dropped.to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
 
 
-### PrintGaps ###
+#
+# PrintGaps
+#
 
-# pg_sv
+# call_printgaps_sv
 #
 # Get SVs for one alignment.
-rule pg_sv:
+rule call_printgaps_sv:
     input:
         aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
     output:
@@ -368,10 +475,10 @@ rule pg_sv:
             """--minq 0 """
             """--outFile {output.bed}"""
 
-# pg_indel
+# call_printgaps_indel
 #
 # Get SVs for one sample.
-rule pg_indel:
+rule call_printgaps_indel:
     input:
         aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
     output:
@@ -387,10 +494,10 @@ rule pg_indel:
             """--minq 0 """
             """--outFile {output.bed}"""
 
-# pg_snv
+# call_printgaps_snv
 #
 # Get SNVs for one sample.
-rule pg_snv:
+rule call_printgaps_snv:
     input:
         aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
     output:

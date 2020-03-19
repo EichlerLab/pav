@@ -217,4 +217,5 @@ rule pg_all:
 include: 'rules/input_functions.snakefile'
 include: 'rules/align.snakefile'
 include: 'rules/call.snakefile'
+include: 'rules/call_inv.snakefile'
 include: 'rules/tracks.snakefile'

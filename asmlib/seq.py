@@ -165,6 +165,29 @@ class Region:
         return Region(self.chrom, self.pos, self.end)
 
 
+def region_from_string(rgn_str, base0half=False):
+    """
+    Get a region object from a string (e.g. "chr1:123456-234567").
+
+    :param rgn_str: Region string.
+    :param base0half: If `False` (default), then string is in base-1 closed coordinates (the first base in the
+        chromosome is 1, and the positions are inclusive). If `True`, expect BED coordinates.
+
+    :return: Region object.
+    """
+
+    match_obj = re.match(r'^([^:]+):(\d+)-(\d+)$', rgn_str)
+
+    if match_obj is None:
+        raise RuntimeError('Region is not in expected format (chrom:pos-end): {}'.format(rgn_str))
+
+    pos = int(match_obj[2])
+    end = int(match_obj[3])
+
+    if not base0half:
+        pos -= 1
+
+    return Region(match_obj[1], pos, end)
 
 def ref_kmers(region, fa_file_name, k_util):
 
@@ -222,9 +245,19 @@ def fa_region(region, fa_file_name):
         return fa_file.fetch(region.chrom, region.pos, region.end)
 
 def subseq_region(region, aln_file_name, subseq_exe):
+    """
+    Given reference coordinates, find corresponding coordinates and sequence on aligned contigs.
+
+    :param region: Reference region.
+    :param aln_file_name: Alignment file name (CRAM/BAM).
+    :param subseq_exe: Path to subseq executable.
+
+    :return: An iterator for each contig aligned to the region. Each element of the iterator is a tuple of the
+        contig region (Region object, contig context) and the sequence from the contig over that region.
+    """
 
     # Open subseq
-    proc = subprocess.Popen(
+    with subprocess.Popen(
         """{subseq} -r {region} {tig_align}""".format(
             subseq=subseq_exe,
             region=str(region),
@@ -232,14 +265,14 @@ def subseq_region(region, aln_file_name, subseq_exe):
         ).split(' '),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
-    )
+    ) as proc:
 
-    outs, errs = proc.communicate()
+        outs, errs = proc.communicate()
 
-    if proc.returncode != 0:
-        print(errs.decode(), file=sys.stderr)
-        raise RuntimeError(
-            'Subseq failed extracting region from contig alignments {}: Return code = {}'.format(str(region), proc.returncode))
+        if proc.returncode != 0:
+            print(errs.decode(), file=sys.stderr)
+            raise RuntimeError(
+                'Subseq failed extracting region from contig alignments {}: Return code = {}'.format(str(region), proc.returncode))
 
     # Parse subseq output (one or more FASTA records)
     with io.StringIO(outs.decode()) as in_file:

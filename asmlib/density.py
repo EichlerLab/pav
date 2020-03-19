@@ -69,7 +69,7 @@ def get_smoothed_density(
     state_count = df.groupby('STATE')['STATE'].count()
 
     for low_state in state_count[state_count < min_state_count].index:
-        df = df.loc[df['STATE'] == low_state]
+        df = df.loc[df['STATE'] != low_state]
 
     # Clean k-mer column
     del (df['KMER'])

@@ -12,22 +12,30 @@
         "mem": "4G",
         "rt": "96:00:00"
     },
-    "pg_cluster_merge": {
+    "call_merge_haplotypes": {
+        "mem": "12G",
+        "rt": "12:00:00"
+    },
+    "call_cluster_merge": {
         "mem": "24G",
         "rt": "12:00:00"
     },
-    "pg_cluster": {
+    "call_variant_cluster": {
         "mem": "8G",
         "rt": "24:00:00"
     },
-    "pg_sv": {
+    "call_printgaps_sv": {
         "rt": "24:00:00"
     },
-    "pg_indel": {
+    "call_printgaps_indel": {
         "rt": "24:00:00"
     },
-    "pg_snv": {
+    "call_printgaps_snv": {
         "rt": "24:00:00"
+    },
+
+    "call_inv_batch": {
+        "rt": "8:00:00"
     },
 
     "align_genomecov": {

@@ -17,7 +17,7 @@ INITIAL_EXPAND = 4000      # Expand the flagged region by this much before start
 EXPAND_FACTOR = 1.5        # Expand by this factor while searching
 
 MIN_REGION_SIZE = 5000     # Extract a region at least this size
-MAX_REGION_SIZE = 5000000  # Maximum region size
+MAX_REGION_SIZE = 1000000  # Maximum region size
 
 MAX_REF_KMER_COUNT = 100   # Skip low-complexity regions
 
@@ -27,6 +27,8 @@ MIN_KMER_STATE_COUNT = 20     # Remove states with fewer than this number of k-m
 MIN_CONSECUTIVE_STATE_COUNT = 100    # When checking states, must have consecutive runs of the same state by this many k-mers. Used to remove noise for determining if region needs to be expanded or not.
 
 DENSITY_SMOOTH_FACTOR = 1  # Estimate bandwith on Scott's rule then multiply by this factor to adjust bandwidth.
+
+MIN_INV_KMER_RUN = 100  # States must have a continuous run of this many strictly inverted k-mers
 
 
 class InvCall:
@@ -59,26 +61,27 @@ class InvCall:
             region_flag,
             df
     ):
-
-        self.region_ref_inner = region_ref_inner
         self.region_ref_outer = region_ref_outer
+        self.region_ref_inner = region_ref_inner
 
-        self.region_tig_inner = region_tig_inner
         self.region_tig_outer = region_tig_outer
+        self.region_tig_inner = region_tig_inner
 
         self.region_ref_discovery = region_ref_discovery
         self.region_tig_discovery = region_tig_discovery
+
         self.region_flag = region_flag
 
         self.df = df
 
-        self.id = '{}-{}-INV-{}'.format(region_ref_outer.chrom, region_ref_outer.pos + 1, len(region_ref_outer))
+        self.svlen = len(region_ref_outer)
+        self.id = '{}-{}-INV-{}'.format(region_ref_outer.chrom, region_ref_outer.pos + 1, self.svlen)
 
     def __repr__(self):
         return self.id
 
 
-def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None):
+def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, flag_id=None):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
     might be. Scan that region for an inversion expanding as necessary.
@@ -89,12 +92,16 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None):
     :param k_util: K-mer utility.
     :param subseq_exe: Subseq executable.
     :param log: Log file (open file handle).
+    :param flag_id: ID of the flagged region (printed so flagged regions can easily be tracked in logs).
 
     :return: A `InvCall` object describing the inversion found or `None` if no inversion was found.
     """
 
     # Init
-    _write_log('Scanning for inversions in flagged region: {}'.format(region), log)
+    if flag_id is None:
+        flag_id = '<No ID>'
+
+    _write_log('Scanning for inversions in flagged region: {} (flagged region record id = {})'.format(region, flag_id), log)
 
     region_flag = region.copy()  # Original flagged region
 
@@ -131,8 +138,13 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None):
 
 
         ## Get contig k-mers ##
+        stream_tuple = asmlib.seq.tig_mer_stream(region, aln_file_name, subseq_exe, k_util, index=True)
 
-        tig_mer_region, tig_mer_stream = asmlib.seq.tig_mer_stream(region, aln_file_name, subseq_exe, k_util, index=True)
+        if stream_tuple is not None:
+            tig_mer_region, tig_mer_stream = stream_tuple
+        else:
+            _write_log('No tig k-mers: No contig sequence record covers region', log)
+            return None
 
         if tig_mer_stream is None or len(tig_mer_stream) == 0:
             _write_log('No tig k-mers: May have expanded off contig boundaries', log)
@@ -201,18 +213,39 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None):
 
             # Continue with next iteration
         else:
-            # No kmers, expand
-            expand_bp = np.int32(len(region) * EXPAND_FACTOR)
+            _write_log(
+                'No informative reference k-mers in forward or reverse orientation in region',
+                log
+            )
 
-            region.expand(
-                expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5
-            )  # +50% upstream, +50% downstream
+            return None
+
+            # No kmers, expand
+            #expand_bp = np.int32(len(region) * EXPAND_FACTOR)
+
+            #region.expand(
+            #    expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5
+            #)  # +50% upstream, +50% downstream
 
     ## Characterize found region ##
     # Stop if no inverted sequence was found
     if not np.any([record[0] == 2 for record in state_rl]):
         _write_log('No inverted sequence found', log)
         return None
+
+    if not np.any(df['KERN_MAX'] == 2):
+        _write_log('No inverted sequence reaches density max', log)
+        return None
+
+    max_inv_run = np.max([record[1] for record in state_rl if record[0] == 2])
+
+    if max_inv_run < MIN_INV_KMER_RUN:
+        _write_log('Longest run of strictly inverted k-mers ({}) does not meet the minimum threshold ({})'.format(
+            max_inv_run, MIN_INV_KMER_RUN
+        ), log)
+
+        return None
+
 
     # Call inversion
     if state_rl[0][0] != 0 or state_rl[-1][0] != 0:

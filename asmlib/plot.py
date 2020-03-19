@@ -2,6 +2,9 @@
 Make plots of inversion calls.
 """
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
 import numpy as np
 
 import asmlib
@@ -122,6 +125,147 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name, coords='discovery'):
         title=inv_call.id,
         anno_list=anno_list
     )
+
+    # Return figure
+    return fig
+
+def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300):
+    """
+    Get plot of k-mer density from the called region.
+
+    :param inv_call: Inversion call
+    :param width: Plot width (in).
+    :param height: Plot height (in).
+    :param dpi: DPI
+
+    :return: A plot object. Before it is discarded, this object should be closed with `matplotlib.pyplot.close()` to
+        free memory.
+    """
+
+    # Make figure
+    fig = plt.figure(figsize=(width, height), dpi=dpi)
+
+    ax1, ax2 = fig.subplots(2, 1)
+
+    ## Smoothed state (top pane) ##
+
+    # Points
+    ax1.scatter(
+        x=np.asarray(inv_call.df.loc[inv_call.df['STATE'] == 0, 'INDEX']) + inv_call.region_tig_discovery.pos,
+        y=np.repeat(1, np.sum(inv_call.df['STATE'] == 0)),
+        color='blue',
+        alpha=0.2
+    )
+
+    ax1.scatter(
+        x=np.asarray(inv_call.df.loc[inv_call.df['STATE'] == 1, 'INDEX']) + inv_call.region_tig_discovery.pos,
+        y=np.repeat(0, np.sum(inv_call.df['STATE'] == 1)),
+        color='purple',
+        alpha=0.2
+    )
+
+    ax1.scatter(
+        x=np.asarray(inv_call.df.loc[inv_call.df['STATE'] == 2, 'INDEX']) + inv_call.region_tig_discovery.pos,
+        y=np.repeat(-1, np.sum(inv_call.df['STATE'] == 2)),
+        color='red',
+        alpha=0.2
+    )
+
+    # Max density line (smoothed state call)
+    ax1.plot(
+        inv_call.df['INDEX'] + inv_call.region_tig_discovery.pos,
+        (inv_call.df['KERN_MAX'] - 1) * -1,
+        color='black'
+    )
+
+    # Plot aestetics
+
+    ax1.get_xaxis().set_major_formatter(
+        mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
+    )
+
+    ax1.set_yticks(np.asarray([-1, 0, 1]))
+    ax1.set_yticklabels(np.array(['Rev', 'Fwd+Rev', 'Fwd']))
+
+    ## Density (bottom pane) ##
+
+    ax2.plot(
+        inv_call.df['INDEX'] + inv_call.region_tig_discovery.pos,
+        inv_call.df['KERN_FWD'],
+        color='blue'
+    )
+
+    ax2.plot(
+        inv_call.df['INDEX'] + inv_call.region_tig_discovery.pos,
+        inv_call.df['KERN_FWDREV'],
+        color='purple'
+    )
+
+    ax2.plot(
+        inv_call.df['INDEX'] + inv_call.region_tig_discovery.pos,
+        inv_call.df['KERN_REV'],
+        color='red'
+    )
+
+    # Add lines
+    ax1.vlines(
+        x=[inv_call.region_tig_outer.pos, inv_call.region_tig_outer.end],
+        ymin=-1, ymax=1,
+        color='lightseagreen',
+        linestyles='solid'
+    )
+
+    ax2.vlines(
+        x=[inv_call.region_tig_outer.pos, inv_call.region_tig_outer.end],
+        ymin=0, ymax=1,
+        color='lightseagreen',
+        linestyles='solid'
+    )
+
+    if inv_call.region_tig_outer != inv_call.region_tig_inner:
+        ax1.vlines(
+            x=[inv_call.region_tig_inner.pos, inv_call.region_tig_inner.end],
+            ymin=-1, ymax=1,
+            color='seagreen',
+            linestyles='dashed'
+        )
+
+        ax2.vlines(
+            x=[inv_call.region_tig_inner.pos, inv_call.region_tig_inner.end],
+            ymin=0, ymax=1,
+            color='seagreen',
+            linestyles='dashed'
+        )
+
+
+    # Plot aestetics
+
+    ax2.get_xaxis().set_major_formatter(
+        mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
+    )
+
+    ax2.set_xlabel('{} ({:,d} - {:,d})'.format(
+        inv_call.region_tig_discovery.chrom,
+        inv_call.region_tig_discovery.pos + 1,
+        inv_call.region_tig_discovery.end)
+    )
+
+    ax1.tick_params(labelbottom=False)
+
+    for label in ax2.get_xticklabels():
+        label.set_rotation(30)
+        label.set_ha('right')
+
+    #ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+
+    plot_title = inv_call.id
+
+    if hap is not None:
+        plot_title += ' ({})'.format(hap)
+
+    fig.suptitle(plot_title)
+
+    fig.subplots_adjust(bottom=0.15)  # Test/tune - Add space to labels don't run off bottom end
 
     # Return figure
     return fig
