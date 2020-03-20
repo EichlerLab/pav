@@ -24,12 +24,15 @@ MAX_REF_KMER_COUNT = 100   # Skip low-complexity regions
 MIN_INFORMATIVE_KMERS = 2000  # Minimum number of informative k-mers
 MIN_KMER_STATE_COUNT = 20     # Remove states with fewer than this number of k-mers. Eliminates spikes in density
 
-MIN_CONSECUTIVE_STATE_COUNT = 100    # When checking states, must have consecutive runs of the same state by this many k-mers. Used to remove noise for determining if region needs to be expanded or not.
-
 DENSITY_SMOOTH_FACTOR = 1  # Estimate bandwith on Scott's rule then multiply by this factor to adjust bandwidth.
 
 MIN_INV_KMER_RUN = 100  # States must have a continuous run of this many strictly inverted k-mers
 
+MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within this factor (reciprocal) or the event
+                        # is likely unbalanced (INS or DEL) and would already be in the callset
+
+MIN_EXP_COUNT = 3  # The number of region expansions to try (including the initial expansion) and finding only fwd k-mer
+                   # states after smoothing before giving up on the region.
 
 class InvCall:
     """
@@ -61,6 +64,8 @@ class InvCall:
             region_flag,
             df
     ):
+
+        # Save INV regions and dataframe
         self.region_ref_outer = region_ref_outer
         self.region_ref_inner = region_ref_inner
 
@@ -74,8 +79,20 @@ class InvCall:
 
         self.df = df
 
+        # Generate length and ID
         self.svlen = len(region_ref_outer)
         self.id = '{}-{}-INV-{}'.format(region_ref_outer.chrom, region_ref_outer.pos + 1, self.svlen)
+
+        # Get max INV density height
+        self.max_inv_den_diff = np.max(
+            df.loc[
+                df['KERN_MAX'] == 2, 'KERN_REV'
+            ] - df.loc[
+                df['KERN_MAX'] == 2, ['KERN_FWD', 'KERN_FWDREV']
+            ].apply(
+                np.max, axis=1
+            )
+        )
 
     def __repr__(self):
         return self.id
@@ -109,8 +126,12 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
     region.expand(INITIAL_EXPAND, min_pos=0, max_end=df_fai, shift=True)
 
+    expansion_count = 0
+
     # Scan and expand
     while True:
+
+        expansion_count += 1
 
         _write_log('Scanning region: {}'.format(region), log)
 
@@ -133,6 +154,8 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
                 MAX_REF_KMER_COUNT,
                 k_util.to_string(max_mer)
             ), log)
+
+            return None
 
         ref_kmer_set = set(ref_kmer_count)
 
@@ -169,8 +192,16 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
             ## Check inversion ##
 
             # Get run-length encoded states (list of (state, count) tuples).
-            state_rl = [record for record in asmlib.density.rl_encoder(df) if record[1] >= MIN_KMER_STATE_COUNT]
+            state_rl = [record for record in asmlib.density.rl_encoder(df)]
             condensed_states = [record[0] for record in state_rl]  # States only
+
+            if len(state_rl) == 1 and state_rl[0][0] == 0 and expansion_count >= MIN_EXP_COUNT:
+                _write_log(
+                    'Found no inverted k-mer states after {} expansion(s)'.format(expansion_count),
+                    log
+                )
+
+                return None
 
             # Done if reference oriented k-mers (state == 0) found an both sides
             if len(condensed_states) > 2 and condensed_states[0] == 0 and condensed_states[-1] == 0:
@@ -181,7 +212,7 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
             expand_bp = np.int32(len(region) * EXPAND_FACTOR)
 
             if len(condensed_states) > 2:
-                # More than one state. Expand disproprtionately if reference was found up or downstream.
+                # More than one state. Expand disproportionately if reference was found up or downstream.
 
                 if condensed_states[0] == 0:
                     region.expand(
@@ -220,21 +251,10 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
             return None
 
-            # No kmers, expand
-            #expand_bp = np.int32(len(region) * EXPAND_FACTOR)
-
-            #region.expand(
-            #    expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5
-            #)  # +50% upstream, +50% downstream
-
     ## Characterize found region ##
     # Stop if no inverted sequence was found
     if not np.any([record[0] == 2 for record in state_rl]):
         _write_log('No inverted sequence found', log)
-        return None
-
-    if not np.any(df['KERN_MAX'] == 2):
-        _write_log('No inverted sequence reaches density max', log)
         return None
 
     max_inv_run = np.max([record[1] for record in state_rl if record[0] == 2])
@@ -247,33 +267,24 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
         return None
 
 
-    # Call inversion
+    # Code check - must be flanked by reference sequence
     if state_rl[0][0] != 0 or state_rl[-1][0] != 0:
         raise RuntimeError('Found INV region not flanked by reference sequence (program bug): {}'.format(region))
 
+    # Subset to strictly inverted states (for calling inner breakpoints)
+    state_rl_inv = [record for record in state_rl if record[0] == 2]
+
     # Find inverted repeat on left flank (upstream)
-    coord_outer_l_pos = state_rl[1][2] + tig_mer_region.pos
-    coord_inner_l_pos = coord_outer_l_pos
-
-    index = 1
-
-    while state_rl[index][0] != 2:
-        coord_inner_l_pos = state_rl[index][3] + tig_mer_region.pos
-        index += 1
+    tig_outer_up_stream = state_rl[1][2] + tig_mer_region.pos
+    tig_inner_up_stream = state_rl_inv[0][2] + tig_mer_region.pos
 
     # Find inverted repeat on right flank
-    coord_outer_r_pos = state_rl[-2][3] + tig_mer_region.pos
-    coord_inner_r_pos = coord_outer_r_pos
-
-    index = -2
-
-    while state_rl[index][0] != 2:
-        coord_inner_r_pos = state_rl[index][2] + tig_mer_region.pos
-        index -= 1
+    tig_outer_dn_stream = state_rl[-2][3] + tig_mer_region.pos + k_util.k_size
+    tig_inner_dn_stream = state_rl_inv[-1][3] + tig_mer_region.pos + k_util.k_size
 
     # Create contig coordinate records
-    region_tig_outer = asmlib.seq.Region(tig_mer_region.chrom, coord_outer_l_pos, coord_outer_r_pos)
-    region_tig_inner = asmlib.seq.Region(tig_mer_region.chrom, coord_inner_l_pos, coord_inner_r_pos)
+    region_tig_outer = asmlib.seq.Region(tig_mer_region.chrom, tig_outer_up_stream, tig_outer_dn_stream)
+    region_tig_inner = asmlib.seq.Region(tig_mer_region.chrom, tig_inner_up_stream, tig_inner_dn_stream)
 
     # Create an intervaltree for translating contig coordinates to reference coordinates
     lift_list = asmlib.seq.cigar_lift_to_subject(region, tig_mer_region, aln_file_name, ref_fa)
@@ -296,6 +307,31 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
         tree_coords(region_tig_inner.pos, lift_tree),
         tree_coords(region_tig_inner.end, lift_tree)
     )
+
+    # Check size proportions
+    if len(region_ref_outer) < len(region_tig_outer) * MIN_TIG_REF_PROP:
+        _write_log(
+            'Reference region too short: Reference region length ({:,d}) is not within {:.2f}% of the contig region length ({:,d})'.format(
+                len(region_ref_outer),
+                MIN_TIG_REF_PROP * 100,
+                len(region_tig_outer)
+            ),
+            log
+        )
+
+        return None
+
+    if len(region_tig_outer) < len(region_ref_outer) * MIN_TIG_REF_PROP:
+        _write_log(
+            'Contig region too short: Contig region length ({:,d}) is not within {:.2f}% of the reference region length ({:,d})'.format(
+                len(region_tig_outer),
+                MIN_TIG_REF_PROP * 100,
+                len(region_ref_outer)
+            ),
+            log
+        )
+
+        return None
 
     # Return inversion call
     return InvCall(

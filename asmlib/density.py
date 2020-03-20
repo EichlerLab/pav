@@ -29,7 +29,8 @@ def get_smoothed_density(
         k_util,
         min_informative_kmers=2000,
         density_smooth_factor=1,
-        min_state_count=20
+        min_state_count=20,
+        state_run_max=2000
     ):
 
     """
@@ -47,9 +48,24 @@ def get_smoothed_density(
     :param density_smooth_factor: Smooth density by this factor. Density bandwidth is estimated by Scott's rule then
         multiplied by this factor to further smooth (> 1) or restrict smoothing (< 1). See
         https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html
+    :param state_run_max: Condense state consecutive runs of the same state longer than this length to one run of states
+        with this length by removing the inner most states and leaving `state_run_max // 2` states on each side. If
+        `None`, do not condense states.
 
     :return: A Pandas dataframe with columns "INDEX", "STATE", "
     """
+
+    # Normalize state_run_max
+    if state_run_max is not None:
+
+        if state_run_max <= 1:
+            raise RuntimeError(
+                'Cannot condense runs of states: state_run_max must be 2 or greater: {}'.format(state_run_max)
+            )
+
+        state_run_max_flank = state_run_max // 2
+
+        state_run_max = state_run_max_flank * 2  # If STATE_RUN_MAX was odd, ensure max run count is consistent with state_run_max_flank
 
     # Make dataframe
     df = pd.DataFrame(tig_mer_stream, columns=['KMER', 'INDEX'])
@@ -62,21 +78,67 @@ def get_smoothed_density(
        ]
    )
 
+    # Clean k-mer column
+    del (df['KMER'])
+
     # Subset to informative sites
     df = df.loc[df['STATE'] != -1]
+
+    # Setup list to track removed records
+    rm_record_list = list()
 
     # Remove low-count states. These cause spikes in density that rise above other states.
     state_count = df.groupby('STATE')['STATE'].count()
 
     for low_state in state_count[state_count < min_state_count].index:
-        df = df.loc[df['STATE'] != low_state]
+        df_rm = df.loc[df['STATE'] == low_state].copy()
 
-    # Clean k-mer column
-    del (df['KMER'])
+        df_rm['KERN_MAX'] = np.nan
+        df_rm['KERN_FWD'] = np.nan
+        df_rm['KERN_FWDREV'] = np.nan
+        df_rm['KERN_REV'] = np.nan
+
+        rm_record_list.append(df_rm)
+
+        df = df.loc[df['STATE'] != low_state]
 
     # Check for number of informative k-mers before computing density
     if df.shape[0] < min_informative_kmers:
         return pd.DataFrame([], columns=['INDEX', 'STATE', 'KERN_MAX', 'KERN_FWD', 'KERN_FWDREV', 'KERN_REV'])
+
+    # Subset runs of consecutive states
+    if state_run_max is not None:
+
+        # Get run-length encoded list of states
+        state_rl = [element for element in rl_encoder(df, state_col='STATE') if element[1] > state_run_max]
+
+        # Generate a table of states that should be removed
+        df_long_run = pd.DataFrame(
+            [
+                (
+                    element[2] + state_run_max_flank,
+                    element[3] - state_run_max_flank,
+                    element[0],
+                    element[1] - state_run_max
+                ) for element in state_rl
+            ],
+            columns=['INDEX_START', 'INDEX_END', 'STATE', 'RM_ELEMENTS']
+        )
+
+        for index, row in df_long_run.iterrows():
+
+            # Save removed states
+            df_rm = df.loc[(df['INDEX'] >= row['INDEX_START']) & (df['INDEX'] <= row['INDEX_END'])].copy()
+
+            df_rm['KERN_MAX'] = df_rm['STATE']
+            df_rm['KERN_FWD'] = np.nan
+            df_rm['KERN_FWDREV'] = np.nan
+            df_rm['KERN_REV'] = np.nan
+
+            rm_record_list.append(df_rm)
+
+            # Subset out removed states
+            df = df.loc[(df['INDEX'] < row['INDEX_START']) | (df['INDEX'] > row['INDEX_END'])]
 
     # Setup bandwidth and index in informative k-mer space (ignore df['INDEX'] for density)
     density_bandwidth = df.shape[0] ** (-1.0 / 5.0) * density_smooth_factor
@@ -126,16 +188,55 @@ def get_smoothed_density(
     df['KERN_FWDREV'] = kern_vals[1, :]
     df['KERN_REV'] = kern_vals[2, :]
 
+    # Check condensed states - Flanking max smoothed state must match the state of the rows that were removed
+    if state_run_max is not None:
+        for index, row in df_long_run.iterrows():
+
+            state = row['STATE']
+            state_up = df.loc[df.index < row['INDEX_START'], 'KERN_MAX'].iloc[0]
+            state_dn = df.loc[df.index > row['INDEX_END'], 'KERN_MAX'].iloc[0]
+
+            # Check smoothed state - must match original pre-smoothed state at each flank
+            if state_up != state:
+                raise RuntimeError((
+                    'Condensed state reconstruction error: Index range {} - {} was condensed with state {}, but the '
+                    'upstream flank in the condensed states does not match ({})'
+                ).format(
+                    row['INDEX_START'],
+                    row['INDEX_END'],
+                    state,
+                    state_up
+                ))
+
+            if state_dn != state:
+                raise RuntimeError((
+                    'Condensed state reconstruction error: Index range {} - {} was condensed with state {}, but the '
+                    'downstream flank in the condensed states does not match ({})'
+                ).format(
+                    row['INDEX_START'],
+                    row['INDEX_END'],
+                    state,
+                    state_dn
+                ))
+
+    # Add dropped records
+    if rm_record_list:
+        df = pd.concat(
+            [df] + rm_record_list
+        ).sort_values('INDEX')
+
     # Return
     return df
 
-def rl_encoder(df):
+def rl_encoder(df, state_col='KERN_MAX'):
     """
-    Take a density table containing INDEX and STATE. Count consecutive STATEs and track indices for each run of a state.
+    Take a density table containing INDEX and a state column (STATE or KERN_MAX). Count consecutive STATEs and track indices for each run of a state.
 
     :param df: Dataframe of states.
+    :param state_col: State column to get state from. Should be "STATE" for raw k-mer state or "KERN_MAX" for kernel-
+        density max state at each locus. "STATE" is noisier, and "KERN_MAX" is smoothed.
 
-    :return:
+    :return: Iterator of (state, count, pos, end) tuples.
     """
 
     state = None
@@ -143,9 +244,9 @@ def rl_encoder(df):
     pos = None
     end = None
 
-    for index, row in df[['STATE', 'INDEX']].iterrows():  # STATE/INDEX columns make row Series int (removing float columns)
+    for index, row in df[[state_col, 'INDEX']].iterrows():  # STATE/INDEX columns make row Series int (removing float columns so each row is integers)
 
-        if row['STATE'] == state:
+        if row[state_col] == state:
             count += 1
             end = row['INDEX']
 
@@ -153,7 +254,7 @@ def rl_encoder(df):
             if state is not None:
                 yield (state, count, pos, end)
 
-            state = row['STATE']
+            state = row[state_col]
             count = 1
             pos = end = row['INDEX']
 

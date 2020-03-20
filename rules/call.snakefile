@@ -128,7 +128,7 @@ rule call_inv_bed:
         bed=temp('temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'),
         bed_dropped='results/{asm_name}/bed/dropped/shortinv_sv_inv_{hap}.bed.gz'
     params:
-        min_svlen=config.get('inv_min_svlen', 700)
+        min_svlen=config.get('inv_min_svlen', 500)
     run:
 
         # Read inversions

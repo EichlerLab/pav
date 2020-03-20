@@ -117,7 +117,8 @@ rule call_inv_batch:
                     '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
                     'REF_RGN_OUTER', 'REF_RGN_INNER',
                     'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                    'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG'
+                    'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
+                    'MAX_INV_DEN_DIFF'
                 ]
             )
 
@@ -131,6 +132,8 @@ rule call_inv_batch:
 
             with open(log.log, 'w') as log_file:
                 for index, row in df.iterrows():
+
+                    # Scan for inversions
                     region = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
 
                     try:
@@ -142,6 +145,7 @@ rule call_inv_batch:
                         log_file.write('RuntimeError in scan_for_inv(): {}\n'.format(ex))
                         inv_call = None
 
+                    # Save inversion call
                     if inv_call is not None:
                         call_list.append(pd.Series(
                             [
@@ -160,13 +164,15 @@ rule call_inv_batch:
 
                                 inv_call.region_ref_discovery.to_base1_string(),
                                 inv_call.region_tig_discovery.to_base1_string(),
-                                inv_call.region_flag.to_base1_string()
+                                inv_call.region_flag.to_base1_string(),
+                                inv_call.max_inv_den_diff
                             ],
                             index=[
                                 '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
                                 'REF_RGN_OUTER', 'REF_RGN_INNER',
                                 'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                                'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG'
+                                'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
+                                'MAX_INV_DEN_DIFF'
                             ]
                         ))
 
@@ -188,7 +194,8 @@ rule call_inv_batch:
                         '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
                         'REF_RGN_OUTER', 'REF_RGN_INNER',
                         'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                        'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG'
+                        'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
+                        'MAX_INV_DEN_DIFF'
                     ]
                 )
 

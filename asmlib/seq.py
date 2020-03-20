@@ -309,7 +309,7 @@ def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa):
 
     # Open alignment file
     with pysam.AlignmentFile(aln_file_name, 'rb', reference_filename=ref_fa) as aln_file:
-        for record in aln_file.fetch(subject_region.chrom, subject_region.pos + 1, subject_region.end):
+        for record in aln_file.fetch(subject_region.chrom, subject_region.pos, subject_region.end):
             if (
                     record.query_name == query_region.chrom and
                     record.query_alignment_start <= query_region.pos and
