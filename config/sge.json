@@ -4,7 +4,7 @@
         "mem": "2G",
         "disk": "0G",
         "rt": "04:00:00",
-        "params": "-l hostname=e228,testing=true"
+        "params": "-l testing=true"
     },
 
     "pg_variant_bed": {
@@ -13,7 +13,8 @@
         "rt": "96:00:00"
     },
     "call_merge_haplotypes": {
-        "mem": "12G",
+        "cpu": 6,
+        "mem": "3G",
         "rt": "12:00:00"
     },
     "call_cluster_merge": {

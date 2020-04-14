@@ -169,10 +169,10 @@ rule call_inv_batch:
                             ],
                             index=[
                                 '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                                'REF_RGN_OUTER', 'REF_RGN_INNER',
-                                'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                                'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
-                                'MAX_INV_DEN_DIFF'
+                                'RGN_REF_OUTER', 'RGN_REF_INNER',
+                                'RGN_TIG_OUTER', 'RGN_TIG_INNER',
+                                'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
+                                'MAX_DENSITY_DIFF'
                             ]
                         ))
 
@@ -192,10 +192,10 @@ rule call_inv_batch:
                     [],
                     columns=[
                         '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                        'REF_RGN_OUTER', 'REF_RGN_INNER',
-                        'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                        'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
-                        'MAX_INV_DEN_DIFF'
+                        'RGN_REF_OUTER', 'RGN_REF_INNER',
+                        'RGN_TIG_OUTER', 'RGN_TIG_INNER',
+                        'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
+                        'MAX_DENSITY_DIFF'
                     ]
                 )
 

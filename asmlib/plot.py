@@ -4,6 +4,7 @@ Make plots of inversion calls.
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import pandas as pd
 
 import numpy as np
 
@@ -129,7 +130,7 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name, coords='discovery'):
     # Return figure
     return fig
 
-def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300):
+def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300, flank_whiskers=True):
     """
     Get plot of k-mer density from the called region.
 
@@ -137,13 +138,20 @@ def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300):
     :param width: Plot width (in).
     :param height: Plot height (in).
     :param dpi: DPI
+    :param flank_whiskers: If `True`, show whiskers above or below points indicating if they match the upstream or
+        downstream flanking inverted duplication.
 
     :return: A plot object. Before it is discarded, this object should be closed with `matplotlib.pyplot.close()` to
         free memory.
     """
     
-    fig, ax1, ax2 = kmer_density_plot_base(inv_call.df, width=width, height=height, dpi=dpi)
-    
+    fig = kmer_density_plot_base(
+        inv_call.df, inv_call.region_tig_discovery,
+        width=width, height=height, dpi=dpi,
+        flank_whiskers=flank_whiskers
+    )
+
+    ax1, ax2 = fig.axes
 
     # Add lines
     if inv_call.region_tig_outer is not None:
@@ -191,7 +199,18 @@ def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300):
     return fig
 
 
-def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300):
+def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300, flank_whiskers=True):
+    """
+
+    :param df: Inversion call DataFrame.
+    :param region_tig: Contig region plot is generated over.
+    :param width: Figure width.
+    :param height: Figure height.
+    :param dpi: Figure DPI.
+    :param flank_whiskers: If `True`, show whiskers above or below points indicating if they match the upstream or
+        downstream flanking inverted duplication.
+    :return:
+    """
     
     # Make figure
     fig = plt.figure(figsize=(width, height), dpi=dpi)
@@ -201,24 +220,49 @@ def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300):
 
     ## Smoothed state (top pane) ##
 
+    # Flanking DUP whiskers
+    if flank_whiskers:
+        for index, subdf in df.loc[
+            ~ pd.isnull(df['MATCH'])
+        ].groupby(
+            ['STATE', 'MATCH']
+        ):
+
+            # Whisker y-values
+            ymin, ymax = sorted(
+                [
+                    -1 * (subdf.iloc[0]['STATE_MER'] - 1),
+                    -1 * (subdf.iloc[0]['STATE_MER'] - 1) + (0.25 if index[1] == 'SAME' else -0.25)
+                ]
+            )
+
+            # Plot whiskers
+            ax1.vlines(
+                x=subdf['INDEX'] + region_tig.pos,
+                ymin=ymin, ymax=ymax,
+                color='dimgray',
+                linestyles='solid',
+                linewidth=0.5
+            )
+
     # Points
     ax1.scatter(
-        x=np.asarray(df.loc[df['STATE'] == 0, 'INDEX']) + region_tig.pos,
-        y=np.repeat(1, np.sum(df['STATE'] == 0)),
+        x=np.asarray(df.loc[df['STATE_MER'] == 0, 'INDEX']) + region_tig.pos,
+        y=np.repeat(1, np.sum(df['STATE_MER'] == 0)),
         color='blue',
         alpha=0.2
     )
 
     ax1.scatter(
-        x=np.asarray(df.loc[df['STATE'] == 1, 'INDEX']) + region_tig.pos,
-        y=np.repeat(0, np.sum(df['STATE'] == 1)),
+        x=np.asarray(df.loc[df['STATE_MER'] == 1, 'INDEX']) + region_tig.pos,
+        y=np.repeat(0, np.sum(df['STATE_MER'] == 1)),
         color='purple',
         alpha=0.2
     )
 
     ax1.scatter(
-        x=np.asarray(df.loc[df['STATE'] == 2, 'INDEX']) + region_tig.pos,
-        y=np.repeat(-1, np.sum(df['STATE'] == 2)),
+        x=np.asarray(df.loc[df['STATE_MER'] == 2, 'INDEX']) + region_tig.pos,
+        y=np.repeat(-1, np.sum(df['STATE_MER'] == 2)),
         color='red',
         alpha=0.2
     )
@@ -226,7 +270,7 @@ def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300):
     # Max density line (smoothed state call)
     ax1.plot(
         df['INDEX'] + region_tig.pos,
-        (df['KERN_MAX'] - 1) * -1,
+        (df['STATE'] - 1) * -1,
         color='black'
     )
 
@@ -280,4 +324,4 @@ def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300):
 
 
     ## Return plot and axes ##
-    return fig, ax1, ax2
+    return fig

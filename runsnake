@@ -23,4 +23,7 @@ JOB_COUNT=$1
 shift
 
 # Run
-snakemake -s ${SOURCE_DIR}/Snakefile -j ${JOB_COUNT} --nt --ri -k --jobname "{rulename}.{jobid}" --drmaa " -V -cwd -j y -o ./log -pe serial {cluster.cpu} -l mfree={cluster.mem} -l disk_free={cluster.disk} -l h_rt={cluster.rt} {cluster.params} -w n -S /bin/bash -l testing=true" -w 60 -u ${SOURCE_DIR}/config/sge.json "$@"
+snakemake -s ${SOURCE_DIR}/Snakefile -j ${JOB_COUNT} --nt --ri -k \
+--jobname "{rulename}.{jobid}" \
+--drmaa " -V -cwd -j y -o ./log -pe serial {cluster.cpu} -l mfree={cluster.mem} -l disk_free={cluster.disk} -l h_rt={cluster.rt} {cluster.params} -w n -S /bin/bash" \
+-w 60 -u ${SOURCE_DIR}/config/sge.json "$@"

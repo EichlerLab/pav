@@ -34,6 +34,18 @@ MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within t
 MIN_EXP_COUNT = 3  # The number of region expansions to try (including the initial expansion) and finding only fwd k-mer
                    # states after smoothing before giving up on the region.
 
+# Matrix converting k-mer location to UP/DN match. Assign
+# NA to missing or k-mers in both.
+#
+# KMER_LOC_STATE[in-upstream, in-dnstream]
+KMER_LOC_STATE = np.asarray(
+    [
+        ['NA', 'OTHER'],
+        ['SAME', 'NA']
+    ]
+)
+
+
 class InvCall:
     """
     Describes an inversion call with data supporting the call.
@@ -86,9 +98,9 @@ class InvCall:
         # Get max INV density height
         self.max_inv_den_diff = np.max(
             df.loc[
-                df['KERN_MAX'] == 2, 'KERN_REV'
+                df['STATE'] == 2, 'KERN_REV'
             ] - df.loc[
-                df['KERN_MAX'] == 2, ['KERN_FWD', 'KERN_FWDREV']
+                df['STATE'] == 2, ['KERN_FWD', 'KERN_FWDREV']
             ].apply(
                 np.max, axis=1
             )
@@ -333,6 +345,10 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
         return None
 
+    # Get INV-DUP flanking annotation. Where there is an inverted duplication on the flanks, flag k-mers that belong
+    # strictly to the upstream or downstream flanking duplication.
+    df = annotate_inv_dup_mers(df, region_ref_outer, region_ref_inner, region_tig_outer, region_tig_inner, tig_mer_region, ref_fa, k_util)
+
     # Return inversion call
     return InvCall(
         region_ref_outer, region_ref_inner,
@@ -369,7 +385,96 @@ def tree_coords(query_pos, lift_tree):
     else:
         return tree_record[2]
 
+def annotate_inv_dup_mers(
+        df,
+        region_ref_outer, region_ref_inner,
+        region_tig_outer, region_tig_inner,
+        region_tig_discovery,
+        ref_fa, k_util
+):
 
+    # Get regions for duplications - ref
+    region_dup_ref_up = asmlib.seq.Region(
+        region_ref_outer.chrom,
+        region_ref_outer.pos,
+        region_ref_inner.pos
+    )
+
+    region_dup_ref_dn = asmlib.seq.Region(
+        region_ref_outer.chrom,
+        region_ref_inner.end,
+        region_ref_outer.end
+    )
+
+    # Get regions for duplications - tig
+    region_dup_tig_up = asmlib.seq.Region(
+        region_tig_outer.chrom,
+        region_tig_outer.pos,
+        region_tig_inner.pos
+    )
+
+    region_dup_tig_dn = asmlib.seq.Region(
+        region_tig_outer.chrom,
+        region_tig_inner.end,
+        region_tig_outer.end
+    )
+
+    # Get reference k-mer sets (canonical k-mers)
+    ref_set_up = {
+        k_util.canonical_complement(kmer) for kmer in asmlib.seq.ref_kmers(region_dup_ref_up, ref_fa, k_util).keys()
+    }
+
+    ref_set_dn = {
+        k_util.canonical_complement(kmer) for kmer in asmlib.seq.ref_kmers(region_dup_ref_dn, ref_fa, k_util).keys()
+    }
+
+    # Set canonical k-mers in df
+    df['KMER_CAN'] = df['KMER'].apply(lambda kmer: k_util.canonical_complement(kmer))
+
+    # Add contig index
+    df['TIG_INDEX'] = df['INDEX'] + region_tig_discovery.pos
+
+    # Annotate upstream and downstream inverted duplications
+    df['FLANK'] = np.nan
+
+    df.loc[
+        (df['TIG_INDEX'] >= region_dup_tig_up.pos) & (df['TIG_INDEX'] < region_dup_tig_up.end - k_util.k_size),
+        'FLANK'
+    ] = 'UP'
+
+    df.loc[
+        (df['TIG_INDEX'] >= region_dup_tig_dn.pos) & (df['TIG_INDEX'] < region_dup_tig_dn.end - k_util.k_size),
+        'FLANK'
+    ] = 'DN'
+
+    # Annotate upstream/downstream k-mer matches
+    df['MATCH'] = np.nan
+
+    df.loc[df['FLANK'] == 'UP', 'MATCH'] = df.loc[
+        df['FLANK'] == 'UP', 'KMER'
+    ].apply(lambda kmer:
+        KMER_LOC_STATE[
+            int(kmer in ref_set_up),
+            int(kmer in ref_set_dn)
+        ]
+    )
+
+    df.loc[df['FLANK'] == 'DN', 'MATCH'] = df.loc[
+        df['FLANK'] == 'DN', 'KMER'
+    ].apply(lambda kmer:
+        KMER_LOC_STATE[
+            int(kmer in ref_set_dn),
+            int(kmer in ref_set_up)
+        ]
+    )
+
+    df['MATCH'] = df['MATCH'].apply(lambda val: val if val != 'NA' else np.nan)
+
+    # Return updated DataFrame
+    del(df['KMER_CAN'])
+    del(df['TIG_INDEX'])
+
+    return df
 
 
 def _write_log(message, log):

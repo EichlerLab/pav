@@ -20,8 +20,8 @@ rule call_merge_haplotypes:
        bed2='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
        con_bed='results/{asm_name}/align/depth_1/regions_h12.bed'
     output:
-        bed=protected('results/{asm_name}/bed/{vartype}_{svtype}_h12.bed.gz'),
-        fa=protected('results/{asm_name}/fa/{vartype}_{svtype}_h12.fa.gz')
+        bed='results/{asm_name}/bed/{vartype}_{svtype}_h12.bed.gz',
+        fa='results/{asm_name}/fa/{vartype}_{svtype}_h12.fa.gz'
     run:
 
         # Get configured merge definition
@@ -45,6 +45,11 @@ rule call_merge_haplotypes:
         del(df['DISC_CLASS'])
 
         df.columns = [re.sub('^MERGE_', 'HAP_', val) for val in df.columns]
+
+        del(df['HAP_SRC'])
+        del(df['HAP_SRC_ID'])
+
+        df.columns = ['HAP_SRC' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
         # Load consensus regions
         consensus_tree = collections.defaultdict(intervaltree.IntervalTree)
@@ -143,7 +148,7 @@ rule call_inv_bed:
         df.drop_duplicates('ID', inplace=True)
 
         # Set common columns
-        tig_region_match = re.match('^([^:]+):(\d+)-(\d+)$', df.iloc[0]['TIG_RGN_OUTER'])
+        tig_region_match = re.match('^([^:]+):(\d+)-(\d+)$', df.iloc[0]['RGN_TIG_OUTER'])
 
         df['HAP'] = wildcards.hap
         df['TIG_N'] = 1
