@@ -12,13 +12,14 @@ import asmlib
 import kanapy
 
 
-def dotplot_inv_call(inv_call, ref_fa, aln_file_name, coords='discovery'):
+def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None, coords='discovery'):
     """
     Make a dotplot of an inversion call.
 
     :param inv_call: asmlib.inv.InvCall object describing the inversion.
     :param ref_fa: Reference FASTA.
     :param aln_file_name: Alignment file name.
+    :param seq_tig: Contig alignment sequence or `None`. If `None`, then `aln_file_name` must be set.
     :param coords: Coordinates to plot. Defaults to discovery region, which includes unique sequence on each side
         of the inversion and shows the full context of the inversion call. Other valid values are "outer" and "inner"
         for outer and inner breakpoints.
@@ -48,25 +49,26 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name, coords='discovery'):
     seq_ref = asmlib.seq.fa_region(region_ref, ref_fa)
 
     # Get contig sequence
-    contig_record_list = asmlib.seq.get_matching_alignments(region_ref, region_tig, aln_file_name, ref_fa)
+    if seq_tig is None:
+        contig_record_list = asmlib.seq.get_matching_alignments(region_ref, region_tig, aln_file_name, ref_fa)
 
-    if len(contig_record_list) != 1:
-        raise RuntimeError('Expected 1 overlapping region for {} aligned to {}: Found {}'.format(
-            region_tig, region_ref, len(contig_record_list)
-        ))
+        if len(contig_record_list) != 1:
+            raise RuntimeError('Expected 1 overlapping region for {} aligned to {}: Found {}'.format(
+                region_tig, region_ref, len(contig_record_list)
+            ))
 
-    contig_record = contig_record_list[0]
-    del contig_record_list
+        contig_record = contig_record_list[0]
+        del contig_record_list
 
-    # Count hard-clipped bases
-    query_start = 0
+        # Count hard-clipped bases
+        query_start = 0
 
-    index = 0
-    while contig_record.cigar[index][0] == 5:  # 5 = H cigar op
-        query_start += contig_record.cigar[index][1]
-        index += 1
+        index = 0
+        while contig_record.cigar[index][0] == 5:  # 5 = H cigar op
+            query_start += contig_record.cigar[index][1]
+            index += 1
 
-    seq_tig = contig_record.query_sequence[(region_tig.pos - query_start):(region_tig.end - query_start)]
+        seq_tig = contig_record.query_sequence[(region_tig.pos - query_start):(region_tig.end - query_start)]
 
     # Create plot config
     plot_config = {

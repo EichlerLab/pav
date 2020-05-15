@@ -24,7 +24,7 @@ rule align_tiling_bed:
 
         this_chrom = None
 
-        last_interval = None  # [0] POS, [1] END, [2] ID
+        last_interval = None  # [0] POS, [1] END, [2] QUERY_ID
 
         interval_list = list()
 
@@ -36,7 +36,7 @@ rule align_tiling_bed:
                 if last_interval is not None:
                     interval_list.append(pd.Series(
                         [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'ID']
+                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
                     ))
 
                 this_chrom = row['#CHROM']
@@ -56,31 +56,31 @@ rule align_tiling_bed:
 
                     interval_list.append(pd.Series(
                         [this_chrom, last_interval[0], endpoint, last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'ID']
+                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
                     ))
 
                     # Set last interval
-                    last_interval = (endpoint, row['END'], row['ID'])
+                    last_interval = (endpoint, row['END'], row['QUERY_ID'])
 
                 else:
                     # Contig alignments do not overlap
                     interval_list.append(pd.Series(
                         [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'ID']
+                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
                     ))
 
                     # Set last interval
-                    last_interval = (row['POS'], row['END'], row['ID'])
+                    last_interval = (row['POS'], row['END'], row['QUERY_ID'])
 
             else:
                 # Set last interval
-                last_interval = (row['POS'], row['END'], row['ID'])
+                last_interval = (row['POS'], row['END'], row['QUERY_ID'])
 
         # Add final interval
         if last_interval is not None:
             interval_list.append(pd.Series(
                 [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                index=['#CHROM', 'POS', 'END', 'ID']
+                index=['#CHROM', 'POS', 'END', 'QUERY_ID']
             ))
 
         # Merge and write BED
@@ -199,7 +199,10 @@ rule align_get_read_bed:
                         record.reference_name,
                         record.reference_start,
                         record.reference_end,
+
                         record.query_name,
+                        record.query_alignment_start,
+                        record.query_alignment_end,
 
                         tags['RG'] if 'RG' in tags else 'NA',
 
@@ -213,7 +216,8 @@ rule align_get_read_bed:
                         wildcards.hap
                     ],
                     index=[
-                        '#CHROM', 'POS', 'END', 'ID',
+                        '#CHROM', 'POS', 'END',
+                        'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                         'RG',
                         'MAPQ', 'CLIP_L', 'CLIP_R',
                         'REV', 'FLAGS', 'HAP'

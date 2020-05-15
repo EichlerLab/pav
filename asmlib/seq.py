@@ -4,6 +4,7 @@ Routines for aligned contigs.
 
 import Bio.SeqIO
 import collections
+import intervaltree
 import io
 import numpy as np
 import pandas as pd
@@ -156,6 +157,22 @@ class Region:
             self.end == other.end
         )
 
+    def __add__(self, other):
+
+        if not np.issubdtype(other.__class__, np.integer):
+            raise RuntimeError('Region addition expected integer, receieved: {:s}'.format(other.__class__.__name__))
+
+        self.pos += other
+        self.end += other
+
+    def __sub__(self, other):
+
+        if not np.issubdtype(other.__class__, np.integer):
+            raise RuntimeError('Region addition expected integer, receieved: {:s}'.format(other.__class__.__name__))
+
+        self.pos -= other
+        self.end -= other
+
     def copy(self):
         """
         Deep copy this object.
@@ -290,7 +307,7 @@ def subseq_region(region, aln_file_name, subseq_exe):
                 str(record.seq)
             )
 
-def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa):
+def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa, query_start=None):
     """
     Get a list of coordinates through an alignment that match a query sequence to the subject (reference) it is aligned
     to.
@@ -299,6 +316,10 @@ def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa):
     :param query_region: Query region to characterize. All coordinates within this region are returned.
     :param aln_file_name: Alignment file name.
     :param ref_fa: Reference file name.
+    :param query_start: Choose an alignment only if the first query (contig) base mapped is this value. Setting this
+        value to the known start position of a query record allows overlapping alignments to be handled if the
+        contig start is known ahead of time. If `None`, choose any alignment and generate an error if more than two
+        contigs with the same name (`query_region.chrom`) are mapped to the same `subject_region` region.
 
     :return: A list of tuples describing the coordinates of `subject_region` and `query_region` through an alignment
         within those regions. Each tuple item includes (query start, query end, subject start, subject end, cigar
@@ -316,6 +337,10 @@ def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa):
                     record.query_alignment_end >= query_region.end
             ):
 
+                # Skip if query_start_pos does not match
+                if query_start is not None and record.query_alignment_start != query_start:
+                    continue
+
                 # Check for overlapping alignment records
                 if lift_list is not None:
                     raise RuntimeError('More than one matching query sequence "{}" aligned within "{}"'.format(
@@ -323,63 +348,191 @@ def cigar_lift_to_subject(subject_region, query_region, aln_file_name, ref_fa):
                     ))
 
                 # Build a list of records
-                lift_list = list()
-
-                query_pos = 0
-                subject_pos = record.reference_start
-
-                query_pos_start = query_region.pos
-                query_pos_end = query_region.end
-
-                cigar_index = 0
-
-                for cigar_op, cigar_len in record.cigar:
-
-                    # Stop processing if this record start beyond the final position in query_region
-                    if query_pos > query_pos_end:
-                        break
-
-                    last_query_pos = query_pos
-                    last_subject_pos = subject_pos
-
-                    # Update positions on this CIGAR op
-                    if cigar_op in {0, 7, 8}:  # {M, = , X}
-                        # Consume both
-                        query_pos += cigar_len
-                        subject_pos += cigar_len
-
-                    elif cigar_op in {1, 4, 5}:  # {I, S, H}
-                        # Consume query only
-                        query_pos += cigar_len
-
-                    elif cigar_op in {2, 3}:  # {D, N}
-                        # Consume subject only
-                        subject_pos += cigar_len
-
-                    elif cigar_op != 6:  # P
-
-                        # Unrecognized opcode
-                        raise RuntimeError(
-                            'Unrecognized opcode in CIGAR string for alignment {}:{}-{} ({}:{}-{}) at CIGAR index {}: {} (oplen = {})'.format(
-                                record.query_name, record.query_alignment_start, record.query_alignment_end,
-                                record.reference_name, record.reference_start, record.reference_end,
-                                cigar_index, cigar_op, cigar_len
-                            )
-                        )
-
-                    # Emmit record
-                    if query_pos >= query_pos_start or True:
-                        lift_list.append((
-                            last_query_pos, query_pos,
-                            last_subject_pos, subject_pos,
-                            cigar_op, cigar_len
-                        ))
-
-                    # Track CIGAR index for errors
-                    cigar_index += 1
+                lift_list = lift_list_from_alignment_record(record, query_region)
 
     # Return list
     return lift_list
+
+def get_query_sequence(subject_region, query_name, aln_file_name, ref_fa):
+    """
+    Get query sequence from an alignment record.
+
+    :param subject_region: Subject (reference) region of the aligned contig. Contig must align to start and end
+        positions.
+    :param query_name: Contig name.
+    :param aln_file_name: Alignment file name.
+    :param ref_fa: Reference FASTA.
+
+    :return: Sequence or None if no sequence was found.
+    """
+
+    with pysam.AlignmentFile(aln_file_name, 'rb', reference_filename=ref_fa) as aln_file:
+        for record in aln_file.fetch(subject_region.chrom, subject_region.pos, subject_region.end):
+            if (
+                    record.query_name == query_name and
+                    record.reference_start == subject_region.pos and
+                    record.reference_end == subject_region.end
+            ):
+                return record.seq
+
+    # No records found
+    return None
+
+def lift_list_from_alignment_record(record, query_region):
+    """
+    Generatea list of match reference/subject coordinates. See `cigar_lift_to_subject()`.
+
+    :param record: Alignment record.
+    :param query_region: Region to generate a lift-list for.
+
+    :return: List of coordinates. See `cigar_lift_to_subject()`.
+    """
+    lift_list = list()
+
+    query_pos = 0  # Code reads clipped bases and adds, do not start at record.query_alignment_start
+    subject_pos = record.reference_start
+
+    query_pos_start = query_region.pos
+    query_pos_end = query_region.end
+
+    cigar_index = 0
+
+    for cigar_op, cigar_len in record.cigar:
+
+        # Stop processing if this record start beyond the final position in query_region
+        if query_pos > query_pos_end:
+            break
+
+        last_query_pos = query_pos
+        last_subject_pos = subject_pos
+
+        # Update positions on this CIGAR op
+        if cigar_op in {0, 7, 8}:  # {M, = , X}
+            # Consume both
+            query_pos += cigar_len
+            subject_pos += cigar_len
+
+        elif cigar_op in {1, 4, 5}:  # {I, S, H}
+            # Consume query only
+            query_pos += cigar_len
+
+        elif cigar_op in {2, 3}:  # {D, N}
+            # Consume subject only
+            subject_pos += cigar_len
+
+        elif cigar_op != 6:  # P
+
+            # Unrecognized opcode
+            raise RuntimeError(
+                'Unrecognized opcode in CIGAR string for alignment {}:{}-{} ({}:{}-{}) at CIGAR index {}: {} (oplen = {})'.format(
+                    record.query_name, record.query_alignment_start, record.query_alignment_end,
+                    record.reference_name, record.reference_start, record.reference_end,
+                    cigar_index, cigar_op, cigar_len
+                )
+            )
+
+        # Emmit record
+        if cigar_op not in {4, 5}:
+            if query_pos >= query_pos_start:
+                lift_list.append((
+                    last_query_pos, query_pos,
+                    last_subject_pos, subject_pos,
+                    cigar_op, cigar_len
+                ))
+
+        # Track CIGAR index for errors
+        cigar_index += 1
+
+    return lift_list
+
+def get_lift_tree(lift_list, key_query=True):
+    """
+    Generate a tree of coordinates that can be queried.
+
+    :param lift_list: List of lift tuples representing coordinates to lift:
+        (query start, query end, subject start, subject end).
+    :param query_ref: If `True`, generate a tree keyed by records by query (tig) coordinates, otherwise, key by
+        subject (reference) coordinates.
+
+    :return: Tree structure of lift coordinates.
+    """
+
+    lift_tree = intervaltree.IntervalTree()
+
+    if key_query:
+        for record in lift_list:
+            if record[1] > record[0]:
+                lift_tree[record[0]:record[1]] = record
+
+    else:
+        for record in lift_list:
+            if record[3] > record[2]:
+                lift_tree[record[2]:record[3]] = record
+
+    return lift_tree
+
+def tree_coords(query_pos, lift_tree, get_subject=True):
+    """
+    Get subject (reference) coordinates using a lift-tree (cigar_lift_to_subject converted to an
+    intervaltree with get_lift_tree).
+
+    :param query_pos: Positive on the query (contig).
+    :param lift_tree: Lift tree.
+
+    :return: Position on the subject (reference).
+    """
+
+    # Get intersecting record
+    tree_record = lift_tree[query_pos]
+
+    if len(tree_record) != 1:
+        raise RuntimeError('Could not lift coordinate to reference "{}": Expected 1 matching record, found {}'.format(
+            query_pos, len(tree_record)
+        ))
+
+    tree_record = list(tree_record)[0].data # From single-element set to the element (remove from set)
+
+    # Iterpolate within record
+    if get_subject:
+        if tree_record[3] - tree_record[2] > 0:
+            return tree_record[2] + (query_pos - tree_record[0])
+        else:
+            return tree_record[2]
+
+    else:
+        if tree_record[1] - tree_record[0] > 0:
+            return tree_record[0] + (query_pos - tree_record[2])
+        else:
+            return tree_record[0]
+
+def lift_coordinate(pos, subject_region, query_region, aln_file_name, ref_fa, to_subject=True):
+    """
+    Get subject (reference) coordinates using a lift-tree generated from a reference and contig region. If multiple
+    coordinates must be generated from the region, then build the lift tree with `cigar_lift_to_subject` and
+    `get_lift_tree', then query multiple times with `tree_coords`
+
+    :param pos: Position to lift.
+    :param subject_region: Subject (reference) region the query is aligned to.
+    :param query_region: Query region to characterize. All coordinates within this region are returned.
+    :param aln_file_name: Alignment file name.
+    :param ref_fa: Reference file name.
+    :param to_subject: `True` if lifting from query (aligned sequence) to subject (reference). If `False`, lift from
+        subject to query.
+
+    :return: Position on the subject (reference).
+    """
+
+    lift_list = cigar_lift_to_subject(
+        subject_region,
+        query_region,
+        aln_file_name,
+        ref_fa
+    )
+
+    lift_tree = get_lift_tree(lift_list, key_query=to_subject)
+
+    return tree_coords(pos, lift_tree, get_subject=to_subject)
+
 
 def get_matching_alignments(region_ref, region_tig, aln_file_name, ref_fa):
     """

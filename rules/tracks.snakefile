@@ -17,7 +17,7 @@ def _track_get_input_bed(wildcards):
     :return: List of input file(s).
     """
 
-    if wildcards.svtype == 'all':
+    if wildcards.svtype == 'insdel':
 
         if wildcards.vartype not in {'sv', 'indel'}:
             raise RuntimeError('Cannot collect "all" for variant type: {} (must be a valid variant type with more than one svtype)'.format(wildcards.vartype))

@@ -48,6 +48,8 @@ rule call_merge_haplotypes:
 
         del(df['HAP_SRC'])
         del(df['HAP_SRC_ID'])
+        del(df['HAP_AC'])
+        del(df['HAP_AF'])
 
         df.columns = ['HAP_SRC' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
@@ -56,7 +58,7 @@ rule call_merge_haplotypes:
 
         df_con = pd.read_csv(input.con_bed, sep='\t', header=None, names=('#CHROM', 'POS', 'END'))
 
-        for index, row in df.iterrows():
+        for index, row in df_con.iterrows():
             consensus_tree[row['#CHROM']][row['POS']:row['END']] = True
 
         # Define a function to annotate consensus regions
@@ -288,7 +290,7 @@ rule call_variant_cluster:
 
         for index, row in df_tile.iterrows():
             if row['END'] - row['POS'] > 0:
-                tiling_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+                tiling_tree[row['#CHROM']][row['POS']:row['END']] = row['QUERY_ID']
 
         def get_central_id(row):
             central_set = tiling_tree[row['#CHROM']][row['POS']:row['END']]
@@ -443,6 +445,12 @@ rule call_variant_cluster:
         df_merge_support.set_index('INDEX', inplace=True)
 
         df_merge = pd.concat([df_merge, df_merge_support], axis=1).sort_values(['#CHROM', 'POS'])
+
+        # Remove IS_CENTRAL
+        del(df['IS_CENTRAL'])
+
+        # Add source
+        df['CALL_SOURCE'] = 'PG'
 
         # Move SEQ to end
         if 'SEQ' in df_merge.columns:

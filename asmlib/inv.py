@@ -310,14 +310,14 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
     # Get inner and outer reference coordinate breakpoints
     region_ref_outer = asmlib.seq.Region(
         region.chrom,
-        tree_coords(region_tig_outer.pos, lift_tree),
-        tree_coords(region_tig_outer.end, lift_tree)
+        asmlib.seq.tree_coords(region_tig_outer.pos, lift_tree),
+        asmlib.seq.tree_coords(region_tig_outer.end, lift_tree)
     )
 
     region_ref_inner = asmlib.seq.Region(
         region.chrom,
-        tree_coords(region_tig_inner.pos, lift_tree),
-        tree_coords(region_tig_inner.end, lift_tree)
+        asmlib.seq.tree_coords(region_tig_inner.pos, lift_tree),
+        asmlib.seq.tree_coords(region_tig_inner.end, lift_tree)
     )
 
     # Check size proportions
@@ -356,34 +356,6 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
         region, tig_mer_region,
         region_flag, df
     )
-
-
-def tree_coords(query_pos, lift_tree):
-    """
-    Get subject (reference) coordinates using a lift-tree (asmlib.seq.cigar_lift_to_subject converted to an
-    intervaltree).
-
-    :param query_pos: Positive on the query (contig).
-    :param lift_tree: Lift tree.
-
-    :return: Position on the subject (reference).
-    """
-
-    # Get intersecting record
-    tree_record = lift_tree[query_pos]
-
-    if len(tree_record) != 1:
-        raise RuntimeError('Could not lift coordinate to reference "{}": Expected 1 matching record, found {}'.format(
-            query_pos, len(tree_record)
-        ))
-
-    tree_record = list(tree_record)[0].data # From single-element set to the element (remove from set)
-
-    # Iterpolate within record
-    if tree_record[3] - tree_record[2] > 0:
-        return tree_record[2] + (query_pos - tree_record[0])
-    else:
-        return tree_record[2]
 
 def annotate_inv_dup_mers(
         df,

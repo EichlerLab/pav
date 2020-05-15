@@ -15,11 +15,17 @@ QUERY_ID	lstring	tigName	Lead contig	Name of lead contig with variant
 QUERY_POS	uint	tigPos	Lead contig pos	Start position of variant in lead contig (BED coord.)
 QUERY_END	uint	tigEnd	Lead contig end	End position of variant in lead contig (BED coord.)
 QUERY_STRAND	char[1]	tigStrand	Lead contig strand	Orientation vs reference of lead contig
-IS_CENTRAL	string	isCentral	Is central	Is central if this contig is lead (True for all after clustering)
 TIG_N	uint	tigN	Contig N	Number of contigs aligning over variant
 TIG_SUPPORT	lstring	tigAllName	Contig support	Number of contigs aligning over variant and supporting the variant
 TIG_COORD	lstring	tigAllPos	Contig coord	Comma-separated list of all contigs aligning over region
 TIG_STRAND	lstring	tigAllEnd	Contig strand	Comma-separated list of variant positions on contigs (start:end, BED coord.) matching order of listed contigs
+HAP_SRC	string	hapSrc	Hap list	List of haplotypes variant was found it
+HAP_VARIANTS	lstring	hapVar	Hap vars	List of lead variants in each haplotype
+HAP_RO	string	hapRo	Hap RO	Reciprocal overlap between variants in each haplotype.
+HAP_OFFSET	string	hapOff	Hap Off	Offset distance between variants in each haplotype (min of start or end differences).
+HAP_SZRO	string	hapSzro	Hap Size RO	Size reciprocal overlap with the lead variant (h1 for HET)
+HAP_OFFSZ	string	hapOffsz	Hap Offset-size	Offset / size
+HAP_CONSENSUS	string	hapCon	Align consensus	True if variant is in a contig-depth 1 region in both haplotypes.
 SEQ	lstring	seq	Sequence	Variant sequence
 REF	string	ref	Ref	Reference base/sequence (SNVs)
 ALT	string	alt	Alt	Variant base/sequence (SNVs)
