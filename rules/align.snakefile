@@ -2,121 +2,6 @@
 Process alignments and alignment tiling paths.
 """
 
-# align_tiling_bed
-#
-# Make a tiling path for the most central aligned locations in each contig. This defines the regions
-# for each contig where variants should be called.
-rule align_tiling_bed:
-    input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
-    output:
-        bed='results/{asm_name}/align/central_tiling_path_{hap}.bed'
-    wildcard_constraints:
-        hap='h(1|2)'
-    run:
-
-        # Read contig alignments and prioritize
-        df_tig = pd.read_csv(input.bed, sep='\t')
-
-        df_tig.sort_values(['#CHROM', 'POS'], inplace=True)
-
-        df_tig.reset_index(drop=True, inplace=True)
-
-        this_chrom = None
-
-        last_interval = None  # [0] POS, [1] END, [2] QUERY_ID
-
-        interval_list = list()
-
-        # Traverse sorted alignment records
-        for index, row in df_tig.iterrows():
-
-            # Handle chrom change
-            if row['#CHROM'] != this_chrom:
-                if last_interval is not None:
-                    interval_list.append(pd.Series(
-                        [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
-                    ))
-
-                this_chrom = row['#CHROM']
-                last_interval = None
-
-            # Compare to last interval
-            if last_interval is not None:
-
-                if row['END'] <= last_interval[1]:
-                    continue  # Alignment is shorter than the last interval, cannot factor into tiling path
-
-                if last_interval[1] > row['POS']:
-                    # Contig alignments overlap
-
-                    # Find endpoint
-                    endpoint = (last_interval[1] + row['POS']) // 2
-
-                    interval_list.append(pd.Series(
-                        [this_chrom, last_interval[0], endpoint, last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
-                    ))
-
-                    # Set last interval
-                    last_interval = (endpoint, row['END'], row['QUERY_ID'])
-
-                else:
-                    # Contig alignments do not overlap
-                    interval_list.append(pd.Series(
-                        [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                        index=['#CHROM', 'POS', 'END', 'QUERY_ID']
-                    ))
-
-                    # Set last interval
-                    last_interval = (row['POS'], row['END'], row['QUERY_ID'])
-
-            else:
-                # Set last interval
-                last_interval = (row['POS'], row['END'], row['QUERY_ID'])
-
-        # Add final interval
-        if last_interval is not None:
-            interval_list.append(pd.Series(
-                [this_chrom, last_interval[0], last_interval[1], last_interval[2]],
-                index=['#CHROM', 'POS', 'END', 'QUERY_ID']
-            ))
-
-        # Merge and write BED
-        df_tile = pd.concat(interval_list, axis=1).T
-
-        df_tile.to_csv(output.bed, sep='\t', index=False)
-
-# align_single_hap_win_merge
-#
-# Intersect haplotype regions.
-rule align_single_hap_win_merge:
-    input:
-        bed1='results/{asm_name}/align/depth_1/regions_h1.bed',
-        bed2='results/{asm_name}/align/depth_1/regions_h2.bed'
-    output:
-        bed='results/{asm_name}/align/depth_1/regions_h12.bed'
-    shell:
-        """bedtools intersect -header -a {input.bed1} -b {input.bed2} """
-        """> {output.bed}"""
-
-# align_single_hap_win
-#
-# Get locations represented by a single contig.
-rule align_single_hap_win:
-    input:
-        bed='results/{asm_name}/align/genomecov_{hap}.bed.gz'
-    output:
-        bed='results/{asm_name}/align/depth_1/regions_{hap}.bed'
-    wildcard_constraints:
-        hap='h(1|2)'
-    shell:
-        """zcat {input.bed} | """
-        """awk -vOFS="\\t" '($4 == 1) {{print $1, $2, $3}}' | """
-        """bedtools merge -d {CONTIG_ALIGN_MERGE_DIST} """
-        """> {output.bed}"""
-
 # align_genomecov
 #
 # Get genome coverage.
@@ -145,7 +30,10 @@ rule align_merge_h12_read_bed:
 
         # Read
         df1 = pd.read_csv(input.bed1, sep='\t', low_memory=False)
+        df1['HAP'] = 'h1'
+
         df2 = pd.read_csv(input.bed2, sep='\t', low_memory=False)
+        df1['HAP'] = 'h2'
 
         # Merge & sort
         df = pd.concat([df1, df2], axis=0)
@@ -155,14 +43,275 @@ rule align_merge_h12_read_bed:
         # Write
         df.to_csv(output.bed, sep='\t', index=False)
 
+
+# align_sort_cram
+#
+# Sort alignments.
+rule align_sort_cram:
+    input:
+        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
+    output:
+        aln='results/{asm_name}/align/aligned_tig_{hap}.cram',
+        alni='results/{asm_name}/align/aligned_tig_{hap}.cram.crai'
+    run:
+
+        # Make temp
+        temp_dir = tempfile.mkdtemp(prefix='pg_align_map_')
+
+        try:
+            shell(
+                """samtools sort -@ 4 -T {temp_dir}/sort_ {input.sam} | """
+                """samtools view -T {REF_FA} -O CRAM -o {output.aln}; """
+                """samtools index {output.aln}; """
+                """touch -r {output.aln} {output.alni}"""
+            )
+
+        finally:
+
+            # Remove temp
+            shutil.rmtree(temp_dir)
+
+
+# align_cut_tig_overlap
+#
+# Cut contig alignment overlaps
+rule align_cut_tig_overlap:
+    input:
+        bed='results/{asm_name}/align/bed/aligned_tig_uncut_{hap}.bed.gz'
+    output:
+        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+    run:
+
+        # Read uncut alignments
+        df = pd.read_csv(input.bed, sep='\t')
+
+        # Add fields for the number of bases that are removed from each end
+        df['CUT_REF_L'] = 0
+        df['CUT_REF_R'] = 0
+        df['CUT_TIG_L'] = 0
+        df['CUT_TIG_R'] = 0
+
+        # Sort by contig alignment length
+        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+
+        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+
+        df.reset_index(inplace=True, drop=True)
+
+        # Resolve overlapping contig regions aligned (one contig region aligned more than once)
+        iter_index_l = 0
+        index_max = df.shape[0]
+
+        while iter_index_l < index_max:
+            iter_index_r = iter_index_l + 1
+
+            while iter_index_r < index_max and df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID']:
+
+                # Skip if one record was already removed
+                if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                    iter_index_r += 1
+                    continue
+
+                # Get indices ordered by contig placement
+                if df.loc[iter_index_l, 'QUERY_POS'] <= df.loc[iter_index_r, 'QUERY_POS']:
+                    index_l = iter_index_l
+                    index_r = iter_index_r
+                else:
+                    index_l = iter_index_r
+                    index_r = iter_index_l
+
+                # Check for overlaps
+                if df.loc[index_r, 'QUERY_POS'] < df.loc[index_l, 'QUERY_END']:
+                    # Found overlapping records
+                    # print('Tig Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) [iter {}, {}]'.format(
+                    #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
+                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
+                    #     iter_index_l, iter_index_r
+                    # ))
+
+                    # Check for record fully contained within another
+                    if df.loc[index_r, 'QUERY_END'] <= df.loc[index_l, 'QUERY_END']:
+                        # print('\t* Fully contained')
+
+                        df.loc[index_r, 'INDEX'] = -1
+
+                    else:
+
+                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'query')
+
+                        if record_l is not None and record_r is not None:
+                            df.loc[index_l] = record_l
+                            df.loc[index_r] = record_r
+
+                        # print('\t* Trimmed')
+
+                # Next r record
+                iter_index_r += 1
+
+            # Next l record
+            iter_index_l += 1
+
+
+        # Remove discarded records and re-sort
+
+        df = df.loc[df['INDEX'] >= 0]
+
+        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+
+        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+
+        df.reset_index(inplace=True, drop=True)
+
+        # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
+        iter_index_l = 0
+        index_max = df.shape[0]
+
+        while iter_index_l < index_max:
+            iter_index_r = iter_index_l + 1
+
+            while (
+                    iter_index_r < index_max and
+                    df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID'] and
+                    df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
+            ):
+
+                # Skip if one record was already removed
+                if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                    iter_index_r += 1
+                    continue
+
+                # Get indices ordered by contig placement
+                if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
+                    index_l = iter_index_l
+                    index_r = iter_index_r
+                else:
+                    index_l = iter_index_r
+                    index_r = iter_index_l
+
+                # Check for overlaps
+                if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
+                    # Found overlapping records
+                    # print('Ref-Tig-Same Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
+                    #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
+                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
+                    #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
+                    #     iter_index_l, iter_index_r
+                    # ))
+
+                    # Check for record fully contained within another
+                    if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
+                        # print('\t* Fully contained')
+
+                        df.loc[index_r, 'INDEX'] = -1
+
+                    else:
+
+                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
+
+                        if record_l is not None and record_r is not None:
+                            df.loc[index_l] = record_l
+                            df.loc[index_r] = record_r
+
+                        # print('\t* Trimmed')
+
+                # Next r record
+                iter_index_r += 1
+
+            # Next l record
+            iter_index_l += 1
+
+
+        # Remove discarded records and re-sort
+
+        df = df.loc[df['INDEX'] >= 0]
+
+        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+
+        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+
+        df.reset_index(inplace=True, drop=True)
+
+        # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
+        iter_index_l = 0
+        index_max = df.shape[0]
+
+        while iter_index_l < index_max:
+            iter_index_r = iter_index_l + 1
+
+            while (
+                    iter_index_r < index_max and
+                    df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
+            ):
+
+                # Skip if one record was already removed
+                if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                    iter_index_r += 1
+                    continue
+
+                # Get indices ordered by contig placement
+                if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
+                    index_l = iter_index_l
+                    index_r = iter_index_r
+                else:
+                    index_l = iter_index_r
+                    index_r = iter_index_l
+
+                # Check for overlaps
+                if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
+                    # Found overlapping records
+                    # print('Ref-Tig-Other Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
+                    #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
+                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
+                    #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
+                    #     iter_index_l, iter_index_r
+                    # ))
+
+                    # Check for record fully contained within another
+                    if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
+                        # print('\t* Fully contained')
+
+                        df.loc[index_r, 'INDEX'] = -1
+
+                    else:
+
+                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
+
+                        if record_l is not None and record_r is not None:
+                            df.loc[index_l] = record_l
+                            df.loc[index_r] = record_r
+
+                        # print('\t* Trimmed')
+
+                # Next r record
+                iter_index_r += 1
+
+            # Next l record
+            iter_index_l += 1
+
+
+        # Clean and re-sort
+        df = df.loc[df['INDEX'] >= 0]
+
+        df.sort_values('INDEX', inplace=True)
+
+        del(df['QUERY_LEN'])
+
+        # Write
+        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+
+
 # align_get_read_bed
 #
 # Get alignment BED for one part (one aligned cell or split BAM) in one assembly.
 rule align_get_read_bed:
     input:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
+        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
     output:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/bed/aligned_tig_uncut_{hap}.bed.gz'
     wildcard_constraints:
         hap='h(0|1|2)'
     run:
@@ -173,7 +322,7 @@ rule align_get_read_bed:
 
         record_list = list()
 
-        with pysam.AlignmentFile(input.aln, 'rb') as in_file:
+        with pysam.AlignmentFile(input.sam, 'rb') as in_file:
             for record in in_file:
 
                 # Skipped unmapped reads
@@ -192,9 +341,15 @@ rule align_get_read_bed:
                 clip_l = cigar_tuples[l_index][1] if cigar_tuples[l_index][0] == 4 else 0
                 clip_r = cigar_tuples[r_index][1] if cigar_tuples[r_index][0] == 4 else 0
 
+                # Disallow alignment match (M) in CIGAR (requires =X for base match/mismatch)
+                if 'M' in record.cigarstring:
+                    raise RuntimeError((
+                        'Found alignment match CIGAR operation (M) for record {} (Start = {}:{}): '
+                        'Alignment requires CIGAR base-level match/mismatch (=X)'
+                    ).format(record.query_name, record.reference_name, record.reference_start))
+
                 # Save record
-                record_list.append(
-                pd.Series(
+                record_list.append(pd.Series(
                     [
                         record.reference_name,
                         record.reference_start,
@@ -213,51 +368,102 @@ rule align_get_read_bed:
                         str(record.is_reverse),
                         '0x{:04x}'.format(record.flag),
 
-                        wildcards.hap
+                        wildcards.hap,
+                        record.cigarstring
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
                         'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                         'RG',
                         'MAPQ', 'CLIP_L', 'CLIP_R',
-                        'REV', 'FLAGS', 'HAP'
+                        'REV', 'FLAGS', 'HAP',
+                        'CIGAR'
                     ]
                 ))
 
         # Merge records
         df = pd.concat(record_list, axis=1).T
 
+        df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
+
+        df.insert(3, 'INDEX', list(range(df.shape[0])))
+
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 # align_map
 #
-# Map contigs
+# Map contigs as SAM. Pull read information from the SAM before sorting and writing CRAM since tool tend to change
+# "=X" to "M" in the CIGAR.
 rule align_map:
     input:
-        asm=align_input_fasta
+        fa='align/{asm_name}/contigs_{hap}.fa.gz'
     output:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram',
-        alni='results/{asm_name}/align/aligned_tig_{hap}.cram.crai'
+        sam=temp('temp/{asm_name}/align/aligned_tig_{hap}.sam')
+    shell:
+        """minimap2 """
+            """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
+            """--secondary=no -a -t 20 --eqx -Y """
+            """-O 5,56 -E 4,1 -B 5 """
+            """{REF_FA} {input.fa} """
+            """> {output.sam}"""
+
+# align_index
+#
+# Get FASTA files.
+rule align_index:
+    input:
+        fa=align_input_fasta
+    output:
+        fa='align/{asm_name}/contigs_{hap}.fa.gz'
     run:
 
-        # Make temp
-        temp_dir = tempfile.mkdtemp(prefix='pg_align_map_')
+        # Determine if file is BGZF compressed
+        is_bgzf = False
 
         try:
-            shell(
-                """minimap2 """
-                    """--secondary=no -a -t 20 --eqx -Y """
-                    """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
-                    """-O 5,56 -E 4,1 -B 5 """
-                    """{REF_FA} {input.asm} | """
-                """samtools sort -@ 4 -T {temp_dir}/sort_ | """
-                """samtools view -T {REF_FA} -O CRAM -o {output.aln}; """
-                """samtools index {output.aln}; """
-                """touch -r {output.aln} {output.alni}"""
-            )
+            with Bio.bgzf.open(input.fa, 'r') as in_file_test:
+                is_bgzf = True
 
-        finally:
+        except ValueError:
+            pass
 
-            # Remove temp
-            shutil.rmtree(temp_dir)
+        # Copy or compress
+        if is_bgzf:
+
+            # Copy file if already compressed
+            shutil.copyfile(input.fa, output.fa)
+
+        else:
+            # Compress to BGZF
+
+            is_gz = False
+
+            try:
+                with gzip.open(input.fa, 'r') as in_file_test:
+
+                    line = next(in_file_test)
+
+                    is_gz = True
+
+            except OSError:
+                pass
+
+            if is_gz:
+                # Re-compress to BGZF
+
+                with gzip.open(input.fa, 'rb') as in_file:
+                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
+                        for line in in_file:
+                            out_file.write(line)
+
+            else:
+                # Compress plain text
+
+                with open(input.fa, 'r') as in_file:
+                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
+                        for line in in_file:
+                            out_file.write(line)
+
+        # Index
+        shell("""samtools faidx {output.fa}""")

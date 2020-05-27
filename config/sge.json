@@ -45,6 +45,10 @@
     "align_merge_h12_read_bed": {
         "mem": "4G"
     },
+    "align_sort_cram": {
+        "cpu": "4",
+        "mem": "4G"
+    },
     "align_get_read_bed": {
         "mem": "6G"
     },
