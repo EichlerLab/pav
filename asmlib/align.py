@@ -2,6 +2,8 @@
 Routines for handling alignments.
 """
 
+import collections
+import intervaltree
 import numpy as np
 
 
@@ -484,3 +486,304 @@ def cigar_str_to_tuples(record):
         yield((int(cigar[pos:len_pos]), cigar[len_pos]))
 
         pos = len_pos + 1
+
+
+def get_max_cluster(df, chrom, min_prop=0.85, min_aln_len=1e6):
+    """
+    For a chromosome, get the name of the cluster with the most aligned bases. When contigs are assigned to a chromosome cluster
+    as part of the assembly process (Strand-seq phased assembly pipeline), this can be used to filter erroneously mapped contigs
+    belonging to other chromosomes (SD driven mapping errors).
+
+    :param df: DataFrame of alignments.
+    :param chrom: Chromosome to check.
+    :param min_prop: Only return if the cluster accounts for at least this proportion of aligned bases on the chromosome.
+    """
+
+    subdf = df.loc[df['#CHROM'] == chrom]
+
+    if np.sum(subdf['SUB_LEN']) < min_aln_len or subdf.shape[0] == 1:
+        return None
+
+    cluster_count = df.loc[df['#CHROM'] == chrom].groupby('CLUSTER')['SUB_LEN'].sum().sort_values(ascending=False)
+
+    if cluster_count.shape[0] == 0 or cluster_count.iloc[0] / np.sum(cluster_count) < min_prop:
+        return None
+
+    return cluster_count.index[0]
+
+
+class AlignLift:
+    """
+    Create an alignment liftover object for translating between reference and contig alignments (both directions). Build
+    liftover from alignment data in a DataFrame (requires #CHROM, POS, END, QUERY_ID, QUERY_POS, and QUERY_END). The
+    DataFrame index must not have repeated values. The data-frame is also expected not to change, so feed this object
+    a copy if it might be altered while this object is in use.
+    """
+
+    def __init__(self, df, df_fai, cache_align=10):
+
+        self.df = df
+        self.df_fai = df_fai
+        self.cache_align = cache_align
+
+        # Check df
+        if len(set(df.index)) != df.shape[0]:
+            raise RuntimeError('Cannot create AlignLift object with duplicate index values')
+
+        # Build a reference-coordinate and a tig-coordinate tree
+        self.ref_tree = collections.defaultdict(intervaltree.IntervalTree)
+        self.tig_tree = collections.defaultdict(intervaltree.IntervalTree)
+
+        for index, row in df.iterrows():
+            self.ref_tree[row['#CHROM']][row['POS']:row['END']] = row['INDEX']
+            self.tig_tree[row['QUERY_ID']][row['QUERY_POS']:row['QUERY_END']] = row['INDEX']
+
+        # Build alignment caching structures
+        self.cache_queue = collections.deque()
+
+        self.ref_cache = dict()
+        self.tig_cache = dict()
+
+    def lift_to_sub(self, query_id, coord):
+
+        # Determine type
+        if issubclass(coord.__class__, list) or issubclass(coord.__class__, tuple):
+            ret_list = True
+        else:
+            ret_list = False
+            coord = (coord,)
+
+        # Do lift
+        lift_coord_list = list()
+
+        for pos in coord:
+
+            # Find forward or reverse match set
+            match_set = self.tig_tree[query_id][pos:(pos + 1)]
+
+            # Check coordinates
+            if len(match_set) == 0:
+                raise ValueError('Query region {}:{} has no to-subject lift records'.format(query_id, pos))
+
+            if len(match_set) > 1:
+                raise ValueError(
+                    'Query region {}:{} has {} to-subject lift records'.format(query_id, pos, len(match_set))
+                )
+
+            # Get index and row
+            index = list(match_set)[0].data
+            row = self.df.loc[index]
+
+            # Translate pos if rev-complemented
+            if row['REV']:
+                pos = self.df_fai[query_id] - pos
+
+            # Get lift tree
+            if index not in self.tig_cache.keys():
+                self.add_align(index)
+
+            lift_tree = self.tig_cache[index]
+
+            # Save row
+
+
+            # Invert coordinates if alignment record was rev-complemented
+            if row['REV']:
+                pos = self.df_fai[row['QUERY_ID']] - pos
+
+            # Get match record
+            match_set = lift_tree[pos:(pos + 1)]
+
+            if len(match_set) != 1:
+                raise RuntimeError(
+                    (
+                        'Program bug: Found no matches in a lift-tree for a record withing a '
+                        'global to-subject tree: {}:{} (index={})'
+                    ).format(query_id, pos, index)
+                )
+
+            match_interval = list(match_set)[0]
+
+            # Interpolate coordinates
+            if match_interval.data[1] - match_interval.data[0] > 1:
+                lift_coord_list.append((
+                    row['#CHROM'],
+                    match_interval.data[0] + (pos - match_interval.begin)
+                ))
+
+            else:  # Lift from missing bases on the target (insertion or deletion)
+                lift_coord_list.append((
+                    row['#CHROM'],
+                    match_interval.data[1]
+                ))
+
+        # Return coordinates
+        if ret_list:
+            return lift_coord_list
+        else:
+            return lift_coord_list[0]
+
+    def lift_to_qry(self, subject_id, coord):
+
+        # Determine type
+        if issubclass(coord.__class__, list) or issubclass(coord.__class__, tuple):
+            ret_list = True
+        else:
+            ret_list = False
+            coord = (coord,)
+
+        # Do lift
+        lift_coord_list = list()
+
+        for pos in coord:
+            match_set = self.ref_tree[subject_id][pos:(pos + 1)]
+
+            # Check coordinates
+            if len(match_set) == 0:
+                raise ValueError('Subject region {}:{} has no to-query lift records'.format(subject_id, pos))
+
+            if len(match_set) > 1:
+                raise ValueError(
+                    'Subject region {}:{} has {} to-query lift records'.format(subject_id, pos, len(match_set))
+                )
+
+            # Get lift tree
+            index = list(match_set)[0].data
+
+            if index not in self.ref_cache.keys():
+                self.add_align(index)
+
+            lift_tree = self.ref_cache[index]
+
+            # Save row
+            row = self.df.loc[index]
+
+            # Get match record
+            match_set = lift_tree[pos:(pos + 1)]
+
+            if len(match_set) != 1:
+                raise RuntimeError(
+                    (
+                        'Program bug: Found no matches in a lift-tree for a record withing a '
+                        'global to-query tree: {}:{} (index={})'
+                    ).format(subject_id, pos, index)
+                )
+
+            match_interval = list(match_set)[0]
+
+            # Interpolate coordinates
+            if match_interval.data[1] - match_interval.data[0] > 1:
+                qry_pos = match_interval.data[0] + (pos - match_interval.begin)
+
+            else:  # Lift from missing bases on the target (insertion or deletion)
+                qry_pos = match_interval.data[1]
+
+            if row['REV']:
+                qry_pos = self.df_fai[row['QUERY_ID']] - qry_pos
+
+            lift_coord_list.append((
+                row['QUERY_ID'],
+                qry_pos
+            ))
+
+        # Return coordinates
+        if ret_list:
+            return lift_coord_list
+        else:
+            return lift_coord_list[0]
+
+    def add_align(self, index):
+        """
+        Add an alignment from DataFrame index `index`.
+
+        :param index: DataFrame index.
+        """
+
+        # No alignment to add if it's already cached.
+        if index in self.ref_cache.keys():
+            return
+
+        # Make space for this alignment
+        self.check_and_clear()
+
+        # Get row
+        row = self.df.loc[index]
+
+        # Build lift trees
+        sub_bp = row['POS']
+        qry_bp = 0
+
+        itree_ref = intervaltree.IntervalTree()
+        itree_tig = intervaltree.IntervalTree()
+
+        # Get CIGAR and check query start position
+        cigar_op_list = list(cigar_str_to_tuples(self.df.loc[index]))
+
+        clipped_bp = 0
+
+        cigar_index = 0
+
+        while cigar_index < len(cigar_op_list) and cigar_op_list[cigar_index][1] in {'S', 'H'}:
+            clipped_bp += cigar_op_list[cigar_index][0]
+            cigar_index += 1
+
+        if row['QUERY_POS'] != clipped_bp:
+            raise RuntimeError(
+                'Number of clipped bases ({}) does not match query start position {}: Alignment {}:{} ({}:{})'.format(
+                    clipped_bp, row['QUERY_POS'], row['#CHROM'], row['POS'], row['QUERY_ID'], row['QUERY_POS']
+                )
+            )
+
+        # Build trees
+        for cigar_len, cigar_op in cigar_op_list:
+
+            if cigar_op in {'=', 'X', 'M'}:
+
+                itree_ref[sub_bp:(sub_bp + cigar_len)] = (qry_bp, qry_bp + cigar_len)
+                itree_tig[qry_bp:(qry_bp + cigar_len)] = (sub_bp, sub_bp + cigar_len)
+
+                sub_bp += cigar_len
+                qry_bp += cigar_len
+
+            elif cigar_op == 'I':
+
+                itree_tig[qry_bp:(qry_bp + cigar_len)] = (sub_bp, sub_bp + 1)
+
+                qry_bp += cigar_len
+
+            elif cigar_op == 'D':
+
+                itree_ref[sub_bp:(sub_bp + cigar_len)] = (qry_bp, qry_bp + 1)
+
+                sub_bp += cigar_len
+
+            elif cigar_op in {'S', 'H'}:
+
+                qry_bp += cigar_len
+
+                clipped_bp += cigar_len
+
+            else:
+                row = self.df.loc[index]
+
+                raise RuntimeError('Unhandled CIGAR operation: {}: Alignment {}:{} ({}:{})'.format(
+                    cigar_op, row['#CHROM'], row['POS'], row['QUERY_ID'], row['QUERY_POS']
+                ))
+
+        # Cache trees
+        self.ref_cache[index] = itree_ref
+        self.tig_cache[index] = itree_tig
+
+        self.cache_queue.appendleft(index)
+
+    def check_and_clear(self):
+        """
+        Check alignment cache and clear if necessary to make space.
+        """
+
+        while len(self.cache_queue) >= self.cache_align:
+            index = self.cache_align.pop()
+
+            del(self.ref_cache[index])
+            del(self.tig_cache[index])
+

@@ -17,13 +17,9 @@
         "mem": "3G",
         "rt": "12:00:00"
     },
-    "call_cluster_merge": {
-        "mem": "24G",
+    "call_variant_inter_align": {
+        "mem": "4G",
         "rt": "12:00:00"
-    },
-    "call_variant_cluster": {
-        "mem": "8G",
-        "rt": "24:00:00"
     },
     "call_printgaps_sv": {
         "rt": "24:00:00"

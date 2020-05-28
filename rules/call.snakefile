@@ -85,8 +85,29 @@ rule call_merge_haplotypes:
         # Save BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
+
 #
-# Write and filter calls
+# Call alignment-truncating events
+#
+
+rule call_align_trunc:
+    input:
+        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+    output:
+        bed_ins=temp('temp/{asm_name}/bed/align_trunc/sv_ins_{hap}.bed.gz'),
+        bed_del=temp('temp/{asm_name}/bed/align_trunc/sv_del_{hap}.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/bed/align_trunc/sv_inv_{hap}.bed.gz')
+    run:
+
+        # Read
+        df = pd.read_csv(input.bed, sep='\t')
+
+
+
+
+
+#
+# Call inversions and filter inter-INV variants
 #
 
 # call_correct_inter_inv
@@ -174,73 +195,25 @@ rule call_inv_bed:
 # Merge SV (ins, del), indel, SNV
 #
 
-# call_cluster_merge
+# call_variant_inter_align
 #
-# Merge variants from each chromosome.
-rule call_cluster_merge:
-    input:
-        bed=expand('temp/{{asm_name}}/pg/clustered/by_chrom/{{vartype}}_{{svtype}}_{{hap}}/{chrom}.bed.gz', chrom=analib.ref.get_df_fai(REF_FAI).index),
-        bed_dropped=expand('temp/{{asm_name}}/bed/dropped/aux_{{vartype}}_{{svtype}}_{{hap}}_{chrom}.bed.gz', chrom=analib.ref.get_df_fai(REF_FAI).index)
-    output:
-        bed=temp('temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz'),
-        bed_dropped='results/{asm_name}/bed/dropped/aux_{vartype}_{svtype}_{hap}.bed.gz'
-    wildcard_constraints:
-        vartype='sv|indel|snv',
-        svtype='ins|del|snv',
-        hap='h1|h2'
-    run:
-
-        # Get file list, exclude 0-byte files
-        file_list = [file_name for file_name in input.bed if os.stat(file_name).st_size > 0]
-
-        pd.concat(
-            [
-                pd.read_csv(file_name, sep='\t') for file_name in file_list
-            ],
-            axis=0
-        ).sort_values(
-            ['#CHROM', 'POS']
-        ).to_csv(
-            output.bed, sep='\t', index=False, compression='gzip'
-        )
-
-        # Merged dropped variants
-        pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_dropped],
-            axis=0
-        ).sort_values(
-            ['#CHROM', 'POS']
-        ).to_csv(
-            output.bed_dropped, sep='\t', index=False, compression='gzip'
-        )
-
-
-# call_variant_cluster
-#
-# Cluster variants. Overlapping alignments may generate the same call from more than one contig. This step merges them
-# to one call, but all contigs that support it are annotated.
-rule call_variant_cluster:
+# Filter variants by trimmed alignments. PrintGaps was run on the full alignment, including redundantly-mapped
+# contigs and reference loci.
+rule call_variant_inter_align:
     input:
         bed='temp/{asm_name}/pg/raw/{vartype}_{hap}.bed',
-        bed_tile='results/{asm_name}/align/central_tiling_path_{hap}.bed'
+        bed_align='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     output:
-        bed=temp('temp/{asm_name}/pg/clustered/by_chrom/{vartype}_{svtype}_{hap}/{chrom}.bed.gz'),
-        bed_dropped=temp('temp/{asm_name}/bed/dropped/aux_{vartype}_{svtype}_{hap}_{chrom}.bed.gz')
+         bed=temp('temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz'),
+         bed_dropped='results/{asm_name}/bed/dropped/align-trim_{vartype}_{svtype}_{hap}.bed.gz'
     wildcard_constraints:
         vartype='sv|indel|snv',
         svtype='ins|del|snv',
         hap='h1|h2'
-    params:
-        sge_opts='-l mfree=8G -l h_rt=72:00:00'
     run:
 
         # Read variants
-        print('Reading...')
-        sys.stdout.flush()
-
         df = pd.read_csv(input.bed, sep='\t')
-
-        df = df.loc[df['#CHROM'] == wildcards.chrom]
 
         df = df.loc[df['SVTYPE'] == wildcards.svtype.upper()].copy()
 
@@ -253,7 +226,6 @@ rule call_variant_cluster:
             df.to_csv(output.bed_dropped, sep='\t', index=False)
 
             return
-
 
         if wildcards.vartype == 'snv':
 
@@ -271,198 +243,61 @@ rule call_variant_cluster:
 
         df['HAP'] = wildcards.hap
 
-        df = analib.variant.order_variant_columns(df, tail_cols=['HAP', 'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND'])
+        # Add source
+        df['CALL_SOURCE'] = 'CIGAR'
 
-        # Remove duplicate ID/contig pairs (can occur if the same contig is mapped multiple times to a reference location,
-        # e.g. a large duplication relative the reference. Happens rarely, but will crash the pipeline.
+        # Order columns
+        tail_cols = ['HAP', 'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND', 'CALL_SOURCE']
 
-        df.drop_duplicates(['ID', 'QUERY_ID'], inplace=True)
+        if 'SEQ' in df.columns:
+            tail_cols += ['SEQ',]
 
-        df.reset_index(drop=True, inplace=True)
+        df = analib.variant.order_variant_columns(df, tail_cols=tail_cols)
 
-        # Read tiling BED and make tree
-        print('Tiling...')
-        sys.stdout.flush()
-
-        df_tile = pd.read_csv(input.bed_tile, sep='\t')
+        # Filter to accepted alignments (after trimming multiply mapped tig and reference regions)
+        df_align = pd.read_csv(input.bed_align, sep='\t')
 
         tiling_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        for index, row in df_tile.iterrows():
-            if row['END'] - row['POS'] > 0:
-                tiling_tree[row['#CHROM']][row['POS']:row['END']] = row['QUERY_ID']
+        for index, row in df_align.iterrows():
+            tiling_tree[row['#CHROM']][row['POS']:row['END']] = (row['QUERY_ID'], row['QUERY_POS'], row['QUERY_END'])
 
-        def get_central_id(row):
-            central_set = tiling_tree[row['#CHROM']][row['POS']:row['END']]
+        def is_pass_region(row):
+            for pass_record in tiling_tree[row['#CHROM']][row['POS']:row['END']]:
+                pass_record_data = pass_record.data
 
-            if len(central_set) < 1:
-                return False
+                if (
+                    row['QUERY_ID'] == pass_record_data[0] and
+                    row['QUERY_POS'] >= pass_record_data[1] and
+                    row['QUERY_END'] <= pass_record_data[2]
+                ):
+                    return True
 
-            return row['QUERY_ID'] == list(central_set)[0].data
+            return False
 
-        df['IS_CENTRAL'] = df.apply(get_central_id, axis=1)
 
-        # Setup clustering data structures
-        print('Setup clustering...')
+        df['PASS_REGION'] = df.apply(is_pass_region, axis=1)
 
-        cluster_key = set()  # Primary variants (from centrally located variants)
-        dropped_key = set()  # Aux variants that do not intersect a central variant
-        cluster_support = collections.defaultdict(set)
+        # Split variants
+        df_dropped = df.loc[~ df['PASS_REGION']].copy()
+        df = df.loc[df['PASS_REGION']].copy()
 
-        n_processed = 0
+        del(df['PASS_REGION'])
+        del(df_dropped['PASS_REGION'])
 
-        cluster_tree = collections.defaultdict(intervaltree.IntervalTree)
-
-        # Separate variants into central and auxiliary
-        # * Central: Located in the central tiling path: when contigs overlap, choose a variant
-        #   from the contig where it is further from an alignment end.
-        # * Auxiliary: Variants in a region with multiple contig alignments, but closer to the end of
-        #   a contig than another variant. If these intersect a central variant, annotate the central variant.
-        #   For auxiliary variants that do not intersect a central variant, discard.
-        df_central = df.loc[df['IS_CENTRAL']]
-        df_aux = df.loc[~ df['IS_CENTRAL']]
-
-        df_central.drop_duplicates(['ID'], inplace=True)  # Contigs with multiple alignments generate the same variant more than once
-
-        # Check for no central variants
-        if df_central.shape[0] == 0:
-            print('Empty variant set')
-
-            with open(output.bed, 'w') as out_file:
-                pass
-
-            df.to_csv(output.bed_dropped, sep='\t', index=False)
-
-            return
-
-        # Add primary calls from most centrally-located contig alignments
-        for index, row in df_central.iterrows():
-            cluster_tree[row['#CHROM']][row['POS']:row['END']] = index
-            cluster_key.add(index)
-
-        # Cluster aux calls
-        print('Clustering AUX...')
-
-        for index, row in df_aux.iterrows():
-            region_start = row['POS'] - OFFSET_MAX
-            region_end = row['END'] + OFFSET_MAX
-
-            # Report progress
-            if n_processed % 1000 == 0:
-                print('\t\t* {} of {}'.format(n_processed + 1, df_aux.shape[0]))
-
-            n_processed += 1
-
-            # Get cluster
-            cluster_set = cluster_tree[row['#CHROM']][region_start:region_end]
-
-            # Check for no cluster intersection
-            if not cluster_set:
-                dropped_key.add(index)
-                continue
-
-            cluster_id_list = [interval.data for interval in cluster_set]
-
-            # Check for exact ID match
-            for cluster_id in cluster_id_list:
-                if row['ID'] == df.loc[cluster_id, 'ID']:
-                    cluster_support[cluster_id].add(index)
-                    index = -1  # Flag to stop processing this variant
-                    break
-
-            # Drop SNVs unless they match by ID
-            if wildcards.vartype == 'snv' and index != -1:
-                dropped_key.add(index)
-                continue
-
-            # Matched variant by ID, stop processing
-            if index < 0:
-                continue
-
-            # Intersect this variant with the cluster
-            df_source = df.loc[[index]]
-            df_target = df.loc[cluster_id_list]
-
-            df_target.drop_duplicates('ID', inplace=True)
-
-            df_intersect = analib.variant.nearest_by_svlen_overlap(
-                df_source, df_target,
-                szro_min=RO_MIN,
-                offset_max=OFFSET_MAX
-            )
-
-            if not df_intersect.shape[0] > 0:
-                # No match, drop aux variant
-                dropped_key.add(index)
-
-            else:
-                # Add support for existing cluster.
-                cluster_support[
-                    df_source.loc[df_source['ID'] == df_intersect.iloc[0]['ID']].index[0]
-                ].add(index)
-
-        # Process clusters into a callset
-        print('Post-cluster merging...')
-        sys.stdout.flush()
-
-        df_merge = df.loc[cluster_key]
-
-        df_merge_support = pd.concat(
-            [
-                pd.Series(
-                    [
-                        index,
-                        1 + len(cluster_support[index]),
-                        ','.join(
-                            [
-                                df_merge.loc[index]['QUERY_ID']
-                            ] + (list(
-                                df.loc[cluster_support[index], 'QUERY_ID']
-                            ) if cluster_support[index] else [])
-                        ),
-                        ','.join(
-                            [
-                                '{QUERY_POS}:{QUERY_END}'.format(**df_merge.loc[index])
-                            ] + (list(
-                                df.loc[cluster_support[index]].apply(lambda row: '{QUERY_POS}:{QUERY_END}'.format(**row), axis=1)
-                            ) if cluster_support[index] else [])
-                        ),
-                        ','.join(
-                            [
-                                df_merge.loc[index]['QUERY_STRAND']
-                            ] + (list(
-                                df.loc[cluster_support[index], 'QUERY_STRAND']
-                            ) if cluster_support[index] else [])
-                        )
-
-                    ],
-                    index=['INDEX', 'TIG_N', 'TIG_SUPPORT', 'TIG_COORD', 'TIG_STRAND']
-                ) for index in df_merge.index
-            ],
-            axis=1
-        ).T
-
-        df_merge_support.set_index('INDEX', inplace=True)
-
-        df_merge = pd.concat([df_merge, df_merge_support], axis=1).sort_values(['#CHROM', 'POS'])
-
-        # Remove IS_CENTRAL
-        del(df['IS_CENTRAL'])
-
-        # Add source
-        df['CALL_SOURCE'] = 'PG'
-
-        # Move SEQ to end
-        if 'SEQ' in df_merge.columns:
-            df_merge = analib.variant.order_variant_columns(df_merge, tail_cols=['SEQ', ])
-
-        df_dropped = df.loc[sorted(dropped_key)]
+        # Check for duplicate variant IDs (should not occur)
+        # dup_id = {key for key,val in collections.Counter(df['ID']).items() if val > 1}
+        #
+        # if dup_id:
+        #     raise RuntimeError('Found {} duplicate variant IDs after filtering: {}{}'.format(
+        #         len(dup_id),
+        #         ', '.join(sorted(dup_id)[:3]),
+        #         '...' if len(dup_id) > 3 else ''
+        #     ))
+        df.drop_duplicates('ID', inplace=True)  # DBGTMP: Fix process so duplicates are never generated (filtering is limited)
 
         # Save BED
-        print('Writing...')
-        sys.stdout.flush()
-
-        df_merge.to_csv(output.bed, sep='\t', index=False, compression='gzip')
+        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
         # Save dropped bed
         df_dropped.to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')

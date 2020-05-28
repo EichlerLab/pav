@@ -357,6 +357,7 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
         region_flag, df
     )
 
+
 def annotate_inv_dup_mers(
         df,
         region_ref_outer, region_ref_inner,
@@ -364,6 +365,21 @@ def annotate_inv_dup_mers(
         region_tig_discovery,
         ref_fa, k_util
 ):
+    """
+    Annotate inverted duplications (that often flank inversions). Mark k-mers in each belonging to the opposite
+    reference copy.
+
+    :param df: K-mer dataframe.
+    :param region_ref_outer: Reference region of outer breakpoints.
+    :param region_ref_inner: Reference region of inner breakpoints.
+    :param region_tig_outer: Contig region of outer breakpoints.
+    :param region_tig_inner: Contig region of inner breakpoints.
+    :param region_tig_discovery: Discovery region.
+    :param ref_fa: Reference FASTA.
+    :param k_util: K-mer util (used to create `df`).
+
+    :return: Annotated dataframe with "MATCH" column.
+    """
 
     # Get regions for duplications - ref
     region_dup_ref_up = asmlib.seq.Region(

@@ -6,3 +6,4 @@ from . import inv
 from . import plot
 from . import seq
 from . import align
+from . import util

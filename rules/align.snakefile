@@ -80,6 +80,8 @@ rule align_cut_tig_overlap:
         bed='results/{asm_name}/align/bed/aligned_tig_uncut_{hap}.bed.gz'
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+    params:
+        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', True))  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
     run:
 
         # Read uncut alignments
@@ -93,10 +95,22 @@ rule align_cut_tig_overlap:
 
         # Sort by contig alignment length
         df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+        df['SUB_LEN'] = df['END'] - df['POS']
 
         df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
 
         df.reset_index(inplace=True, drop=True)
+
+        # Find max cluster match for each chromosome
+        if params.chrom_cluster:
+            df['CLUSTER'] = df['QUERY_ID'].apply(lambda val: val.split('_')[0])
+            max_cluster = {chrom: asmlib.align.get_max_cluster(df, chrom) for chrom in set(df['#CHROM'])}
+
+            df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER'] == max_cluster[row['#CHROM']], axis=1)
+            df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER_MATCH'] if max_cluster[row['#CHROM']] is not None else np.nan, axis=1)
+
+        else:
+            df['CLUSTER_MATCH'] = np.nan
 
         # Resolve overlapping contig regions aligned (one contig region aligned more than once)
         iter_index_l = 0
@@ -153,87 +167,87 @@ rule align_cut_tig_overlap:
             iter_index_l += 1
 
 
+        # # Remove discarded records and re-sort
+        #
+        # df = df.loc[df['INDEX'] >= 0]
+        #
+        # df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+        #
+        # df.sort_values(['#CHROM', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+        #
+        # df.reset_index(inplace=True, drop=True)
+        #
+        # # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
+        # iter_index_l = 0
+        # index_max = df.shape[0]
+        #
+        # while iter_index_l < index_max:
+        #     iter_index_r = iter_index_l + 1
+        #
+        #     while (
+        #             iter_index_r < index_max and
+        #             df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID'] and
+        #             df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
+        #     ):
+        #
+        #         # Skip if one record was already removed
+        #         if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+        #             iter_index_r += 1
+        #             continue
+        #
+        #         # Get indices ordered by contig placement
+        #         if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
+        #             index_l = iter_index_l
+        #             index_r = iter_index_r
+        #         else:
+        #             index_l = iter_index_r
+        #             index_r = iter_index_l
+        #
+        #         # Check for overlaps
+        #         if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
+        #             # Found overlapping records
+        #             # print('Ref-Tig-Same Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
+        #             #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+        #             #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
+        #             #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
+        #             #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
+        #             #     iter_index_l, iter_index_r
+        #             # ))
+        #
+        #             # Check for record fully contained within another
+        #             if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
+        #                 # print('\t* Fully contained')
+        #
+        #                 df.loc[index_r, 'INDEX'] = -1
+        #
+        #             else:
+        #
+        #                 record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
+        #
+        #                 if record_l is not None and record_r is not None:
+        #                     df.loc[index_l] = record_l
+        #                     df.loc[index_r] = record_r
+        #
+        #                 # print('\t* Trimmed')
+        #
+        #         # Next r record
+        #         iter_index_r += 1
+        #
+        #     # Next l record
+        #     iter_index_l += 1
+
+
         # Remove discarded records and re-sort
 
         df = df.loc[df['INDEX'] >= 0]
 
         df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
 
-        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+        df.sort_values(['#CHROM', 'QUERY_LEN'], ascending=(True, False), inplace=True)
 
         df.reset_index(inplace=True, drop=True)
 
-        # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
-        iter_index_l = 0
-        index_max = df.shape[0]
-
-        while iter_index_l < index_max:
-            iter_index_r = iter_index_l + 1
-
-            while (
-                    iter_index_r < index_max and
-                    df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID'] and
-                    df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
-            ):
-
-                # Skip if one record was already removed
-                if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
-                    iter_index_r += 1
-                    continue
-
-                # Get indices ordered by contig placement
-                if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
-                    index_l = iter_index_l
-                    index_r = iter_index_r
-                else:
-                    index_l = iter_index_r
-                    index_r = iter_index_l
-
-                # Check for overlaps
-                if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
-                    # Found overlapping records
-                    # print('Ref-Tig-Same Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
-                    #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
-                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
-                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
-                    #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
-                    #     iter_index_l, iter_index_r
-                    # ))
-
-                    # Check for record fully contained within another
-                    if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
-                        # print('\t* Fully contained')
-
-                        df.loc[index_r, 'INDEX'] = -1
-
-                    else:
-
-                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
-
-                        if record_l is not None and record_r is not None:
-                            df.loc[index_l] = record_l
-                            df.loc[index_r] = record_r
-
-                        # print('\t* Trimmed')
-
-                # Next r record
-                iter_index_r += 1
-
-            # Next l record
-            iter_index_l += 1
-
-
-        # Remove discarded records and re-sort
-
-        df = df.loc[df['INDEX'] >= 0]
-
-        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
-
-        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
-
-        df.reset_index(inplace=True, drop=True)
-
-        # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
+        # Resolve overlapping contig alignments relative to the reference
         iter_index_l = 0
         index_max = df.shape[0]
 
@@ -295,9 +309,13 @@ rule align_cut_tig_overlap:
         # Clean and re-sort
         df = df.loc[df['INDEX'] >= 0]
 
+        df = df.loc[(df['END'] - df['POS']) > 0]  # Should never occur, but don't allow 0-length records
+        df = df.loc[(df['QUERY_END'] - df['QUERY_POS']) > 0]
+
         df.sort_values('INDEX', inplace=True)
 
         del(df['QUERY_LEN'])
+        del(df['SUB_LEN'])
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
