@@ -32,6 +32,7 @@ def get_n_stat(len_list, n_stat=0.5, genome_size=None):
 
     return vals.iloc[np.sum(vals_csum <= genome_size) + 1]
 
+
 def get_stats(asm_name, hap, fa_file_name, genome_size=None, n_stat_list=[0.5]):
     """
     Get assembly stats.

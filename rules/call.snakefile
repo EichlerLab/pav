@@ -16,12 +16,13 @@ Call variants from aligned contigs.
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
 rule call_merge_haplotypes:
     input:
-       bed1='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h1.bed.gz',
-       bed2='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
-       con_bed='results/{asm_name}/align/depth_1/regions_h12.bed'
+        bed1='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h1.bed.gz',
+        bed2='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
+        bed_align1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
+        bed_align2='results/{asm_name}/align/aligned_tig_h2.bed.gz'
     output:
-        bed='results/{asm_name}/bed/{vartype}_{svtype}_h12.bed.gz',
-        fa='results/{asm_name}/fa/{vartype}_{svtype}_h12.fa.gz'
+        bed='results/{asm_name}/bed/{vartype}_{svtype}.bed.gz',
+        fa='results/{asm_name}/fa/{vartype}_{svtype}.fa.gz'
     run:
 
         # Get configured merge definition
@@ -53,24 +54,31 @@ rule call_merge_haplotypes:
 
         df.columns = ['HAP_SRC' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
-        # Load consensus regions
-        consensus_tree = collections.defaultdict(intervaltree.IntervalTree)
+        # Restructure columns
+        # TODO: Collapse QUERY_ID, _POS, and _END into one field?
+        # TODO: Add alternate QUERY_ID:POS-END and alternate strand for h2 in homozygous calls. Add alternate CALL_SOURCE?
 
-        df_con = pd.read_csv(input.con_bed, sep='\t', header=None, names=('#CHROM', 'POS', 'END'))
+        # Load mapped regions
+        map_tree_h1= collections.defaultdict(intervaltree.IntervalTree)
+        map_tree_h2= collections.defaultdict(intervaltree.IntervalTree)
 
-        for index, row in df_con.iterrows():
-            consensus_tree[row['#CHROM']][row['POS']:row['END']] = True
+        df_map_h1 = pd.read_csv(input.bed_align1, sep='\t')
+        df_map_h2 = pd.read_csv(input.bed_align2, sep='\t')
 
-        # Define a function to annotate consensus regions
-        def con_match(row):
-            for interval in consensus_tree[row['#CHROM']].overlap(row['POS'], row['END']):
-                if (interval.begin <= row['POS']) and (interval.end >= row['END']):
-                    return True
+        for index, row in df_map_h1.iterrows():
+            map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
 
-            return False
+        for index, row in df_map_h2.iterrows():
+            map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
 
-        # Annotate consensus regions
-        df['HAP_CONSENSUS'] = df.apply(con_match, axis=1)
+        # Add large SVs to map trees
+        # TODO: Read dataframes, patch large SV coordinates into map-trees
+
+        # Get genotypes setting no-call for non-mappable regions
+        df['GT_H1'] = df.apply(asmlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
+        df['GT_H2'] = df.apply(asmlib.call.get_gt, hap='h2', map_tree=map_tree_h2, axis=1)
+
+        df['GT'] = df.apply(lambda row: '{}|{}'.format(row['GT_H1'], row['GT_H2']), axis=1)
 
         # Save SEQ as a FASTA
         if 'SEQ' in df.columns:
@@ -90,9 +98,14 @@ rule call_merge_haplotypes:
 # Call alignment-truncating events
 #
 
-rule call_align_trunc:
+# call_large_sv
+#
+# Call alignment-truncating SVs.
+rule call_large_sv:
     input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        fa='align/{asm_name}/contigs_{hap}.fa.gz',
+        fai='align/{asm_name}/contigs_{hap}.fa.gz.fai',
     output:
         bed_ins=temp('temp/{asm_name}/bed/align_trunc/sv_ins_{hap}.bed.gz'),
         bed_del=temp('temp/{asm_name}/bed/align_trunc/sv_del_{hap}.bed.gz'),
@@ -101,9 +114,10 @@ rule call_align_trunc:
 
         # Read
         df = pd.read_csv(input.bed, sep='\t')
+        df_tig_fai = analib.ref.get_df_fai(input.fai)
 
-
-
+        # Get large events
+        df_ins, df_del, df_inv, df_sub = asmlib.lgsv.scan_for_events(df, wildcards.hap)
 
 
 #

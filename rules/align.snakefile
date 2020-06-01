@@ -127,7 +127,7 @@ rule align_cut_tig_overlap:
                     continue
 
                 # Get indices ordered by contig placement
-                if df.loc[iter_index_l, 'QUERY_POS'] <= df.loc[iter_index_r, 'QUERY_POS']:
+                if df.loc[iter_index_l, 'QUERY_TIG_POS'] <= df.loc[iter_index_r, 'QUERY_TIG_POS']:
                     index_l = iter_index_l
                     index_r = iter_index_r
                 else:
@@ -135,24 +135,28 @@ rule align_cut_tig_overlap:
                     index_r = iter_index_l
 
                 # Check for overlaps
-                if df.loc[index_r, 'QUERY_POS'] < df.loc[index_l, 'QUERY_END']:
+                if df.loc[index_r, 'QUERY_TIG_POS'] < df.loc[index_l, 'QUERY_TIG_END']:
                     # Found overlapping records
-                    # print('Tig Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) [iter {}, {}]'.format(
+                    # print('Tig Overlap: {}-{} ({}:{}-{},{} vs {}:{}-{},{}) [iter {}, {}]'.format(
                     #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
-                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
-                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
+                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_TIG_POS'], df.loc[index_l, 'QUERY_TIG_END'], ('-' if df.loc[index_l, 'REV'] else '+'),
+                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_TIG_POS'], df.loc[index_r, 'QUERY_TIG_END'], ('-' if df.loc[index_r, 'REV'] else '+'),
                     #     iter_index_l, iter_index_r
                     # ))
 
                     # Check for record fully contained within another
-                    if df.loc[index_r, 'QUERY_END'] <= df.loc[index_l, 'QUERY_END']:
+                    if df.loc[index_r, 'QUERY_TIG_END'] <= df.loc[index_l, 'QUERY_TIG_END']:
                         # print('\t* Fully contained')
 
                         df.loc[index_r, 'INDEX'] = -1
 
                     else:
 
-                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'query')
+                        record_l, record_r = asmlib.align.trim_alignments(
+                            df.loc[index_l], df.loc[index_r], 'query',
+                            rev_l=not df.loc[index_l, 'REV'],
+                            rev_r=df.loc[index_r, 'REV']
+                        )
 
                         if record_l is not None and record_r is not None:
                             df.loc[index_l] = record_l
@@ -165,77 +169,6 @@ rule align_cut_tig_overlap:
 
             # Next l record
             iter_index_l += 1
-
-
-        # # Remove discarded records and re-sort
-        #
-        # df = df.loc[df['INDEX'] >= 0]
-        #
-        # df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
-        #
-        # df.sort_values(['#CHROM', 'QUERY_LEN'], ascending=(True, False), inplace=True)
-        #
-        # df.reset_index(inplace=True, drop=True)
-        #
-        # # Resolve overlapping same-contig alignments (more than one contig region mapped to the same reference region)
-        # iter_index_l = 0
-        # index_max = df.shape[0]
-        #
-        # while iter_index_l < index_max:
-        #     iter_index_r = iter_index_l + 1
-        #
-        #     while (
-        #             iter_index_r < index_max and
-        #             df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID'] and
-        #             df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
-        #     ):
-        #
-        #         # Skip if one record was already removed
-        #         if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
-        #             iter_index_r += 1
-        #             continue
-        #
-        #         # Get indices ordered by contig placement
-        #         if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
-        #             index_l = iter_index_l
-        #             index_r = iter_index_r
-        #         else:
-        #             index_l = iter_index_r
-        #             index_r = iter_index_l
-        #
-        #         # Check for overlaps
-        #         if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
-        #             # Found overlapping records
-        #             # print('Ref-Tig-Same Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
-        #             #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
-        #             #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
-        #             #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
-        #             #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
-        #             #     iter_index_l, iter_index_r
-        #             # ))
-        #
-        #             # Check for record fully contained within another
-        #             if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
-        #                 # print('\t* Fully contained')
-        #
-        #                 df.loc[index_r, 'INDEX'] = -1
-        #
-        #             else:
-        #
-        #                 record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
-        #
-        #                 if record_l is not None and record_r is not None:
-        #                     df.loc[index_l] = record_l
-        #                     df.loc[index_r] = record_r
-        #
-        #                 # print('\t* Trimmed')
-        #
-        #         # Next r record
-        #         iter_index_r += 1
-        #
-        #     # Next l record
-        #     iter_index_l += 1
-
 
         # Remove discarded records and re-sort
 
@@ -275,11 +208,10 @@ rule align_cut_tig_overlap:
                 # Check for overlaps
                 if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
                     # Found overlapping records
-                    # print('Ref-Tig-Other Overlap: {}-{} ({}:{}-{} vs {}:{}-{}) ({}:{}-{}, {}-{}) [iter {}, {}]'.format(
+                    # print('Ref Overlap: {}-{} ({}:{}-{},{} vs {}:{}-{},{}) [iter {}, {}]'.format(
                     #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
-                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_POS'], df.loc[index_l, 'QUERY_END'],
-                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_POS'], df.loc[index_r, 'QUERY_END'],
-                    #     df.loc[index_l, '#CHROM'], df.loc[index_l, 'POS'], df.loc[index_l, 'END'], df.loc[index_r, 'POS'], df.loc[index_r, 'END'],
+                    #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_TIG_POS'], df.loc[index_l, 'QUERY_TIG_END'], ('-' if df.loc[index_l, 'REV'] else '+'),
+                    #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_TIG_POS'], df.loc[index_r, 'QUERY_TIG_END'], ('-' if df.loc[index_r, 'REV'] else '+'),
                     #     iter_index_l, iter_index_r
                     # ))
 
@@ -327,12 +259,16 @@ rule align_cut_tig_overlap:
 # Get alignment BED for one part (one aligned cell or split BAM) in one assembly.
 rule align_get_read_bed:
     input:
-        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
+        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam',
+        tig_fai='align/{asm_name}/contigs_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/bed/aligned_tig_uncut_{hap}.bed.gz'
     wildcard_constraints:
         hap='h(0|1|2)'
     run:
+
+        # Read FAI
+        df_tig_fai = analib.ref.get_df_fai(input.tig_fai)
 
         # Get records
         clip_l = 0
@@ -346,6 +282,9 @@ rule align_get_read_bed:
                 # Skipped unmapped reads
                 if record.is_unmapped:
                     continue
+
+                # Get length for computing real tig positions for rev-complemented records
+                tig_len = df_tig_fai[record.query_name]
 
                 # Read tags
                 tags = dict(record.get_tags())
@@ -377,11 +316,14 @@ rule align_get_read_bed:
                         record.query_alignment_start,
                         record.query_alignment_end,
 
+                        tig_len - record.query_alignment_end if record.is_reverse else record.query_alignment_start,
+                        tig_len - record.query_alignment_start if record.is_reverse else record.query_alignment_end,
+
                         tags['RG'] if 'RG' in tags else 'NA',
 
                         record.mapping_quality,
-                        clip_l,
-                        clip_r,
+                        #clip_l,
+                        #clip_r,
 
                         str(record.is_reverse),
                         '0x{:04x}'.format(record.flag),
@@ -392,8 +334,9 @@ rule align_get_read_bed:
                     index=[
                         '#CHROM', 'POS', 'END',
                         'QUERY_ID', 'QUERY_POS', 'QUERY_END',
+                        'QUERY_TIG_POS', 'QUERY_TIG_END',
                         'RG',
-                        'MAPQ', 'CLIP_L', 'CLIP_R',
+                        'MAPQ', #'CLIP_L', 'CLIP_R',
                         'REV', 'FLAGS', 'HAP',
                         'CIGAR'
                     ]
@@ -433,7 +376,8 @@ rule align_index:
     input:
         fa=align_input_fasta
     output:
-        fa='align/{asm_name}/contigs_{hap}.fa.gz'
+        fa='align/{asm_name}/contigs_{hap}.fa.gz',
+        fai='align/{asm_name}/contigs_{hap}.fa.gz.fai'
     run:
 
         # Determine if file is BGZF compressed
