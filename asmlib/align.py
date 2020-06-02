@@ -6,6 +6,8 @@ import collections
 import intervaltree
 import numpy as np
 
+import asmlib.seq
+
 
 _INT_STR_SET = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 _CIGAR_OP_SET = {'M', 'I', 'D', 'N', 'S', 'H', 'P', '=', 'X'}
@@ -613,8 +615,8 @@ class AlignLift:
         self.tig_tree = collections.defaultdict(intervaltree.IntervalTree)
 
         for index, row in df.iterrows():
-            self.ref_tree[row['#CHROM']][row['POS']:row['END']] = row['INDEX']
-            self.tig_tree[row['QUERY_ID']][row['QUERY_POS']:row['QUERY_END']] = row['INDEX']
+            self.ref_tree[row['#CHROM']][row['POS']:row['END']] = index
+            self.tig_tree[row['QUERY_ID']][row['QUERY_POS']:row['QUERY_END']] = index
 
         # Build alignment caching structures
         self.cache_queue = collections.deque()
@@ -623,6 +625,18 @@ class AlignLift:
         self.tig_cache = dict()
 
     def lift_to_sub(self, query_id, coord):
+        """
+        Lift coordinates from query (tig) to subject (reference).
+
+        Returns tuple(s) of (query-id, pos, is_rev) with `is_rev` `True` if the alignment was lifted through a
+        reverse-complemented alignment.
+
+        :param query_id: Query record ID.
+        :param coord: Query coordinates. May be a single value, list, or tuple.
+
+        :return: Single coordinate or list of coordinates if `coord` is a list or tuple. Returns `None` for coordinates
+            that cannot be lifted.
+        """
 
         # Determine type
         if issubclass(coord.__class__, list) or issubclass(coord.__class__, tuple):
@@ -663,32 +677,44 @@ class AlignLift:
 
             # Check coordinates
             if len(match_set_fwd) > 1:
-                raise ValueError(
-                    'Query region {}:{} has {} to-subject lift records (forward orientation)'.format(
-                        query_id, pos, len(match_set_fwd)
-                    )
-                )
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError(
+                #     'Query region {}:{} has {} to-subject lift records (forward orientation)'.format(
+                #         query_id, pos, len(match_set_fwd)
+                #     )
+                # )
 
             if len(match_set_rev) > 1:
-                raise ValueError(
-                    'Query region {}:{} has {} to-subject lift records (reverse orientation at position {})'.format(
-                        query_id, pos, len(match_set_rev), pos_rev
-                    )
-                )
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError(
+                #     'Query region {}:{} has {} to-subject lift records (reverse orientation at position {})'.format(
+                #         query_id, pos, len(match_set_rev), pos_rev
+                #     )
+                # )
 
             if index_fwd is None and index_rev is None:
-                raise ValueError(
-                    'Query region {}:{} has no to-subject lift records (forward and reverse at position {})'.format(
-                        query_id, pos, pos_rev
-                    )
-                )
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError(
+                #     'Query region {}:{} has no to-subject lift records (forward and reverse at position {})'.format(
+                #         query_id, pos, pos_rev
+                #     )
+                # )
 
             if index_fwd is not None and index_rev is not None:
-                raise ValueError(
-                    'Query region {}:{} has to-subject lift records for both forward and reverse at position {}'.format(
-                        query_id, pos, pos_rev
-                    )
-                )
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError(
+                #     'Query region {}:{} has to-subject lift records for both forward and reverse at position {}'.format(
+                #         query_id, pos, pos_rev
+                #     )
+                # )
 
             if index_fwd is not None:
                 index = index_fwd
@@ -702,7 +728,7 @@ class AlignLift:
 
             # Get lift tree
             if index not in self.tig_cache.keys():
-                self.add_align(index)
+                self._add_align(index)
 
             lift_tree = self.tig_cache[index]
 
@@ -726,13 +752,15 @@ class AlignLift:
             if match_interval.data[1] - match_interval.data[0] > 1:
                 lift_coord_list.append((
                     row['#CHROM'],
-                    match_interval.data[0] + (pos - match_interval.begin)
+                    match_interval.data[0] + (pos - match_interval.begin),
+                    row['REV']
                 ))
 
             else:  # Lift from missing bases on the target (insertion or deletion)
                 lift_coord_list.append((
                     row['#CHROM'],
-                    match_interval.data[1]
+                    match_interval.data[1],
+                    row['REV']
                 ))
 
         # Return coordinates
@@ -742,6 +770,18 @@ class AlignLift:
             return lift_coord_list[0]
 
     def lift_to_qry(self, subject_id, coord):
+        """
+        Lift coordinates from subject (reference) to query (tig).
+
+        Returns tuple(s) of (query-id, pos, is_rev) with `is_rev` `True` if the alignment was lifted through a
+        reverse-complemented alignment.
+
+        :param subject_id: Subject ID.
+        :param coord: Subject coordinates. May be a single value, list, or tuple.
+
+        :return: Single coordinate or list of coordinates if `coord` is a list or tuple. Returns `None` for coordinates
+            that cannot be lifted.
+        """
 
         # Determine type
         if issubclass(coord.__class__, list) or issubclass(coord.__class__, tuple):
@@ -758,18 +798,24 @@ class AlignLift:
 
             # Check coordinates
             if len(match_set) == 0:
-                raise ValueError('Subject region {}:{} has no to-query lift records'.format(subject_id, pos))
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError('Subject region {}:{} has no to-query lift records'.format(subject_id, pos))
 
             if len(match_set) > 1:
-                raise ValueError(
-                    'Subject region {}:{} has {} to-query lift records'.format(subject_id, pos, len(match_set))
-                )
+                lift_coord_list.append(None)
+                continue
+
+                # raise ValueError(
+                #     'Subject region {}:{} has {} to-query lift records'.format(subject_id, pos, len(match_set))
+                # )
 
             # Get lift tree
             index = list(match_set)[0].data
 
             if index not in self.ref_cache.keys():
-                self.add_align(index)
+                self._add_align(index)
 
             lift_tree = self.ref_cache[index]
 
@@ -801,7 +847,8 @@ class AlignLift:
 
             lift_coord_list.append((
                 row['QUERY_ID'],
-                qry_pos
+                qry_pos,
+                row['REV']
             ))
 
         # Return coordinates
@@ -810,7 +857,51 @@ class AlignLift:
         else:
             return lift_coord_list[0]
 
-    def add_align(self, index):
+    def lift_region_to_sub(self, region):
+        """
+        Lift region to subject.
+
+        :param region: Query region.
+
+        :return: Subject region or `None` if it could not be lifted.
+        """
+
+        # Lift
+        sub_pos, sub_end = self.lift_to_sub(region.chrom, (region.pos, region.end))
+
+        # Check lift: Must lift both ends to the same subject ID
+        if sub_pos is None or sub_end is None:
+            return None
+
+        if sub_pos[0] != sub_end[0] or sub_pos[2] != sub_end[2]:
+            return None
+
+        # Return
+        return asmlib.seq.Region(sub_pos[0], sub_pos[1], sub_end[1], is_rev=False)
+
+    def lift_region_to_qry(self, region):
+        """
+        Lift region to query.
+
+        :param region: Subject region.
+
+        :return: Query region or `None` if it could not be lifted.
+        """
+
+        # Lift
+        query_pos, query_end = self.lift_to_qry(region.chrom, (region.pos, region.end))
+
+        # Check lift: Must lift both ends to the same query ID
+        if query_pos is None or query_end is None:
+            return None
+
+        if query_pos[0] != query_end[0] or query_pos[2] != query_end[2]:
+            return None
+
+        # Return
+        return asmlib.seq.Region(query_pos[0], query_pos[1], query_end[1], is_rev=query_pos[1])
+
+    def _add_align(self, index):
         """
         Add an alignment from DataFrame index `index`.
 
@@ -822,7 +913,7 @@ class AlignLift:
             return
 
         # Make space for this alignment
-        self.check_and_clear()
+        # self._check_and_clear()
 
         # Get row
         row = self.df.loc[index]
@@ -894,7 +985,7 @@ class AlignLift:
 
         self.cache_queue.appendleft(index)
 
-    def check_and_clear(self):
+    def _check_and_clear(self):
         """
         Check alignment cache and clear if necessary to make space.
         """

@@ -245,6 +245,7 @@ def get_smoothed_density(
 
     return df
 
+
 def rl_encoder(df, state_col='STATE'):
     """
     Take a density table containing INDEX and a state column (STATE_MER or STATE). Count consecutive states and track indices for each run of a state.

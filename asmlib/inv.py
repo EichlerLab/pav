@@ -7,6 +7,7 @@ import numpy as np
 
 import asmlib
 import analib
+import kanapy
 
 
 #
@@ -110,16 +111,16 @@ class InvCall:
         return self.id
 
 
-def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, flag_id=None):
+def scan_for_inv(region, ref_fa, tig_fa, align_lift, k_util, log=None, flag_id=None):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
     might be. Scan that region for an inversion expanding as necessary.
 
     :param region: Flagged region to begin scanning for an inversion.
     :param ref_fa: Reference FASTA. Must also have a .fai file.
-    :param aln_file_name: Contig alignment file.
+    :param tig_fa: Contig FASTA. Must also have a .fai file.
+    :param align_lift: Alignment lift-over tool (asmlib.align.AlignLift).
     :param k_util: K-mer utility.
-    :param subseq_exe: Subseq executable.
     :param log: Log file (open file handle).
     :param flag_id: ID of the flagged region (printed so flagged regions can easily be tracked in logs).
 
@@ -136,19 +137,26 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
     df_fai = analib.ref.get_df_fai(ref_fa + '.fai')
 
-    region.expand(INITIAL_EXPAND, min_pos=0, max_end=df_fai, shift=True)
+    region_ref = region.copy()
+    region_ref.expand(INITIAL_EXPAND, min_pos=0, max_end=df_fai, shift=True)
 
     expansion_count = 0
 
     # Scan and expand
     while True:
 
+        region_tig = align_lift.lift_region_to_qry(region_ref)
+
+        if region_tig is None:
+            _write_log('Could not lift contig region onto contigs: {}'.format(region_tig), log)
+            return None
+
         expansion_count += 1
 
-        _write_log('Scanning region: {}'.format(region), log)
+        _write_log('Scanning region: {}'.format(region_ref), log)
 
         ## Get reference k-mer counts ##
-        ref_kmer_count = asmlib.seq.ref_kmers(region, ref_fa, k_util)
+        ref_kmer_count = asmlib.seq.ref_kmers(region_ref, ref_fa, k_util)
 
         if ref_kmer_count is None or len(ref_kmer_count) == 0:
             _write_log('No reference k-mers', log)
@@ -171,20 +179,11 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
         ref_kmer_set = set(ref_kmer_count)
 
+        ## Get contig k-mers as list ##
 
-        ## Get contig k-mers ##
-        stream_tuple = asmlib.seq.tig_mer_stream(region, aln_file_name, subseq_exe, k_util, index=True)
+        seq_tig = asmlib.seq.region_seq(region_tig, tig_fa, region.is_rev)
 
-        if stream_tuple is not None:
-            tig_mer_region, tig_mer_stream = stream_tuple
-        else:
-            _write_log('No tig k-mers: No contig sequence record covers region', log)
-            return None
-
-        if tig_mer_stream is None or len(tig_mer_stream) == 0:
-            _write_log('No tig k-mers: May have expanded off contig boundaries', log)
-            return None
-
+        tig_mer_stream = list(kanapy.util.kmer.stream(seq_tig, k_util, index=True))
 
         ## Density data frame ##
 
@@ -220,31 +219,31 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
                 break
 
             # Expand
-            last_len = len(region)
-            expand_bp = np.int32(len(region) * EXPAND_FACTOR)
+            last_len = len(region_ref)
+            expand_bp = np.int32(len(region_ref) * EXPAND_FACTOR)
 
             if len(condensed_states) > 2:
                 # More than one state. Expand disproportionately if reference was found up or downstream.
 
                 if condensed_states[0] == 0:
-                    region.expand(
+                    region_ref.expand(
                         expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.25
                     )  # Ref upstream: +25% upstream, +75% downstream
 
                 elif condensed_states[-1] == 0:
-                    region.expand(
+                    region_ref.expand(
                         expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.75
                     )  # Ref downstream: +75% upstream, +25% downstream
 
                 else:
-                    region.expand(
+                    region_ref.expand(
                         expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5
                     )  # +50% upstream, +50% downstream
 
             else:
-                region.expand(expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5)  # +50% upstream, +50% downstream
+                region_ref.expand(expand_bp, min_pos=0, max_end=df_fai, shift=True, balance=0.5)  # +50% upstream, +50% downstream
 
-            if len(region) == last_len:
+            if len(region_ref) == last_len:
                 # Stop if expansion had no effect
 
                 _write_log(
@@ -266,8 +265,10 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
     ## Characterize found region ##
     # Stop if no inverted sequence was found
     if not np.any([record[0] == 2 for record in state_rl]):
-        _write_log('No inverted sequence found', log)
+        _write_log('No inverted states found', log)
         return None
+
+    state_rl_inv = [val for val in state_rl if val[0] == 2]
 
     max_inv_run = np.max([record[1] for record in state_rl if record[0] == 2])
 
@@ -278,47 +279,28 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
         return None
 
-
     # Code check - must be flanked by reference sequence
     if state_rl[0][0] != 0 or state_rl[-1][0] != 0:
-        raise RuntimeError('Found INV region not flanked by reference sequence (program bug): {}'.format(region))
+        raise RuntimeError('Found INV region not flanked by reference sequence (program bug): {}'.format(region_ref))
 
     # Subset to strictly inverted states (for calling inner breakpoints)
     state_rl_inv = [record for record in state_rl if record[0] == 2]
 
     # Find inverted repeat on left flank (upstream)
-    tig_outer_up_stream = state_rl[1][2] + tig_mer_region.pos
-    tig_inner_up_stream = state_rl_inv[0][2] + tig_mer_region.pos
-
-    # Find inverted repeat on right flank
-    tig_outer_dn_stream = state_rl[-2][3] + tig_mer_region.pos + k_util.k_size
-    tig_inner_dn_stream = state_rl_inv[-1][3] + tig_mer_region.pos + k_util.k_size
-
-    # Create contig coordinate records
-    region_tig_outer = asmlib.seq.Region(tig_mer_region.chrom, tig_outer_up_stream, tig_outer_dn_stream)
-    region_tig_inner = asmlib.seq.Region(tig_mer_region.chrom, tig_inner_up_stream, tig_inner_dn_stream)
-
-    # Create an intervaltree for translating contig coordinates to reference coordinates
-    lift_list = asmlib.seq.cigar_lift_to_subject(region, tig_mer_region, aln_file_name, ref_fa)
-
-    lift_tree = intervaltree.IntervalTree()
-
-    for record in lift_list:
-        if record[1] > record[0]:
-            lift_tree[record[0]:record[1]] = record
-
-    # Get inner and outer reference coordinate breakpoints
-    region_ref_outer = asmlib.seq.Region(
-        region.chrom,
-        asmlib.seq.tree_coords(region_tig_outer.pos, lift_tree),
-        asmlib.seq.tree_coords(region_tig_outer.end, lift_tree)
+    region_tig_outer = asmlib.seq.Region(
+        region_tig.chrom,
+        state_rl[1][2] + region_tig.pos,
+        state_rl[-2][3] + region_tig.pos + k_util.k_size
     )
 
-    region_ref_inner = asmlib.seq.Region(
-        region.chrom,
-        asmlib.seq.tree_coords(region_tig_inner.pos, lift_tree),
-        asmlib.seq.tree_coords(region_tig_inner.end, lift_tree)
+    region_tig_inner = asmlib.seq.Region(
+        region_tig.chrom,
+        state_rl_inv[0][2] + region_tig.pos,
+        state_rl_inv[-1][3] + region_tig.pos + k_util.k_size
     )
+
+    region_ref_outer = align_lift.lift_region_to_sub(region_tig_outer)
+    region_ref_inner = align_lift.lift_region_to_sub(region_tig_inner)
 
     # Check size proportions
     if len(region_ref_outer) < len(region_tig_outer) * MIN_TIG_REF_PROP:
@@ -347,13 +329,13 @@ def scan_for_inv(region, ref_fa, aln_file_name, k_util, subseq_exe, log=None, fl
 
     # Get INV-DUP flanking annotation. Where there is an inverted duplication on the flanks, flag k-mers that belong
     # strictly to the upstream or downstream flanking duplication.
-    df = annotate_inv_dup_mers(df, region_ref_outer, region_ref_inner, region_tig_outer, region_tig_inner, tig_mer_region, ref_fa, k_util)
+    df = annotate_inv_dup_mers(df, region_ref_outer, region_ref_inner, region_tig_outer, region_tig_inner, region_ref, ref_fa, k_util)
 
     # Return inversion call
     return InvCall(
         region_ref_outer, region_ref_inner,
         region_tig_outer, region_tig_inner,
-        region, tig_mer_region,
+        region_ref, region_tig,
         region_flag, df
     )
 

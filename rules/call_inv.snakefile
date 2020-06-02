@@ -86,8 +86,10 @@ rule call_inv_batch_merge:
 # Call inversions in batches of flagged regions.
 rule call_inv_batch:
     input:
-        bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
+        bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
+        bed_aln='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        tig_fa='align/{asm_name}/contigs_{hap}.fa.gz',
+        fai='align/{asm_name}/contigs_{hap}.fa.gz.fai'
     output:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:
@@ -105,10 +107,10 @@ rule call_inv_batch:
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Read and subset table to records in this batch
-        df = pd.read_csv(input.bed, sep='\t', header=0)
-        df = df.loc[df['BATCH'] == batch]
+        df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
+        df_flag = df_flag.loc[df_flag['BATCH'] == batch]
 
-        if df.shape[0] == 0:
+        if df_flag.shape[0] == 0:
             # No records in batch
 
             df_bed = pd.DataFrame(
@@ -127,18 +129,23 @@ rule call_inv_batch:
             # Init
             k_util = kanapy.util.kmer.KmerUtil(k_size)
 
+            align_lift = asmlib.align.AlignLift(
+                pd.read_csv(input.bed_aln, sep='\t'),
+                analib.ref.get_df_fai(input.fai)
+            )
+
             # Call inversions
             call_list = list()
 
             with open(log.log, 'w') as log_file:
-                for index, row in df.iterrows():
+                for index, row in df_flag.iterrows():
 
                     # Scan for inversions
                     region = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
 
                     try:
                         inv_call = asmlib.inv.scan_for_inv(
-                            region, REF_FA, input.aln, k_util, SUBSEQ_EXE, log=log_file, flag_id=row['ID']
+                            region, REF_FA, input.tig_fa, align_lift, k_util, log=log_file, flag_id=row['ID']
                         )
 
                     except RuntimeError as ex:
