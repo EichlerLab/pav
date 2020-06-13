@@ -2,13 +2,14 @@
 Routines for calling inversions.
 """
 
-import intervaltree
+import codecs
 import numpy as np
+import os
+import pickle
+import subprocess
 
 import asmlib
 import analib
-import kanapy
-
 
 #
 # Constants
@@ -19,8 +20,6 @@ EXPAND_FACTOR = 1.5        # Expand by this factor while searching
 
 MIN_REGION_SIZE = 5000     # Extract a region at least this size
 MAX_REGION_SIZE = 1000000  # Maximum region size
-
-MAX_REF_KMER_COUNT = 100   # Skip low-complexity regions
 
 MIN_INFORMATIVE_KMERS = 2000  # Minimum number of informative k-mers
 MIN_KMER_STATE_COUNT = 20     # Remove states with fewer than this number of k-mers. Eliminates spikes in density
@@ -111,93 +110,105 @@ class InvCall:
         return self.id
 
 
-def scan_for_inv(region, ref_fa, tig_fa, align_lift, k_util, log=None, flag_id=None):
+def scan_for_inv(region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None, threads=1, log=None):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
     might be. Scan that region for an inversion expanding as necessary.
 
-    :param region: Flagged region to begin scanning for an inversion.
-    :param ref_fa: Reference FASTA. Must also have a .fai file.
-    :param tig_fa: Contig FASTA. Must also have a .fai file.
+    :param region_flag: Flagged region to begin scanning for an inversion.
+    :param ref_fa_name: Reference FASTA. Must also have a .fai file.
+    :param tig_fa_name: Contig FASTA. Must also have a .fai file.
     :param align_lift: Alignment lift-over tool (asmlib.align.AlignLift).
     :param k_util: K-mer utility.
+    :param n_tree: Locations of n-base regions in the reference to ignore regions with N's or `None` if no N-filtering
+        should be attempted. If a region is expanded into N's, then it is discarded. If defined, this object should be
+        dict-like keyed by chromosome names where each value is an IntervalTree of N bases.
+    :param threads: Number of concurrent threads to use.
     :param log: Log file (open file handle).
-    :param flag_id: ID of the flagged region (printed so flagged regions can easily be tracked in logs).
 
     :return: A `InvCall` object describing the inversion found or `None` if no inversion was found.
     """
 
     # Init
-    if flag_id is None:
-        flag_id = '<No ID>'
+    _write_log(
+        'Scanning for inversions in flagged region: {} (flagged region record id = {})'.format(
+            region_flag, region_flag.region_id()
+        ),
+        log
+    )
 
-    _write_log('Scanning for inversions in flagged region: {} (flagged region record id = {})'.format(region, flag_id), log)
+    df_fai = analib.ref.get_df_fai(ref_fa_name + '.fai')
 
-    region_flag = region.copy()  # Original flagged region
-
-    df_fai = analib.ref.get_df_fai(ref_fa + '.fai')
-
-    region_ref = region.copy()
+    region_ref = region_flag.copy()
     region_ref.expand(INITIAL_EXPAND, min_pos=0, max_end=df_fai, shift=True)
 
     expansion_count = 0
 
+    # Get N-tree
+    if n_tree is not None and region_ref.chrom in n_tree.keys():
+        n_tree_chrom = n_tree[region_ref.chrom]
+    else:
+        n_tree_chrom = None
+
     # Scan and expand
     while True:
 
+        # Stop over N's
+        if n_tree_chrom is not None:
+            if len(n_tree_chrom[region_ref.pos:region_ref.end]) > 0:
+                _write_log('Region overlaps N bases: {}'.format(region_ref), log)
+
+        # Get contig region
         region_tig = align_lift.lift_region_to_qry(region_ref)
 
         if region_tig is None:
-            _write_log('Could not lift contig region onto contigs: {}'.format(region_tig), log)
+            _write_log('Could not lift reference region onto contigs: {}'.format(region_ref), log)
             return None
 
         expansion_count += 1
 
         _write_log('Scanning region: {}'.format(region_ref), log)
 
-        ## Get reference k-mer counts ##
-        ref_kmer_count = asmlib.seq.ref_kmers(region_ref, ref_fa, k_util)
+        ## Get k-mer density from region ##
+        pipeline_dir = os.path.dirname(os.path.dirname(asmlib.inv.__file__))
 
-        if ref_kmer_count is None or len(ref_kmer_count) == 0:
-            _write_log('No reference k-mers', log)
-            return None
+        density_table_args = [
+            'python3',
+            os.path.join(pipeline_dir, 'scripts', 'density.py'),
+            '--tigregion', str(region_tig),
+            '--refregion', str(region_ref),
+            '--ref', ref_fa_name,
+            '--tig', tig_fa_name,
+            '-k', str(k_util.k_size),
+            '-t', str(threads),
+            '-r', 'true' if region_tig.is_rev else 'false'
+        ]
 
-        # Skip low-complexity sites with repetitive k-mers
-        max_mer_count = np.max(list(ref_kmer_count.values()))
-
-        if max_mer_count > MAX_REF_KMER_COUNT:
-            max_mer = [kmer for kmer, count in ref_kmer_count.items() if count == max_mer_count][0]
-
-            _write_log('K-mer count exceeds max in {}: {} > {} ({})'.format(
-                region_flag,
-                max_mer_count,
-                MAX_REF_KMER_COUNT,
-                k_util.to_string(max_mer)
-            ), log)
-
-            return None
-
-        ref_kmer_set = set(ref_kmer_count)
-
-        ## Get contig k-mers as list ##
-
-        seq_tig = asmlib.seq.region_seq(region_tig, tig_fa, region.is_rev)
-
-        tig_mer_stream = list(kanapy.util.kmer.stream(seq_tig, k_util, index=True))
-
-        ## Density data frame ##
-
-        df = asmlib.density.get_smoothed_density(
-            tig_mer_stream,
-            ref_kmer_set,
-            k_util,
-            min_informative_kmers=MIN_INFORMATIVE_KMERS,
-            density_smooth_factor=DENSITY_SMOOTH_FACTOR,
-            min_state_count=MIN_KMER_STATE_COUNT
+        proc = subprocess.Popen(
+            args=density_table_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
 
-        # Note: States are 0 (fwd), 1 (fwd-rev), and 2 (rev) for k-mers found in forward orientation on the reference
-        # region, in forward and reverse-complement, or reverese-complement, respectively.
+        proc_stdout, proc_stderr = proc.communicate()
+
+        if proc.returncode != 0:
+            _write_log(
+                (
+                    'Received return code {} from density.py for region {}:\n{}'
+                ).format(
+                    proc.returncode, str(region_ref),
+                    proc_stderr.decode() if proc_stderr is not None else '<No STDERR Message>'
+                ),
+                log
+            )
+
+            return None
+
+        if proc_stdout is None:
+            _write_log(f'No output from density.py for region {region_ref}')
+            return None
+
+        #df = pickle.loads(proc_stdout)
+        df = pickle.loads(codecs.decode(proc_stdout, "base64"))
 
         if df.shape[0] > 0:
             ## Check inversion ##
@@ -290,17 +301,37 @@ def scan_for_inv(region, ref_fa, tig_fa, align_lift, k_util, log=None, flag_id=N
     region_tig_outer = asmlib.seq.Region(
         region_tig.chrom,
         state_rl[1][2] + region_tig.pos,
-        state_rl[-2][3] + region_tig.pos + k_util.k_size
+        state_rl[-2][3] + region_tig.pos + k_util.k_size,
+        is_rev=region_tig.is_rev
     )
 
     region_tig_inner = asmlib.seq.Region(
         region_tig.chrom,
         state_rl_inv[0][2] + region_tig.pos,
-        state_rl_inv[-1][3] + region_tig.pos + k_util.k_size
+        state_rl_inv[-1][3] + region_tig.pos + k_util.k_size,
+        is_rev=region_tig.is_rev
     )
 
+    # Lift to reference
     region_ref_outer = align_lift.lift_region_to_sub(region_tig_outer)
-    region_ref_inner = align_lift.lift_region_to_sub(region_tig_inner)
+
+    if region_ref_outer is None:
+        _write_log(
+            'Failed lifting outer INV region to reference: {}'.format(region_tig_outer),
+            log
+        )
+
+        return None
+
+    region_ref_inner = align_lift.lift_region_to_sub(region_tig_inner, gap=True)
+
+    if region_ref_inner is None:
+        region_ref_inner = region_ref_outer
+
+    print('INV Found: outer={}, inner={} (ref outer={}, inner={})'.format(
+        region_tig_outer, region_tig_inner,
+        region_ref_outer, region_ref_inner
+    ))  #
 
     # Check size proportions
     if len(region_ref_outer) < len(region_tig_outer) * MIN_TIG_REF_PROP:
@@ -329,15 +360,21 @@ def scan_for_inv(region, ref_fa, tig_fa, align_lift, k_util, log=None, flag_id=N
 
     # Get INV-DUP flanking annotation. Where there is an inverted duplication on the flanks, flag k-mers that belong
     # strictly to the upstream or downstream flanking duplication.
-    df = annotate_inv_dup_mers(df, region_ref_outer, region_ref_inner, region_tig_outer, region_tig_inner, region_ref, ref_fa, k_util)
+    df = annotate_inv_dup_mers(
+        df, region_ref_outer, region_ref_inner, region_tig_outer, region_tig_inner, region_ref, ref_fa_name, k_util
+    )
 
     # Return inversion call
-    return InvCall(
+    inv_call = InvCall(
         region_ref_outer, region_ref_inner,
         region_tig_outer, region_tig_inner,
         region_ref, region_tig,
         region_flag, df
     )
+
+    _write_log('Found inversion: {}'.format(inv_call), log)
+
+    return inv_call
 
 
 def annotate_inv_dup_mers(

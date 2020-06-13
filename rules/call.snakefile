@@ -95,32 +95,6 @@ rule call_merge_haplotypes:
 
 
 #
-# Call alignment-truncating events
-#
-
-# call_large_sv
-#
-# Call alignment-truncating SVs.
-rule call_large_sv:
-    input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        fa='align/{asm_name}/contigs_{hap}.fa.gz',
-        fai='align/{asm_name}/contigs_{hap}.fa.gz.fai',
-    output:
-        bed_ins=temp('temp/{asm_name}/bed/align_trunc/sv_ins_{hap}.bed.gz'),
-        bed_del=temp('temp/{asm_name}/bed/align_trunc/sv_del_{hap}.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/bed/align_trunc/sv_inv_{hap}.bed.gz')
-    run:
-
-        # Read
-        df = pd.read_csv(input.bed, sep='\t')
-        df_tig_fai = analib.ref.get_df_fai(input.fai)
-
-        # Get large events
-        df_ins, df_del, df_inv, df_sub = asmlib.lgsv.scan_for_events(df, wildcards.hap)
-
-
-#
 # Call inversions and filter inter-INV variants
 #
 
@@ -130,7 +104,8 @@ rule call_large_sv:
 rule call_correct_inter_inv:
     input:
         bed='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz',
-        bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'
+        bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz',
+        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
     output:
         bed=temp('temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz'),
         bed_dropped='results/{asm_name}/bed/dropped/interinv_{vartype}_{svtype}_{hap}.bed.gz'
@@ -141,7 +116,14 @@ rule call_correct_inter_inv:
 
         # Read
         df = pd.read_csv(input.bed, sep='\t')
-        df_inv = pd.read_csv(input.bed_inv, sep='\t')
+
+        df_inv = pd.concat(
+            [
+                pd.read_csv(input.bed_inv, sep='\t', usecols=['#CHROM', 'POS', 'END']),
+                pd.read_csv(input.bed_lg_inv, sep='\t', usecols=['#CHROM', 'POS', 'END'])
+            ],
+            axis=0
+        )
 
         # Build tree
         invtree = collections.defaultdict(intervaltree.IntervalTree)
@@ -195,9 +177,10 @@ rule call_inv_bed:
 
         # Add SEQ column
         df['SEQ'] = df.apply(
-            lambda row: asmlib.seq.fa_region(
+            lambda row: asmlib.seq.region_seq_fasta(
                 asmlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
-                REF_FA
+                REF_FA,
+                False
             ).upper(),
             axis=1
         )
@@ -331,7 +314,7 @@ rule call_printgaps_sv:
         bed=temp('temp/{asm_name}/pg/raw/sv_{hap}.bed')
     shell:
         """samtools view -h {input.aln} | """
-        """python3 {PRINT_GAPS} """
+        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
             """{REF_FA} /dev/stdin """
             """--condense 20 """
             """--minq 0 """
@@ -347,7 +330,7 @@ rule call_printgaps_indel:
         bed=temp('temp/{asm_name}/pg/raw/indel_{hap}.bed')
     shell:
         """samtools view -h {input.aln} | """
-        """python3 {PRINT_GAPS} """
+        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
             """{REF_FA} /dev/stdin """
             """--minLength 0 --maxLength 50 """
             """--removeAdjacentIndels """
@@ -366,7 +349,7 @@ rule call_printgaps_snv:
         bed=temp('temp/{asm_name}/pg/raw/snv_{hap}.bed')
     shell:
         """samtools view -h {input.aln} | """
-        """python3 {PRINT_GAPS} """
+        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
             """{REF_FA} /dev/stdin """
             """--minLength 0 --maxLength 0 """
             """--minq 0 """

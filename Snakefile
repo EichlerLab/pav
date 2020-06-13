@@ -12,6 +12,7 @@ import numpy as np
 import os
 import pandas as pd
 import pysam
+import subprocess
 import sys
 import re
 from scipy import stats
@@ -56,30 +57,6 @@ if not os.path.isfile(REF_FAI):
     raise RuntimeError('Reference FAI file does not exist or is not a file: {}'.format(REF_FAI))
 
 
-# SV-Pop directory
-SVPOP_DIR = config.get(
-    'svpop', '/net/eichler/vol27/projects/structural_variation/nobackups/tools/svpop/201910'
-)
-
-if not os.path.isdir(SVPOP_DIR):
-    raise RuntimeError('SV-Pop directory does not exist or is not a directory: {}'.format(SVPOP_DIR))
-
-# SV-Pop directory
-KANAPY_DIR = config.get(
-    'kanapy', '/net/eichler/vol26/7200/software/tools/informatics/kanapy_mod/0.1'
-)
-
-if not os.path.isdir(KANAPY_DIR):
-    raise RuntimeError('Kanapy (KAnalyze Python Library) directory does not exist or is not a directory: {}'.format(SVPOP_DIR))
-
-# SMRT-SV directory
-SMRTSV_DIR = config.get(
-    'smrtsv', '/net/eichler/vol27/projects/structural_variation/nobackups/tools/smrtsv3/201910/'
-)
-
-if not os.path.isdir(SMRTSV_DIR):
-    raise RuntimeError('SMRT-SV directory does not exist or is not a directory: {}'.format(SMRTSV_DIR))
-
 # Environment source file for shell commands
 ENV_FILE = config.get(
     'env_source', None
@@ -91,18 +68,6 @@ if ENV_FILE is None:
 if not os.path.isfile(ENV_FILE):
     raise RuntimeError('Shell configuration source not found: {}'.format(ENV_FILE))
 
-
-# Window size
-WINDOW_SIZE = int(config.get(
-    'window_size',
-    500
-))
-
-# Merge aligned contigs within this distance when finding consensus regions.
-CONTIG_ALIGN_MERGE_DIST = str(config.get(
-    'contig_align_merge_dist',
-    '500'
-))
 
 # Max variant offset for clustering (RO or size-RO-offset)
 OFFSET_MAX = int(config.get(
@@ -121,24 +86,13 @@ INV_KMER_SIZE = int(config.get(
     31
 ))
 
-SUBSEQ_EXE = config.get(
-    'subseq_exe',
-    '/net/eichler/vol27/projects/structural_variation/nobackups/tools/seqtools/201910/CentOS6/bin/subseqfa'
-)
-
-
-### Static parameters ###
-
-PRINT_GAPS = os.path.join(SMRTSV_DIR, 'scripts/PrintGaps.py')
-
 
 #
 # Assembly library and dependency imports
 #
 
 sys.path.append(PIPELINE_DIR)
-sys.path.append(SVPOP_DIR)
-sys.path.append(KANAPY_DIR)
+sys.path.append(os.path.join(PIPELINE_DIR, 'dep'))
 
 import asmlib
 import analib
@@ -191,6 +145,11 @@ else:
 shell.prefix('set -euo pipefail; source {}; '.format(ENV_FILE))
 
 
+### Wildcard constraints ###
+
+wildcard_constraints:
+    asm_name='[A-Za-z_\-0-9]+'
+
 ### Default rule ###
 
 localrules: pg_all
@@ -218,4 +177,5 @@ include: 'rules/input_functions.snakefile'
 include: 'rules/align.snakefile'
 include: 'rules/call.snakefile'
 include: 'rules/call_inv.snakefile'
+include: 'rules/call_lg.snakefile'
 include: 'rules/tracks.snakefile'

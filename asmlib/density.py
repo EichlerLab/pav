@@ -2,6 +2,7 @@
 K-mer density used for calling inversions.
 """
 
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 
@@ -22,11 +23,14 @@ KMER_ORIENTATION_STATE = np.asarray(
     ]
 )
 
+SAMPLE_INDEX_CHUNK_SIZE = 400
+
 
 def get_smoothed_density(
         tig_mer_stream,
         ref_kmer_set,
         k_util,
+        threads=1,
         min_informative_kmers=2000,
         density_smooth_factor=1,
         min_state_count=20,
@@ -59,14 +63,11 @@ def get_smoothed_density(
     * KERN_FWD: Kernel density of forward-oriented k-mers.
     * KERN_FWDREV: Kernel density of forward- and reverse-oriented k-mers (found in both orientations in the reference).
     * KERN_REV: Kernel density of reverse-oriented k-mers.
-    * INTERP: `True` if linear interpolation was used to calculated kernel values ("KERN_" columns). This is for
-        troubleshooting inversion calls where slight changes in density might affect the call (not used by the
-        pipeline). Interpolation for records with a `True` value were interpolated using values from the two nearest
-        non-interpolated values (nearest upstream and downstream).
 
     :param tig_mer_stream: A list of (k-mer, count) tuples from the contig region.
     :param ref_kmer_set: A set of k-mers in the reference region where the contig region aligns.
     :param k_util: K-mer utility from kanapy package.
+    :param threads: Number of threads to use for computing densities.
     :param min_informative_kmers: Do not attempt density if the number of informative k-mers does not reach this limit.
         Informative k-mers are defined as k-mers that are in forward and/or reverse-complement in the reference
         k-mer set.
@@ -83,6 +84,9 @@ def get_smoothed_density(
     :return: A Pandas dataframe describing the density. The dataframe index is set to the "INDEX" column (index in
         k-mer/tig space).
     """
+
+    # Objects used by threads
+    kernel_dict = None
 
     # Make dataframe
     df = pd.DataFrame(tig_mer_stream, columns=['KMER', 'INDEX'])
@@ -124,50 +128,114 @@ def get_smoothed_density(
 
     df.set_index('INDEX_DEN', inplace=True, drop=False)  # Switch index to density space
 
-    # Get density functions
-    if np.any(df['STATE_MER'] == 0):
-        kernel_fwd = scipy.stats.gaussian_kde(
-            df.loc[df['STATE_MER'] == 0, 'INDEX_DEN'],
-            bw_method=density_bandwidth
-        )
-    else:
-        kernel_fwd = lambda x: np.zeros(np.array(x).shape[0])
-
-    if np.any(df['STATE_MER'] == 1):
-        kernel_fwdrev = scipy.stats.gaussian_kde(
-            df.loc[df['STATE_MER'] == 1, 'INDEX_DEN'],
-            bw_method=density_bandwidth
-        )
-    else:
-        kernel_fwdrev = lambda x: np.zeros(np.array(x).shape[0])
-
-    if np.any(df['STATE_MER'] == 2):
-        kernel_rev = scipy.stats.gaussian_kde(
-            df.loc[df['STATE_MER'] == 2, 'INDEX_DEN'],
-            bw_method=density_bandwidth
-        )
-    else:
-        kernel_rev = lambda x: np.zeros(np.array(x).shape[0])
-
-    # Assign density on sampled sites
+    # Count states for scaled-density
     sum_state_fwd = np.sum(df['STATE_MER'] == 0)
     sum_state_fwdrev = np.sum(df['STATE_MER'] == 1)
     sum_state_rev = np.sum(df['STATE_MER'] == 2)
 
+    # Setup density models.
+    # Initializes kernel_dict per-thread
+    def init_density():
+        global kernel_dict
+
+        if kernel_dict is None:
+            kernel_dict = dict()
+
+            if np.any(df['STATE_MER'] == 0):
+                kernel_dict['fwd'] = scipy.stats.gaussian_kde(
+                    df.loc[df['STATE_MER'] == 0, 'INDEX_DEN'],
+                    bw_method=density_bandwidth
+                )
+            else:
+                kernel_dict['fwd'] = lambda x: np.zeros(np.array(x).shape[0])
+
+            if np.any(df['STATE_MER'] == 1):
+                kernel_dict['fwdrev'] = scipy.stats.gaussian_kde(
+                    df.loc[df['STATE_MER'] == 1, 'INDEX_DEN'],
+                    bw_method=density_bandwidth
+                )
+            else:
+                kernel_dict['fwdrev'] = lambda x: np.zeros(np.array(x).shape[0])
+
+            if np.any(df['STATE_MER'] == 2):
+                kernel_dict['rev'] = scipy.stats.gaussian_kde(
+                    df.loc[df['STATE_MER'] == 2, 'INDEX_DEN'],
+                    bw_method=density_bandwidth
+                )
+            else:
+                kernel_dict['rev'] = lambda x: np.zeros(np.array(x).shape[0])
+
+    # Density calculation functions.
+    def density_fwd(val):
+        return kernel_dict['fwd'](val) * sum_state_fwd
+
+    def density_fwdrev(val):
+        return kernel_dict['fwdrev'](val) * sum_state_fwdrev
+
+    def density_rev(val):
+        return kernel_dict['rev'](val) * sum_state_rev
+
+    # Interpolation functions.
+    # Take a range of values where the flanks (values just before and after inner_range) ar filled in, then
+    # interpolates density values between them.
+    def interp_fwd(inner_range):
+        range_start = inner_range[0] - 1
+        range_end = inner_range[-1] + 1
+
+        return \
+        np.interp(
+            inner_range,
+            [range_start, range_end],
+            [df.loc[range_start, 'KERN_FWD'], df.loc[range_end, 'KERN_FWD']]
+        )
+
+    def interp_fwdrev(inner_range):
+        range_start = inner_range[0] - 1
+        range_end = inner_range[-1] + 1
+
+        return \
+        np.interp(
+            inner_range,
+            [range_start, range_end],
+            [df.loc[range_start, 'KERN_FWDREV'], df.loc[range_end, 'KERN_FWDREV']]
+        )
+
+    def interp_rev(inner_range):
+        range_start = inner_range[0] - 1
+        range_end = inner_range[-1] + 1
+
+        return \
+        np.interp(
+            inner_range,
+            [range_start, range_end],
+            [df.loc[range_start, 'KERN_REV'], df.loc[range_end, 'KERN_REV']]
+        )
+
+    # Setup indexes (initial non-sampled sites density is initially calcuated over)
     sample_index_list = list(df.loc[df['INDEX_DEN'] % state_run_smooth == 0, 'INDEX_DEN'])
 
     if sample_index_list[-1] != np.int32(df.iloc[-1]['INDEX_DEN']):  # Add last table element if it does not exist
         sample_index_list.append(np.int32(df.iloc[-1]['INDEX_DEN']))
 
+    # Break sample_index_list into equal-sized lists for parallel processing in chunks (last list may be shorter)
+    sample_index_chunked = [
+        sample_index_list[x:x + SAMPLE_INDEX_CHUNK_SIZE]
+            for x in range(0, len(sample_index_list), SAMPLE_INDEX_CHUNK_SIZE)
+    ]
+
+    # Setup thread object
+    pool = mp.Pool(threads, initializer=init_density)
+
+    # Assign density on sampled sites
     df['STATE'] = -1
     df['KERN_FWD'] = np.nan
     df['KERN_FWDREV'] = np.nan
     df['KERN_REV'] = np.nan
     df['INTERP'] = False
 
-    df.loc[sample_index_list, 'KERN_FWD'] = kernel_fwd(sample_index_list) * sum_state_fwd
-    df.loc[sample_index_list, 'KERN_FWDREV'] = kernel_fwdrev(sample_index_list) * sum_state_fwdrev
-    df.loc[sample_index_list, 'KERN_REV'] = kernel_rev(sample_index_list) * sum_state_rev
+    df.loc[sample_index_list, 'KERN_FWD'] = np.concatenate(pool.map(density_fwd, sample_index_chunked))
+    df.loc[sample_index_list, 'KERN_FWDREV'] = np.concatenate(pool.map(density_fwdrev, sample_index_chunked))
+    df.loc[sample_index_list, 'KERN_REV'] = np.concatenate(pool.map(density_rev, sample_index_chunked))
 
     # Get max state
     df.loc[sample_index_list, 'STATE'] = df.loc[
@@ -176,7 +244,10 @@ def get_smoothed_density(
         lambda vals: np.argmax(vals.array), axis=1
     )
 
-    # Fill missing values
+    # Get indices where density must be computed and indices that can be interpolated
+    density_range_list = list()  # Fully compute density
+    interp_range_list = list()   # Interpolate from sampled loci
+
     for index in range(len(sample_index_list) - 1):
 
         range_start = sample_index_list[index]
@@ -193,38 +264,48 @@ def get_smoothed_density(
             df.loc[range_start, 'STATE'] != df.loc[range_end, 'STATE']
 
         density_change = np.max(np.abs(
-            df.loc[range_start, ['KERN_FWD', 'KERN_FWDREV', 'KERN_REV']] - df.loc[range_end, ['KERN_FWD', 'KERN_FWDREV', 'KERN_REV']]
+            df.loc[range_start, ['KERN_FWD', 'KERN_FWDREV', 'KERN_REV']] -
+            df.loc[range_end, ['KERN_FWD', 'KERN_FWDREV', 'KERN_REV']]
         )) > state_run_smooth_delta
 
         if state_change or density_change:
-            # Calculate densities within range
-
-            df.loc[inner_range, 'KERN_FWD'] = kernel_fwd(inner_range) * sum_state_fwd
-            df.loc[inner_range, 'KERN_FWDREV'] = kernel_fwdrev(inner_range) * sum_state_fwdrev
-            df.loc[inner_range, 'KERN_REV'] = kernel_rev(inner_range) * sum_state_rev
+            # Save indices where density must be calculated
+            density_range_list.append(inner_range)
 
         else:
             # Interpolate densities within range
+            interp_range_list.append(inner_range)
 
-            df.loc[inner_range, 'KERN_FWD'] = np.interp(
-                inner_range,
-                [range_start, range_end],
-                [df.loc[range_start, 'KERN_FWD'], df.loc[range_end, 'KERN_FWD']]
-            )
+    # Interpolate values (where density does not need to be calculated)
+    interp_chunk_size = SAMPLE_INDEX_CHUNK_SIZE // state_run_smooth
+    interp_index = np.concatenate(interp_range_list)
 
-            df.loc[inner_range, 'KERN_FWDREV'] = np.interp(
-                inner_range,
-                [range_start, range_end],
-                [df.loc[range_start, 'KERN_FWDREV'], df.loc[range_end, 'KERN_FWDREV']]
-            )
+    df.loc[interp_index, 'KERN_FWD'] = np.concatenate(pool.map(
+        interp_fwd, interp_range_list, chunksize=interp_chunk_size
+    ))
 
-            df.loc[inner_range, 'KERN_REV'] = np.interp(
-                inner_range,
-                [range_start, range_end],
-                [df.loc[range_start, 'KERN_REV'], df.loc[range_end, 'KERN_REV']]
-            )
+    df.loc[interp_index, 'KERN_FWDREV'] = np.concatenate(pool.map(
+        interp_fwdrev, interp_range_list, chunksize=interp_chunk_size
+    ))
 
-            df.loc[inner_range, 'INTERP'] = True
+    df.loc[interp_index, 'KERN_REV'] = np.concatenate(pool.map(
+        interp_rev, interp_range_list, chunksize=interp_chunk_size
+    ))
+
+    df.loc[interp_index, 'INTERP'] = True
+
+    # Calculate density values within chunks where values could not be interpolated
+    # (too close to potential state changes)
+    density_index = np.concatenate(density_range_list)
+
+    density_index_chunked = [
+        density_index[x:x + SAMPLE_INDEX_CHUNK_SIZE]
+            for x in range(0, len(density_index), SAMPLE_INDEX_CHUNK_SIZE)
+    ]
+
+    df.loc[density_index, 'KERN_FWD'] = np.concatenate(pool.map(density_fwd, density_index_chunked))
+    df.loc[density_index, 'KERN_FWDREV'] = np.concatenate(pool.map(density_fwdrev, density_index_chunked))
+    df.loc[density_index, 'KERN_REV'] = np.concatenate(pool.map(density_rev, density_index_chunked))
 
     # Penalize spikes above 1.0.
     df.loc[df['KERN_FWD'] > 1.0, 'KERN_FWD'] = 1 / df.loc[df['KERN_FWD'] > 1.0]

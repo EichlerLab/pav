@@ -4,7 +4,7 @@
         "mem": "2G",
         "disk": "0G",
         "rt": "04:00:00",
-        "params": "-l testing=true"
+        "params": ""
     },
 
     "pg_variant_bed": {
@@ -16,6 +16,11 @@
         "cpu": 6,
         "mem": "3G",
         "rt": "12:00:00"
+    },
+    "call_lg_discover": {
+        "cpu": "{params.inv_threads}",
+        "mem": "{params.inv_mem}",
+        "rt": "24:00:00"
     },
     "call_variant_inter_align": {
         "mem": "4G",
@@ -30,11 +35,15 @@
     "call_printgaps_snv": {
         "rt": "24:00:00"
     },
-
     "call_inv_batch": {
-        "rt": "8:00:00"
+        "cpu": "{params.inv_threads}",
+        "mem": "{params.inv_mem}",
+        "rt": "24:00:00"
     },
 
+    "align_postcut_cram": {
+        "mem": "16G"
+    },
     "align_genomecov": {
         "mem": "4G"
     },
@@ -46,7 +55,7 @@
         "mem": "4G"
     },
     "align_get_read_bed": {
-        "mem": "6G"
+        "mem": "16G"
     },
     "align_map": {
         "cpu": "4",

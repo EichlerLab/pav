@@ -46,7 +46,7 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None, coords=
         raise RuntimeError('Unrecognized coords arguments: {}'.format(coords))
 
     # Get reference sequence
-    seq_ref = asmlib.seq.fa_region(region_ref, ref_fa)
+    seq_ref = asmlib.seq.region_seq_fasta(region_ref, ref_fa, False)
 
     # Get contig sequence
     if seq_tig is None:

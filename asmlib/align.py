@@ -110,10 +110,11 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
             ))
 
     # Find the number of upstream (l) bases to trim to get to 0 (or contig start)
-    trace_l = trace_cigar_to_zero(cigar_l, diff_bp, record_l, match_coord == 'query')[::-1]
+    trace_l = trace_cigar_to_zero(cigar_l, diff_bp, record_l, match_coord == 'query')
 
     # Find the number of downstream (r) bases to trim to get to 0 (or contig start)
     trace_r = trace_cigar_to_zero(cigar_r, diff_bp, record_r, match_coord == 'query')
+
 
     # For each upstream alignment cut-site, find the best matching downstream alignment cut-site. Not all cut-site
     # combinations need to be tested since trimmed bases and event count is non-decreasing as it moves away from the
@@ -178,18 +179,20 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     if rev_l:
         record_l_mod['END'] -= cut_sub_l
         record_l_mod['QUERY_END'] -= cut_qry_l
-        #record_l_mod['CLIP_R'] = cut_l[TC_CLIPS_BP] + cut_sub_l
 
         # Adjust positions in contig space
         if record_l_mod['REV']:
             record_l_mod['QUERY_TIG_POS'] += cut_qry_l
         else:
             record_l_mod['QUERY_TIG_END'] -= cut_qry_l
+
+        # Track cut bases
+        record_l_mod['CUT_REF_R'] += cut_sub_l
+        record_l_mod['CUT_TIG_R'] += cut_qry_l
 
     else:
         record_l_mod['POS'] += cut_sub_l
         record_l_mod['QUERY_POS'] += cut_qry_l
-        #record_l_mod['CLIP_L'] = cut_l[TC_CLIPS_BP] + cut_sub_l
 
         # Adjust positions in contig space
         if record_l_mod['REV']:
@@ -197,21 +200,27 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
         else:
             record_l_mod['QUERY_TIG_POS'] += cut_qry_l
 
+        # Track cut bases
+        record_l_mod['CUT_REF_L'] += cut_sub_l
+        record_l_mod['CUT_TIG_L'] += cut_qry_l
+
     if rev_r:
         record_r_mod['END'] -= cut_sub_r
         record_r_mod['QUERY_END'] -= cut_qry_r
-        #record_r_mod['CLIP_R'] = cut_r[TC_CLIPS_BP] + cut_sub_r
 
         # Adjust positions in contig space
         if record_r_mod['REV']:
             record_r_mod['QUERY_TIG_POS'] += cut_qry_r
         else:
             record_r_mod['QUERY_TIG_END'] -= cut_qry_r
+
+        # Track cut bases
+        record_r_mod['CUT_REF_R'] += cut_sub_r
+        record_r_mod['CUT_TIG_R'] += cut_qry_r
 
     else:
         record_r_mod['POS'] += cut_sub_r
         record_r_mod['QUERY_POS'] += cut_qry_r
-        #record_r_mod['CLIP_L'] = cut_r[TC_CLIPS_BP] + cut_sub_r
 
         # Adjust positions in contig space
         if record_r_mod['REV']:
@@ -219,20 +228,18 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
         else:
             record_r_mod['QUERY_TIG_POS'] += cut_qry_r
 
-    record_l_mod['CUT_REF_R'] += cut_sub_l
-    record_l_mod['CUT_TIG_R'] += cut_qry_l
-
-    record_r_mod['CUT_REF_L'] += cut_sub_r
-    record_r_mod['CUT_TIG_L'] += cut_qry_r
+        # Track cut bases
+        record_r_mod['CUT_REF_L'] += cut_sub_r
+        record_r_mod['CUT_TIG_L'] += cut_qry_r
 
     # Add clipped bases to CIGAR
-    if cigar_l[0][1] == 'H':
-        cigar_l_pre = [cigar_l[0]]
+    if cut_l[TC_CLIPH_BP] > 0:
+        cigar_l_pre = [(cut_l[TC_CLIPH_BP], 'H')]
     else:
         cigar_l_pre = []
 
-    if cigar_r[0][1] == 'H':
-        cigar_r_pre = [cigar_r[0]]
+    if cut_r[TC_CLIPH_BP] > 0:
+        cigar_r_pre = [(cut_r[TC_CLIPH_BP], 'H')]
     else:
         cigar_r_pre = []
 
@@ -245,10 +252,17 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     if clip_s_r > 0:
         cigar_r_pre.append((clip_s_r, 'S'))
 
+    # Append remaining CIGAR
     cigar_l_mod = cigar_l_pre + cigar_l_mod
     cigar_r_mod = cigar_r_pre + cigar_r_mod
 
-    record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod[::-1]])
+    if rev_l:
+        cigar_l_mod = cigar_l_mod[::-1]
+
+    if rev_r:
+        cigar_r_mod = cigar_r_mod[::-1]
+
+    record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod])
     record_r_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_r_mod])
 
     return record_l_mod, record_r_mod
@@ -286,20 +300,20 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
     cut_idx_r = None
     
     max_event = 0
-    max_diff = None
+    max_diff_optimal = None
 
     # Debugging: List of operations
-    # diff_list_op = list()  # DBGTMP
+    # diff_list_all = list()  # DBGTMP
 
     # Traverse l cut-sites
-    for tc_idx_l in range(len(trace_l)):
+    for tc_idx_l in range(len(trace_l) - 1, -1, -1):
 
         # Optimal cutsite for this pair of alignments at a given left index.
         cut_idx_part_l = None
         cut_idx_part_r = None
 
         max_event_part = 0
-        max_diff_part = None
+        max_diff_optimal_part = None
 
         # Note: "=" and "X" consume both subj and qry, so diff calculation is the same if subject or query is cut.
         # The following code assumes an = or X record is being processed.
@@ -331,12 +345,11 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
             max_bp = max_bp_l + trace_r[tc_idx_r][TC_DIFF_CUM] + trace_r[tc_idx_r][TC_DIFF] - 1
 
             diff_min = diff_bp - max_bp
-            diff_max = diff_bp - min_bp
 
             # Count number of events if the minimal cut at these sites are made.
             event_count = trace_l[tc_idx_l][TC_EVENT_CUM] + trace_r[tc_idx_r][TC_EVENT_CUM]
 
-            if diff_min <= diff_bp:
+            if diff_min <= 0:
                 # Target cut length is within the minimum and maximum bp by cutting at this site
 
                 # Add up to bases_mismatch (number of X sites) to cut at target length (diff_bp)
@@ -344,40 +357,59 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
                     # Difference on min-bases to target
                     diff_bp - diff_min,
 
-                    # Number of events that could be added if either or both ends X and are fully cut
-                    trace_l[tc_idx_l][TC_EVENT] + trace_r[tc_idx_r][TC_EVENT]
+                    # Number of events that could be added if either or both ends X and are fully cut. Since records
+                    # Cannot be fully truncated, remove one event for X records.
+                    trace_l[tc_idx_l][TC_EVENT] +
+                    trace_r[tc_idx_r][TC_EVENT] -
+                    1 if trace_l[tc_idx_l][TC_EVENT] > 0 else 0 -
+                    1 if trace_r[tc_idx_r][TC_EVENT] > 0 else 0
                 ])
+
+                # Cannot cut whole record, so remove one from event_count if count for left or right is greater than 0
+                if trace_l[tc_idx_l][TC_EVENT] > 0:
+                    event_count -= 1
+
+                if trace_r[tc_idx_r][TC_EVENT] > 0:
+                    event_count -= 1
+
 
                 diff_optimal = 0  # diff_bp is exactly achievable
             else:
                 # Must over-cut to use these sites.
-                diff_optimal = diff_bp - diff_min
+                diff_optimal = diff_min
 
             # else: Cut will remove more than the target number of bases; do not cut into these (accept full records)
 
             # DBGTMP: Turn on to get full list
-            # diff_list_op.append(
-            #     (
+            # diff_list_all.append(pd.Series(
+            #     [
             #         tc_idx_l, tc_idx_r,
             #         trace_l[tc_idx_l][TC_INDEX],
             #         trace_r[tc_idx_r][TC_INDEX],
+            #         diff_min,
+            #         diff_bp - min_bp,
             #         diff_optimal,
             #         event_count
-            #     )
-            # )
+            #     ],
+            #     index=['TC_IDX_L', 'TC_IDX_R',
+            #            'INDEX_L', 'INDEX_R',
+            #            'DIFF_MIN', 'DIFF_MAX', 'DIFF_BP',
+            #            'EVENT_COUNT'
+            #    ]
+            # ))
 
             # Save max
             if (
                 event_count > max_event_part or (  # Better event count, or
                     event_count == max_event_part and (  # Same event count, and
-                        max_diff_part is None or diff_optimal > max_diff_part  # Max difference is closer to 0 (less over-cut)
+                        max_diff_optimal_part is None or diff_optimal < max_diff_optimal_part  # Optimal difference is closer to 0 (less over-cut)
                     )
                 )
             ):
                 cut_idx_part_l = tc_idx_l
                 cut_idx_part_r = tc_idx_r
                 max_event_part = event_count
-                max_diff_part = diff_optimal
+                max_diff_optimal_part = diff_optimal
 
             tc_idx_r += 1
 
@@ -385,22 +417,19 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
         if (
             max_event_part > max_event or (  # Better event count, or
                 max_event_part == max_event and (  # Same event count, and
-                    max_diff is None or max_diff_part > max_diff  # Max difference is closer to 0 (less over-cut)
+                    max_diff_optimal is None or max_diff_optimal_part < max_diff_optimal  # Optimal difference is closer to 0 (less over-cut)
                 )
             )
         ):
             cut_idx_l = cut_idx_part_l
             cut_idx_r = cut_idx_part_r
             max_event = max_event_part
-            max_diff = max_diff_part
+            max_diff_optimal = max_diff_optimal_part
 
         # Reset right index
-        if cut_idx_part_r is not None:
-            tc_idx_r = cut_idx_part_r
-        else:
-            tc_idx_r = tc_idx_r_start
+        tc_idx_r = tc_idx_r_start
 
-        #tc_idx_r_last = tc_idx_r
+    # df_diff_all = pd.concat(diff_list_all, axis=1).T  # DBGTMP
 
     return cut_idx_l, cut_idx_r
 
@@ -616,7 +645,7 @@ class AlignLift:
 
         for index, row in df.iterrows():
             self.ref_tree[row['#CHROM']][row['POS']:row['END']] = index
-            self.tig_tree[row['QUERY_ID']][row['QUERY_POS']:row['QUERY_END']] = index
+            self.tig_tree[row['QUERY_ID']][row['QUERY_TIG_POS']:row['QUERY_TIG_END']] = index
 
         # Build alignment caching structures
         self.cache_queue = collections.deque()
@@ -624,15 +653,19 @@ class AlignLift:
         self.ref_cache = dict()
         self.tig_cache = dict()
 
-    def lift_to_sub(self, query_id, coord):
+    def lift_to_sub(self, query_id, coord, gap=False):
         """
         Lift coordinates from query (tig) to subject (reference).
 
         Returns tuple(s) of (query-id, pos, is_rev) with `is_rev` `True` if the alignment was lifted through a
         reverse-complemented alignment.
 
+        If the lift hits an alignment gap, then the function can try to resolve the lift to the best subject position
+        based on the alignment using a strategy outlined by the `gap` parameter.
+
         :param query_id: Query record ID.
         :param coord: Query coordinates. May be a single value, list, or tuple.
+        :param gap: Interpolate into an alignment gap between two contigs if `True`.
 
         :return: Single coordinate or list of coordinates if `coord` is a list or tuple. Returns `None` for coordinates
             that cannot be lifted.
@@ -650,81 +683,19 @@ class AlignLift:
 
         for pos in coord:
 
-            # Find forward or reverse match set
-            qry_len = self.df_fai[query_id]
-            pos_rev = qry_len - pos
+            # Find matching records
+            match_set = self.tig_tree[query_id][pos:(pos + 1)]
 
-            match_set_fwd = self.tig_tree[query_id][pos:(pos + 1)]
-            match_set_rev = self.tig_tree[query_id][pos_rev:(pos_rev + 1)]
+            if len(match_set) == 1:
+                index = list(match_set)[0].data
 
-            if len(match_set_fwd) == 1:
-                index_fwd = list(match_set_fwd)[0].data
-
-                if self.df.loc[index_fwd, 'REV']:
-                    index_fwd = None
+            elif len(match_set) == 0 and gap:
+                lift_coord_list.append(self._get_subject_gap(query_id, pos))
+                continue
 
             else:
-                index_fwd = None
-
-            if len(match_set_rev) == 1:
-                index_rev = list(match_set_rev)[0].data
-
-                if not self.df.loc[index_rev, 'REV']:
-                    index_rev = None
-
-            else:
-                index_rev = None
-
-            # Check coordinates
-            if len(match_set_fwd) > 1:
                 lift_coord_list.append(None)
                 continue
-
-                # raise ValueError(
-                #     'Query region {}:{} has {} to-subject lift records (forward orientation)'.format(
-                #         query_id, pos, len(match_set_fwd)
-                #     )
-                # )
-
-            if len(match_set_rev) > 1:
-                lift_coord_list.append(None)
-                continue
-
-                # raise ValueError(
-                #     'Query region {}:{} has {} to-subject lift records (reverse orientation at position {})'.format(
-                #         query_id, pos, len(match_set_rev), pos_rev
-                #     )
-                # )
-
-            if index_fwd is None and index_rev is None:
-                lift_coord_list.append(None)
-                continue
-
-                # raise ValueError(
-                #     'Query region {}:{} has no to-subject lift records (forward and reverse at position {})'.format(
-                #         query_id, pos, pos_rev
-                #     )
-                # )
-
-            if index_fwd is not None and index_rev is not None:
-                lift_coord_list.append(None)
-                continue
-
-                # raise ValueError(
-                #     'Query region {}:{} has to-subject lift records for both forward and reverse at position {}'.format(
-                #         query_id, pos, pos_rev
-                #     )
-                # )
-
-            if index_fwd is not None:
-                index = index_fwd
-
-            elif index_rev is not None:
-                index = index_rev
-                pos = pos_rev
-
-            else:
-                raise RuntimeError('Program bug: Both fwd and rev indexes are None (was checked already)')
 
             # Get lift tree
             if index not in self.tig_cache.keys():
@@ -732,8 +703,13 @@ class AlignLift:
 
             lift_tree = self.tig_cache[index]
 
-            # Save row
+            # Get row
             row = self.df.loc[index]
+
+            # Reverse coordinates of pos if the alignment is reverse-complemented. Translates from QUERY_TIG_POS-space
+            # to QUERY_POS-space.
+            if row['REV']:
+                pos = self.df_fai[query_id] - pos
 
             # Get match record
             match_set = lift_tree[pos:(pos + 1)]
@@ -750,17 +726,23 @@ class AlignLift:
 
             # Interpolate coordinates
             if match_interval.data[1] - match_interval.data[0] > 1:
+                lift_pos = match_interval.data[0] + (pos - match_interval.begin)
+
                 lift_coord_list.append((
                     row['#CHROM'],
-                    match_interval.data[0] + (pos - match_interval.begin),
-                    row['REV']
+                    lift_pos,
+                    row['REV'],
+                    lift_pos,
+                    lift_pos
                 ))
 
             else:  # Lift from missing bases on the target (insertion or deletion)
                 lift_coord_list.append((
                     row['#CHROM'],
                     match_interval.data[1],
-                    row['REV']
+                    row['REV'],
+                    match_interval.data[1],
+                    match_interval.data[1]
                 ))
 
         # Return coordinates
@@ -848,7 +830,9 @@ class AlignLift:
             lift_coord_list.append((
                 row['QUERY_ID'],
                 qry_pos,
-                row['REV']
+                row['REV'],
+                qry_pos,
+                qry_pos
             ))
 
         # Return coordinates
@@ -857,27 +841,33 @@ class AlignLift:
         else:
             return lift_coord_list[0]
 
-    def lift_region_to_sub(self, region):
+    def lift_region_to_sub(self, region, gap=False):
         """
         Lift region to subject.
 
         :param region: Query region.
+        :param gap: Interpolate within gap if `True`.
 
         :return: Subject region or `None` if it could not be lifted.
         """
 
         # Lift
-        sub_pos, sub_end = self.lift_to_sub(region.chrom, (region.pos, region.end))
+        sub_pos, sub_end = self.lift_to_sub(region.chrom, (region.pos, region.end), gap)
 
         # Check lift: Must lift both ends to the same subject ID
         if sub_pos is None or sub_end is None:
             return None
 
-        if sub_pos[0] != sub_end[0] or sub_pos[2] != sub_end[2]:
+        if sub_pos[0] != sub_end[0] or (sub_pos[2] is not None and sub_end[2] is not None and sub_pos[2] != sub_end[2]):
             return None
 
         # Return
-        return asmlib.seq.Region(sub_pos[0], sub_pos[1], sub_end[1], is_rev=False)
+        return asmlib.seq.Region(
+            sub_pos[0], sub_pos[1], sub_end[1],
+            is_rev=False,
+            pos_min=sub_pos[3], pos_max=sub_pos[4],
+            end_min=sub_end[3], end_max=sub_end[4]
+        )
 
     def lift_region_to_qry(self, region):
         """
@@ -899,7 +889,53 @@ class AlignLift:
             return None
 
         # Return
-        return asmlib.seq.Region(query_pos[0], query_pos[1], query_end[1], is_rev=query_pos[1])
+        return asmlib.seq.Region(query_pos[0], query_pos[1], query_end[1], is_rev=query_pos[2])
+
+    def _get_subject_gap(self, query_id, pos):
+        """
+        Interpolate lift coordinates to an alignment gap.
+
+        :param pos: Position on the contig.
+
+        :return: A tuple of (subject, pos, rev, min, max).
+        """
+
+        # Check arguments
+        if pos is None:
+            return None
+
+        # Get alignment records for this contig
+        subdf = self.df.loc[self.df['QUERY_ID'] == query_id]
+
+        # Must be flanked by two contigs on either side
+        if not np.any(subdf['QUERY_TIG_END'] < pos):
+            return None
+
+        if not np.any(subdf['QUERY_TIG_POS'] > pos):
+            return None
+
+        # Get left and right rows for the alignment record flanking this position
+        row_l = subdf.loc[
+            subdf.loc[subdf['QUERY_TIG_END'] < pos, 'QUERY_TIG_END'].sort_values().index[-1]
+        ]
+
+        row_r = subdf.loc[
+            subdf.loc[subdf['QUERY_TIG_POS'] > pos, 'QUERY_TIG_POS'].sort_values().index[0]
+        ]
+
+        # Rows must be mapped to the same subject
+        if row_l['#CHROM'] != row_r['#CHROM']:
+            return None
+
+        return (
+            (
+                row_l['#CHROM'],
+                np.int64((row_l['QUERY_TIG_END'] + row_r['QUERY_TIG_POS']) / 2),
+                row_l['REV'] if row_l['REV'] == row_r['REV'] else None,
+                row_l['QUERY_TIG_END'],
+                row_r['QUERY_TIG_POS']
+            )
+        )
 
     def _add_align(self, index):
         """
@@ -996,3 +1032,248 @@ class AlignLift:
             del(self.ref_cache[index])
             del(self.tig_cache[index])
 
+
+def check_record(row, df_tig_fai):
+    """
+    Check alignment DatFrame record for sanity. Throws exceptions if there are problems. Returns nothing if everything
+    passes.
+
+    :param record: Alignment table record (Pandas Series).
+    :param df_tig_fai: Panadas Series with contig names as keys and contig lengths as values.
+    """
+
+    try:
+        ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r = count_cigar(row)
+
+    except Exception as ex:
+        raise RuntimeError('CIGAR parsing error: {} (INDEX={})'.format(ex, row['INDEX']))
+
+    tig_len = df_tig_fai[row['QUERY_ID']]
+
+    # POS and END agree with length
+    if row['POS'] + ref_bp != row['END']:
+
+        raise RuntimeError(
+            'END mismatch: POS + len != END ({} != {}) (INDEX={})'.format(
+                row['POS'] + ref_bp, row['END'], row['INDEX']
+            )
+        )
+
+    # Query POS and END  agree with length
+    if row['QUERY_POS'] + tig_bp != row['QUERY_END']:
+        raise RuntimeError(
+            'QUERY_END mismatch: {} != {} (INDEX={})'.format(
+                row['QUERY_POS'] + tig_bp, row['QUERY_END'], row['INDEX']
+            )
+        )
+
+    # Query contig (non-rev-compl if alignment was reversed) POS and END agree with length
+    if row['QUERY_TIG_POS'] + tig_bp != row['QUERY_TIG_END']:
+        raise RuntimeError(
+            'QUERY_TIG_END mismatch: QUERY_TIG_POS + tig_bp != QUERY_TIG_END ({} != {}) (INDEX={})'.format(
+                row['QUERY_TIG_POS'] + tig_bp, row['QUERY_TIG_END'], row['INDEX']
+            )
+        )
+
+    # Check QUERY_ and QUERY_TIG_ concordance against contig length
+    if row['REV']:
+        if row['QUERY_TIG_POS'] != tig_len - row['QUERY_END']:
+            raise RuntimeError(
+                'Rev and QUERY_END does not translate to QUERY_TIG_POS: QUERY_TIG_POS != tig_len - QUERY_END ({} != {}) (INDEX={})'.format(
+                    row['QUERY_TIG_POS'], tig_len - row['QUERY_END'], row['INDEX']
+                )
+            )
+
+        if row['QUERY_TIG_END'] != tig_len - row['QUERY_POS']:
+            raise RuntimeError(
+                'Rev and QUERY_POS does not translate to QUERY_TIG_END: QUERY_TIG_END != tig_len - QUERY_POS ({} != {}) (INDEX={})'.format(
+                    row['QUERY_TIG_END'], tig_len - row['QUERY_POS'], row['INDEX']
+                )
+            )
+    else:
+        if row['QUERY_TIG_POS'] != row['QUERY_POS']:
+            raise RuntimeError(
+                'Fwd and QUERY_POS does not match QUERY_TIG_POS: QUERY_TIG_POS != QUERY_POS ({} != {}) (INDEX={})'.format(
+                    row['QUERY_TIG_POS'], row['QUERY_POS'], row['INDEX']
+                )
+            )
+
+        if row['QUERY_TIG_END'] != row['QUERY_END']:
+            raise RuntimeError(
+                'Fwd and QUERY_END does not match QUERY_TIG_END: QUERY_TIG_END != QUERY_END ({} != {}) (INDEX={})'.format(
+                    row['QUERY_TIG_END'], row['QUERY_END'], row['INDEX']
+                )
+            )
+
+    # Query and reference positions are in the right order
+    if row['QUERY_POS'] >= row['QUERY_END']:
+        raise RuntimeError('QUERY_POS >= QUERY_END ({} >= {}) (INDEX={})'.format(
+            row['QUERY_POS'], row['QUERY_END'], row['INDEX']
+        ))
+
+    if row['QUERY_TIG_POS'] >= row['QUERY_TIG_END']:
+        raise RuntimeError('QUERY_TIG_POS >= QUERY_TIG_END ({} >= {}) (INDEX={})'.format(
+            row['QUERY_TIG_POS'], row['QUERY_TIG_END'], row['INDEX']
+        ))
+
+    if row['POS'] >= row['END']:
+        raise RuntimeError('POS >= END ({} >= {}) (INDEX={})'.format(
+            row['POS'], row['END'], row['INDEX']
+        ))
+
+    # Contig ends are not longer than contig length
+    if row['QUERY_TIG_END'] > tig_len:
+        raise RuntimeError('QUERY_TIG_END > tig_len ({} > {}) (INDEX={})'.format(
+            row['QUERY_TIG_END'], tig_len, row['INDEX']
+        ))
+
+    if row['QUERY_END'] > tig_len:
+        raise RuntimeError('QUERY_END > tig_len ({} > {}) (INDEX={})'.format(
+            row['QUERY_END'], tig_len, row['INDEX']
+        ))
+
+    # Clipping agrees with contig starts
+    if row['QUERY_POS'] != clip_h_l + clip_s_l:
+        raise RuntimeError(
+            'QUERY_POS != clip_h_l and clip_s_l ({} != {}) (INDEX={})'.format(
+                row['QUERY_POS'], clip_h_l + clip_s_l, row['INDEX']
+            )
+        )
+
+
+def check_record_err_string(df, df_tig_fai):
+    """
+    Runs check_record on each row of `df`, captures exceptions, and returns a Series of error message strings instead
+    of failing on the first error. The Series can be added as a column to `df`. For each record where there was no
+    error, the field for that record in the returned series is NA (`np.nan`). This function may not be used by the
+    pipeline, but is here for troubleshooting alignments.
+
+    :param df: Dataframe of alignment records.
+    :param df_tig_fai: Panadas Series with contig names as keys and contig lengths as values.
+
+    :return: A Series of error messages (or NA) for each record in `df`.
+    """
+
+    def _check_record_err_string_check_row(row):
+        try:
+            check_record(row, df_tig_fai)
+            return None
+        except Exception as ex:
+            return str(ex)
+
+    return df.apply(_check_record_err_string_check_row, axis=1)
+
+
+def count_cigar(row):
+    """
+    Count bases affected by CIGAR operations in an alignment record (row is a Pandas Series from an ailgnment BED).
+
+    Returns a tuple of:
+    * ref_bp: Reference (subject) bases traversed by CIGAR operations.
+    * tig_bp: Contig (query) bases traversed by CIGAR operations. Does not include clipped bases.
+    * clip_h_l: Hard-clipped bases on the left (upstream) side.
+    * clip_s_l: Soft-clipped bases on the left (upstream) side.
+    * clip_h_r: Hard-clipped bases on the right (downstream) side.
+    * clip_s_r: Soft-clipped bases on the right (downstream) side.
+
+    :param row: Row with CIGAR records as a CIGAR string.
+
+    :return: A tuple of (ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r).
+    """
+
+    ref_bp = 0
+    tig_bp = 0
+
+    clip_s_l = 0
+    clip_h_l = 0
+
+    clip_s_r = 0
+    clip_h_r = 0
+
+    cigar_list = list(asmlib.align.cigar_str_to_tuples(row))
+
+    cigar_n = len(cigar_list)
+
+    index = 0
+
+    while index < cigar_n and cigar_list[index][1] in {'S', 'H'}:
+        cigar_len, cigar_op = cigar_list[index]
+
+        if cigar_op == 'S':
+            if clip_s_l > 0:
+                raise RuntimeError('Duplicate S records (left) at index {}'.format(index))
+            clip_s_l = cigar_len
+
+        if cigar_op == 'H':
+            if clip_h_l > 0:
+                raise RuntimeError('Duplicate H records (left) at index {}'.format(index))
+
+            if clip_s_l > 0:
+                raise RuntimeError('S record before H (left) at index {}'.format(index))
+
+            clip_h_l = cigar_len
+
+        index += 1
+
+    while index < cigar_n:
+        cigar_len, cigar_op = cigar_list[index]
+
+        # print('{}: {} {}'.format(index, cigar_len, cigar_op))
+
+        if cigar_op in {'=', 'X'}:
+
+            if clip_s_r > 0 or clip_h_r > 0:
+                raise RuntimeError(
+                    'Found clipped bases before last non-clipped CIGAR operation at operation {} ({}{})'.format(
+                        index, cigar_len, cigar_op
+                    )
+                )
+
+            ref_bp += cigar_len
+            tig_bp += cigar_len
+
+        elif cigar_op == 'I':
+
+            if clip_s_r > 0 or clip_h_r > 0:
+                raise RuntimeError(
+                    'Found clipped bases before last non-clipped CIGAR operation at operation {} ({}{})'.format(
+                        index, cigar_len, cigar_op
+                    )
+                )
+
+            tig_bp += cigar_len
+
+        elif cigar_op == 'D':
+
+            if clip_s_r > 0 or clip_h_r > 0:
+                raise RuntimeError(
+                    'Found clipped bases before last non-clipped CIGAR operation at operation {} ({}{})'.format(
+                        index, cigar_len, cigar_op
+                    )
+                )
+
+            ref_bp += cigar_len
+
+        elif cigar_op == 'S':
+
+            if clip_s_r > 0:
+                raise RuntimeError('Duplicate S records (right) at operation {}'.format(index))
+
+            if clip_h_r > 0:
+                raise RuntimeError('H record before S record (right) at operation {}'.format(index))
+
+            clip_s_r = cigar_len
+
+        elif cigar_op == 'H':
+
+            if clip_h_r > 0:
+                raise RuntimeError('Duplicate H records (right) at operation {}'.format(index))
+
+            clip_h_r = cigar_len
+
+        else:
+            raise RuntimeError('Bad CIGAR op: ' + cigar_op)
+
+        index += 1
+
+    return ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r

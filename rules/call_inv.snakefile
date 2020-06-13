@@ -59,6 +59,37 @@ BATCH_COUNT = config.get('inv_sig_batch_count', 60)
 #############
 
 #
+# Inter-inversion variants
+#
+
+# call_inv_interinv
+#
+# Call inter-inversion variants.
+# Implementation on hold.
+# rule call_inv_interinv:
+#     input:
+#         bed_cigar='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz',
+#         tig_fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
+#     output:
+#         bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+#     run:
+#         pass
+#
+#         # Read SVs
+#         df_inv = pd.read_csv(input.bed_cigar, sep='\t')
+#
+#         # Get alignments
+#         for index, row in df_inv.iterrows():
+#
+#             # Get regions
+#             region_ref = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
+#             region_tig = asmlib.seq.region_from_string(row['RGN_TIG_OUTER'], is_rev=(row['STRAND'] == '-'))
+#
+#             # Get sequence
+#             seq_ref = asmlib.seq.region_seq_fasta(region_ref, REF_FA)
+#             seq_tig = asmlib.seq.region_seq_fasta(region_tig, input.tig_fa)
+
+#
 # Call inversions
 #
 
@@ -88,14 +119,16 @@ rule call_inv_batch:
     input:
         bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
         bed_aln='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        tig_fa='align/{asm_name}/contigs_{hap}.fa.gz',
-        fai='align/{asm_name}/contigs_{hap}.fa.gz.fai'
+        tig_fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
+        fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:
         log='results/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.log'
     params:
-        k_size=config.get('inv_k_size', 31)
+        k_size=config.get('inv_k_size', 31),
+        inv_threads=config.get('inv_threads', 8),
+        inv_mem=config.get('inv_mem', '1G')
     run:
 
         # Get params
@@ -141,11 +174,12 @@ rule call_inv_batch:
                 for index, row in df_flag.iterrows():
 
                     # Scan for inversions
-                    region = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
+                    region_flag = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
 
                     try:
                         inv_call = asmlib.inv.scan_for_inv(
-                            region, REF_FA, input.tig_fa, align_lift, k_util, log=log_file, flag_id=row['ID']
+                            region_flag, REF_FA, input.tig_fa, align_lift, k_util,
+                            threads=params.inv_threads, log=log_file
                         )
 
                     except RuntimeError as ex:
@@ -172,14 +206,18 @@ rule call_inv_batch:
                                 inv_call.region_ref_discovery.to_base1_string(),
                                 inv_call.region_tig_discovery.to_base1_string(),
                                 inv_call.region_flag.to_base1_string(),
-                                inv_call.max_inv_den_diff
+                                inv_call.max_inv_den_diff,
+                                'INVDENSITY',
+                                '-' if inv_call.region_tig_outer.is_rev else '+'
                             ],
                             index=[
                                 '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
                                 'RGN_REF_OUTER', 'RGN_REF_INNER',
                                 'RGN_TIG_OUTER', 'RGN_TIG_INNER',
                                 'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                                'MAX_DENSITY_DIFF'
+                                'MAX_DENSITY_DIFF',
+                                'CALLSOURCE',
+                                'STRAND'
                             ]
                         ))
 
@@ -202,7 +240,9 @@ rule call_inv_batch:
                         'RGN_REF_OUTER', 'RGN_REF_INNER',
                         'RGN_TIG_OUTER', 'RGN_TIG_INNER',
                         'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                        'MAX_DENSITY_DIFF'
+                        'MAX_DENSITY_DIFF',
+                        'CALLSOURCE',
+                        'STRAND'
                     ]
                 )
 
