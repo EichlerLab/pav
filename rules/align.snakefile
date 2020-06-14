@@ -8,19 +8,19 @@ Process alignments and alignment tiling paths.
 
 # align_genomecov
 #
-# Get genome coverage.
-rule align_genomecov:
-    input:
-        bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz'
-    output:
-        bed='results/{asm_name}/align/pre-cut/genomecov_{hap}.bed.gz'
-    shell:
-        """{{ \n"""
-        """    echo -e "#CHROM\tPOS\tEND\tDEPTH"; \n"""
-        """    bedtools genomecov -bga -i {input.bed} -g {REF_FAI}; \n"""
-        """}} | """
-        """gzip > {output.bed}"""
-
+# # Get genome coverage.
+# rule align_genomecov:
+#     input:
+#         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz'
+#     output:
+#         bed='results/{asm_name}/align/pre-cut/genomecov_{hap}.bed.gz'
+#     shell:
+#         """{{ \n"""
+#         """    echo -e "#CHROM\tPOS\tEND\tDEPTH"; \n"""
+#         """    bedtools genomecov -bga -i {input.bed} -g {REF_FAI}; \n"""
+#         """}} | """
+#         """gzip > {output.bed}"""
+#
 # # align_merge_h12_read_bed
 # #
 # # Alignment table for all reads.
@@ -395,6 +395,8 @@ rule align_get_read_bed:
 
         record_list = list()
 
+        align_index = 0
+
         with pysam.AlignmentFile(input.sam, 'rb') as in_file:
             for record in in_file:
 
@@ -431,6 +433,8 @@ rule align_get_read_bed:
                         record.reference_start,
                         record.reference_end,
 
+                        align_index,
+
                         record.query_name,
                         record.query_alignment_start,
                         record.query_alignment_end,
@@ -453,6 +457,7 @@ rule align_get_read_bed:
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
+                        'INDEX',
                         'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                         'QUERY_TIG_POS', 'QUERY_TIG_END',
                         'RG',
@@ -463,12 +468,13 @@ rule align_get_read_bed:
                     ]
                 ))
 
+                # Increment align_index
+                align_index += 1
+
         # Merge records
         df = pd.concat(record_list, axis=1).T
 
         df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
-
-        df.insert(3, 'INDEX', list(range(df.shape[0])))
 
         # Check sanity
         df.apply(asmlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)

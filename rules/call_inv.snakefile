@@ -23,13 +23,12 @@ def _input_call_inv_cluster(wildcards):
 
     if wildcards.vartype == 'indel':
         return [
-            'temp/{asm_name}/bed/pre_merge/pre_inv_correction/indel_ins_{hap}.bed.gz'.format(**wildcards),
-            'temp/{asm_name}/bed/pre_merge/pre_inv_correction/indel_del_{hap}.bed.gz'.format(**wildcards)
+            'temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'.format(**wildcards),
         ]
 
     elif wildcards.vartype == 'snv':
         return [
-            'temp/{asm_name}/bed/pre_merge/pre_inv_correction/snv_snv_{hap}.bed.gz'.format(**wildcards)
+            'temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz'.format(**wildcards),
         ]
 
 
@@ -149,11 +148,17 @@ rule call_inv_batch:
             df_bed = pd.DataFrame(
                 [],
                 columns=[
-                    '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                    'REF_RGN_OUTER', 'REF_RGN_INNER',
-                    'TIG_RGN_OUTER', 'TIG_RGN_INNER',
-                    'REF_RGN_DISCOVERY', 'TIG_RGN_DISCOVERY', 'REF_RGN_FLAG',
-                    'MAX_INV_DEN_DIFF'
+                    '#CHROM', 'POS', 'END',
+                    'ID', 'SVTYPE', 'SVLEN',
+                    'HAP',
+                    'TIG_REGION', 'QUERY_STRAND',
+                    'CI',
+                    'RGN_REF_INNER', 'RGN_TIG_INNER',
+                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                    'FLAG_ID', 'FLAG_TYPE',
+                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                    'CALL_SOURCE',
+                    'SEQ'
                 ]
             )
 
@@ -166,6 +171,16 @@ rule call_inv_batch:
                 pd.read_csv(input.bed_aln, sep='\t'),
                 analib.ref.get_df_fai(input.fai)
             )
+
+            # Read alignment BED
+            df_aln = pd.read_csv(
+                input.bed_aln,
+                sep='\t',
+                usecols=('INDEX', 'CLUSTER_MATCH'),
+                index_col='INDEX',
+                squeeze=False
+            )
+
 
             # Call inversions
             call_list = list()
@@ -188,36 +203,83 @@ rule call_inv_batch:
 
                     # Save inversion call
                     if inv_call is not None:
+
+                        # Get seq
+                        seq = asmlib.seq.region_seq_fasta(
+                            inv_call.region_tig_outer,
+                            input.tig_fa,
+                            rev_compl=inv_call.region_tig_outer.is_rev
+                        )
+
+                        # Get alignment record data
+                        aln_index_set = {
+                            inv_call.region_ref_outer.pos_aln_index,
+                            inv_call.region_ref_outer.end_aln_index,
+                            inv_call.region_ref_inner.pos_aln_index,
+                            inv_call.region_ref_inner.end_aln_index
+                        }
+
+                        cluster_match_set = {df_aln.loc[index, 'CLUSTER_MATCH'] for index in aln_index_set}
+
+                        if False in cluster_match_set:
+                            cluster_match = False
+                        elif np.nan in cluster_match_set:
+                            cluster_match = np.nan
+                        else:
+                            if cluster_match_set != {True}:
+                                raise RuntimeError(
+                                    'Found unexpected values in cluster_match: Expected True, False, and np.nan: {}'.format(
+                                        ', '.join([str(val) for val in cluster_match])
+                                    )
+                                )
+
+                            cluster_match = True
+
+                        # Save call
                         call_list.append(pd.Series(
                             [
                                 inv_call.region_ref_outer.chrom,
                                 inv_call.region_ref_outer.pos,
                                 inv_call.region_ref_outer.end,
+
                                 inv_call.id,
                                 'INV',
                                 inv_call.svlen,
 
-                                inv_call.region_ref_outer.to_base1_string(),
-                                inv_call.region_ref_inner.to_base1_string(),
+                                wildcards.hap,
 
                                 inv_call.region_tig_outer.to_base1_string(),
+                                '-' if inv_call.region_tig_outer.is_rev else '+',
+
+                                0,
+
+                                inv_call.region_ref_inner.to_base1_string(),
                                 inv_call.region_tig_inner.to_base1_string(),
 
                                 inv_call.region_ref_discovery.to_base1_string(),
                                 inv_call.region_tig_discovery.to_base1_string(),
-                                inv_call.region_flag.to_base1_string(),
-                                inv_call.max_inv_den_diff,
-                                'INVDENSITY',
-                                '-' if inv_call.region_tig_outer.is_rev else '+'
+
+                                inv_call.region_flag.region_id(),
+                                row['TYPE'],
+
+                                ','.join([str(val) for val in sorted(aln_index_set)]), cluster_match,
+
+                                asmlib.inv.CALL_SOURCE,
+
+                                seq
                             ],
                             index=[
-                                '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                                'RGN_REF_OUTER', 'RGN_REF_INNER',
-                                'RGN_TIG_OUTER', 'RGN_TIG_INNER',
-                                'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                                'MAX_DENSITY_DIFF',
-                                'CALLSOURCE',
-                                'STRAND'
+                                '#CHROM', 'POS', 'END',
+                                'ID', 'SVTYPE', 'SVLEN',
+                                'HAP',
+                                'TIG_REGION', 'QUERY_STRAND',
+                                'CI',
+                                'RGN_REF_INNER', 'RGN_TIG_INNER',
+                                'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                'FLAG_ID', 'FLAG_TYPE',
+                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'CALL_SOURCE',
+                                'SEQ'
                             ]
                         ))
 
@@ -236,13 +298,17 @@ rule call_inv_batch:
                 df_bed = pd.DataFrame(
                     [],
                     columns=[
-                        '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                        'RGN_REF_OUTER', 'RGN_REF_INNER',
-                        'RGN_TIG_OUTER', 'RGN_TIG_INNER',
-                        'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                        'MAX_DENSITY_DIFF',
-                        'CALLSOURCE',
-                        'STRAND'
+                        '#CHROM', 'POS', 'END',
+                        'ID', 'SVTYPE', 'SVLEN',
+                        'HAP',
+                        'TIG_REGION', 'QUERY_STRAND',
+                        'CI',
+                        'RGN_REF_INNER', 'RGN_TIG_INNER',
+                        'RGN_REF_DISC', 'RGN_TIG_DISC',
+                        'FLAG_ID', 'FLAG_TYPE',
+                        'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'CALL_SOURCE',
+                        'SEQ'
                     ]
                 )
 
@@ -261,10 +327,10 @@ rule call_inv_batch:
 # regions to try calling.
 rule call_inv_merge_flagged_loci:
     input:
-        bed_insdel_sv='temp/{asm_name}/inv_caller/insdel_sv_{hap}.bed.gz',
-        bed_insdel_indel='temp/{asm_name}/inv_caller/insdel_indel_{hap}.bed.gz',
-        bed_cluster_indel='temp/{asm_name}/inv_caller/cluster_indel_{hap}.bed.gz',
-        bed_cluster_snv='temp/{asm_name}/inv_caller/cluster_snv_{hap}.bed.gz'
+        bed_insdel_sv='temp/{asm_name}/inv_caller/flag/insdel_sv_{hap}.bed.gz',
+        bed_insdel_indel='temp/{asm_name}/inv_caller/flag/insdel_indel_{hap}.bed.gz',
+        bed_cluster_indel='temp/{asm_name}/inv_caller/flag/cluster_indel_{hap}.bed.gz',
+        bed_cluster_snv='temp/{asm_name}/inv_caller/flag/cluster_snv_{hap}.bed.gz'
     output:
         bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz'
     params:
@@ -369,7 +435,7 @@ rule call_inv_merge_flagged_loci:
             ))
 
         # Merge
-        df_merged = pd.concat(region_list, axis=1).T
+        df_merged = pd.concat(region_list, axis=1).T.sort_values(['#CHROM', 'POS'])
 
         # Annotate accepted regions
         df_merged['TRY_INV'] = df_merged.apply(_call_inv_accept_flagged_region, axis=1)
@@ -395,14 +461,13 @@ rule call_inv_merge_flagged_loci:
 # sequence.
 rule call_inv_flag_insdel_cluster:
     input:
-        bed_ins='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_ins_{hap}.bed.gz',
-        bed_del='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_del_{hap}.bed.gz'
+        bed='temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'
     output:
-        bed=temp('temp/{asm_name}/inv_caller/insdel_{vartype}_{hap}.bed.gz')
+        bed=temp('temp/{asm_name}/inv_caller/flag/insdel_{vartype}_{hap}.bed.gz')
     params:
-        flank_cluster=config.get('inv_sig_insdel_cluster_flank', 2) , # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
-        flank_merge=config.get('inv_sig_insdel_merge_flank', 2000) ,  # Merge clusters within this distance
-        cluster_min_svlen=config.get('inv_sig_cluster_svlen_min', 4)    # Discard indels less than this size
+        flank_cluster=int(config.get('inv_sig_insdel_cluster_flank', 2)), # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
+        flank_merge=int(config.get('inv_sig_insdel_merge_flank', 2000)),  # Merge clusters within this distance
+        cluster_min_svlen=int(config.get('inv_sig_cluster_svlen_min', 4))    # Discard indels less than this size
     wildcard_constraints:
         vartype='sv|indel'
     run:
@@ -410,26 +475,28 @@ rule call_inv_flag_insdel_cluster:
         # Params
         flank_cluster = params.flank_cluster
         flank_merge = params.flank_merge
-        svlen_min = params.cluster_min_svlen
+        svlen_min = params.cluster_min_svlen if wildcards.vartype == 'indel' else 50
 
         # Input
-        df_sv_ins = pd.read_csv(input.bed_ins, sep='\t', header=0)
-        df_sv_del = pd.read_csv(input.bed_del, sep='\t', header=0)
+        df = pd.read_csv(input.bed, sep='\t', header=0, low_memory=False)
+        df = df.loc[df['SVLEN'] >= svlen_min]
 
-        # Filter minimum SVLEN
-        df_sv_ins = df_sv_ins.loc[df_sv_ins['SVLEN'] >= svlen_min]
-        df_sv_del = df_sv_del.loc[df_sv_del['SVLEN'] >= svlen_min]
+        if wildcards.vartype == 'indel':
+            df = df.loc[df['SVLEN'] < 50]
+
+        df_ins = df.loc[df['SVTYPE'] == 'INS']
+        df_del = df.loc[df['SVTYPE'] == 'DEL']
 
         # Load deletion intervals into a tree
         deltree = collections.defaultdict(intervaltree.IntervalTree)
 
-        for index, row in df_sv_del.iterrows():
+        for index, row in df_del.iterrows():
             deltree[row['#CHROM']][row['POS']:row['END']] = (row['ID'], row['SVLEN'], row['POS'], row['END'])
 
         # Flag matched INS/DELs
         match_list = list()
 
-        for index, row in df_sv_ins.iterrows():
+        for index, row in df_ins.iterrows():
             flank = row['SVLEN'] * flank_cluster
 
             match_set = deltree[row['#CHROM']][row['POS'] - flank : row['POS'] + flank]
@@ -495,7 +562,7 @@ rule call_inv_cluster:
     input:
         bed=_input_call_inv_cluster
     output:
-        bed=temp('temp/{asm_name}/inv_caller/cluster_{vartype}_{hap}.bed.gz')
+        bed=temp('temp/{asm_name}/inv_caller/flag/cluster_{vartype}_{hap}.bed.gz')
     params:
         cluster_win=config.get('inv_sig_cluster_win', 200),            # Cluster variants within this many bases
         cluster_win_min=config.get('inv_sig_cluster_win_min', 500),    # Window must reach this size
@@ -518,9 +585,12 @@ rule call_inv_cluster:
 
         # Read
         df = pd.concat(
-            [pd.read_csv(input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END')) for input_file_name in input.bed],
+            [pd.read_csv(input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN')) for input_file_name in input.bed],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
+
+        if wildcards.vartype == 'indel':
+            df = df.loc[df['SVLEN'] < 50]
 
         # DEL to midpoint
         df['POS'] = (df['END'] + df['POS']) // 2

@@ -17,8 +17,8 @@ rule call_merge_lg:
 
         pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
-            axis=1
-        ).T.to_csv(
+            axis=0
+        ).to_csv(
             output.bed, sep='\t', index=False, compression='gzip'
         )
 
@@ -40,9 +40,9 @@ rule call_lg_discover:
     log:
         log='results/{asm_name}/lg_sv/log/sv_ins_{hap}_{batch}.log'
     params:
-        k_size=config.get('inv_k_size', 31),
-        inv_threads=config.get('inv_threads_lg', config.get('inv_threads', 12)),
-        inv_mem=config.get('inv_mem', '4G')
+        k_size=int(config.get('inv_k_size', 31)),
+        inv_threads=int(config.get('inv_threads_lg', config.get('inv_threads', 12))),
+        inv_mem=str(config.get('inv_mem', '4G'))
     run:
 
         # Read
@@ -66,7 +66,7 @@ rule call_lg_discover:
             n_tree[row['#CHROM']][row['POS']:row['END']] = True
 
         # Make density table output directory
-        density_out_dir = 'results/{asm_name}/inv_caller/density_table'.format(**wildcards)
+        density_out_dir = 'results/{asm_name}/lg_sv/density_table'.format(**wildcards)
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get large events

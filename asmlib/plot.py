@@ -12,7 +12,7 @@ import asmlib
 import kanapy
 
 
-def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None, coords='discovery'):
+def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None):
     """
     Make a dotplot of an inversion call.
 
@@ -20,30 +20,14 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None, coords=
     :param ref_fa: Reference FASTA.
     :param aln_file_name: Alignment file name.
     :param seq_tig: Contig alignment sequence or `None`. If `None`, then `aln_file_name` must be set.
-    :param coords: Coordinates to plot. Defaults to discovery region, which includes unique sequence on each side
-        of the inversion and shows the full context of the inversion call. Other valid values are "outer" and "inner"
-        for outer and inner breakpoints.
 
 
     :return: A plot object. Before it is discarded, this object should be closed with `matplotlib.pyplot.close()` to
         free memory.
     """
 
-    # Get regions
-    if coords == 'discovery':
-        region_ref = inv_call.region_ref_discovery
-        region_tig = inv_call.region_tig_discovery
-
-    elif coords == 'outer':
-        region_ref = inv_call.region_ref_outer,
-        region_tig = inv_call.region_tig_outer
-
-    elif coords == 'inner':
-        region_ref = inv_call.region_ref_inner
-        region_tig = inv_call.region_tig_inner
-
-    else:
-        raise RuntimeError('Unrecognized coords arguments: {}'.format(coords))
+    region_ref = inv_call.region_ref_outer
+    region_tig = inv_call.region_tig_outer
 
     # Get reference sequence
     seq_ref = asmlib.seq.region_seq_fasta(region_ref, ref_fa, False)
@@ -131,6 +115,7 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None, coords=
 
     # Return figure
     return fig
+
 
 def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300, flank_whiskers=True):
     """

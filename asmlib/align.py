@@ -657,8 +657,14 @@ class AlignLift:
         """
         Lift coordinates from query (tig) to subject (reference).
 
-        Returns tuple(s) of (query-id, pos, is_rev) with `is_rev` `True` if the alignment was lifted through a
-        reverse-complemented alignment.
+        Returns tuple(s) of:
+            0: Query ID.
+            1: Position.
+            2: Is reverse complemented. `True` if the alignment was lifted through a reverse-complemented
+                alignment record.
+            3: Minimum position.
+            4: Maximum position.
+            5: Align record index.
 
         If the lift hits an alignment gap, then the function can try to resolve the lift to the best subject position
         based on the alignment using a strategy outlined by the `gap` parameter.
@@ -667,8 +673,8 @@ class AlignLift:
         :param coord: Query coordinates. May be a single value, list, or tuple.
         :param gap: Interpolate into an alignment gap between two contigs if `True`.
 
-        :return: Single coordinate or list of coordinates if `coord` is a list or tuple. Returns `None` for coordinates
-            that cannot be lifted.
+        :return: Single coordinate tuple or list of coordinate tuples if `coord` is a list or tuple. Returns `None`
+            for coordinates that cannot be lifted.
         """
 
         # Determine type
@@ -733,7 +739,8 @@ class AlignLift:
                     lift_pos,
                     row['REV'],
                     lift_pos,
-                    lift_pos
+                    lift_pos,
+                    row['INDEX']
                 ))
 
             else:  # Lift from missing bases on the target (insertion or deletion)
@@ -742,7 +749,8 @@ class AlignLift:
                     match_interval.data[1],
                     row['REV'],
                     match_interval.data[1],
-                    match_interval.data[1]
+                    match_interval.data[1],
+                    row['INDEX']
                 ))
 
         # Return coordinates
@@ -755,14 +763,20 @@ class AlignLift:
         """
         Lift coordinates from subject (reference) to query (tig).
 
-        Returns tuple(s) of (query-id, pos, is_rev) with `is_rev` `True` if the alignment was lifted through a
-        reverse-complemented alignment.
+        Returns tuple(s) of:
+            0: Query ID.
+            1: Position.
+            2: Is reverse complemented. `True` if the alignment was lifted through a reverse-complemented
+                alignment record.
+            3: Minimum position.
+            4: Maximum position.
+            5: Align record index.
 
         :param subject_id: Subject ID.
         :param coord: Subject coordinates. May be a single value, list, or tuple.
 
-        :return: Single coordinate or list of coordinates if `coord` is a list or tuple. Returns `None` for coordinates
-            that cannot be lifted.
+        :return: Single coordinate tuple or list of coordinate tuples if `coord` is a list or tuple. Returns `None`
+            for coordinates that cannot be lifted.
         """
 
         # Determine type
@@ -832,7 +846,8 @@ class AlignLift:
                 qry_pos,
                 row['REV'],
                 qry_pos,
-                qry_pos
+                qry_pos,
+                row['INDEX']
             ))
 
         # Return coordinates
@@ -866,7 +881,9 @@ class AlignLift:
             sub_pos[0], sub_pos[1], sub_end[1],
             is_rev=False,
             pos_min=sub_pos[3], pos_max=sub_pos[4],
-            end_min=sub_end[3], end_max=sub_end[4]
+            end_min=sub_end[3], end_max=sub_end[4],
+            pos_aln_index=sub_pos[5],
+            end_aln_index=sub_end[5]
         )
 
     def lift_region_to_qry(self, region):
@@ -889,7 +906,14 @@ class AlignLift:
             return None
 
         # Return
-        return asmlib.seq.Region(query_pos[0], query_pos[1], query_end[1], is_rev=query_pos[2])
+        return asmlib.seq.Region(
+            query_pos[0], query_pos[1], query_end[1],
+            is_rev=query_pos[2],
+            pos_min=query_pos[3], pos_max=query_pos[4],
+            end_min=query_end[3], end_max=query_end[4],
+            pos_aln_index=query_pos[5],
+            end_aln_index=query_end[5]
+        )
 
     def _get_subject_gap(self, query_id, pos):
         """

@@ -129,21 +129,23 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             # Append
                             del_list.append(pd.Series(
                                 [
-                                    chrom, row1['END'], row2['POS'], sv_id, 'DEL', dist_ref,
+                                    chrom, row1['END'], row2['POS'],
+                                    sv_id, 'DEL', dist_ref,
                                     hap,
-                                    tig_id, query_pos, query_pos + 1, '-' if row1['REV'] else '+',
-                                    CALL_SOURCE, row1['CLUSTER_MATCH'],
-                                    '-' if is_rev else '+',
+                                    f'{tig_id}:{query_pos + 1}-{query_pos + 1}', '-' if row1['REV'] else '+',
                                     dist_tig,
+                                    '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                    CALL_SOURCE,
                                     seq
                                 ],
                                 index=[
-                                    '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                                    '#CHROM', 'POS', 'END',
+                                    'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND',
-                                    'CALL_SOURCE', 'CLUSTER_MATCH',
+                                    'TIG_REGION', 'QUERY_STRAND',
                                     'CI',
-                                    'STRAND',
+                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'CALL_SOURCE',
                                     'SEQ'
                                 ]
                             ))
@@ -154,8 +156,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                         elif dist_ref < 50:
                             # Call INS
 
+                            tig_region = asmlib.seq.Region(tig_id, query_pos, query_end, is_rev=is_rev)
+
                             seq = asmlib.seq.region_seq_fasta(
-                                asmlib.seq.Region(tig_id, query_pos, query_end),
+                                tig_region,
                                 tig_fa_name,
                                 rev_compl=is_rev
                             )
@@ -167,23 +171,23 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                             ins_list.append(pd.Series(
                                 [
-                                    chrom, row1['END'], row1['END'] + 1, sv_id, 'INS', dist_tig,
+                                    chrom, row1['END'], row1['END'] + 1,
+                                    sv_id, 'INS', dist_tig,
                                     hap,
-                                    tig_id,
-                                    query_pos, query_end,
-                                    '-' if row1['REV'] else '+',
-                                    CALL_SOURCE, row1['CLUSTER_MATCH'],
-                                    '-' if is_rev else '+',
+                                    tig_region.to_base1_string(), '-' if row1['REV'] else '+',
                                     dist_ref,
+                                    '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                    CALL_SOURCE,
                                     seq
                                 ],
                                 index=[
-                                    '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                                    '#CHROM', 'POS', 'END',
+                                    'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND',
-                                    'CALL_SOURCE', 'CLUSTER_MATCH',
-                                    'STRAND',
+                                    'TIG_REGION', 'QUERY_STRAND',
                                     'CI',
+                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'CALL_SOURCE',
                                     'SEQ'
                                 ]
                             ))
@@ -220,32 +224,45 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                         inv_call.region_ref_outer.chrom,
                                         inv_call.region_ref_outer.pos,
                                         inv_call.region_ref_outer.end,
+
                                         inv_call.id,
                                         'INV',
                                         inv_call.svlen,
 
-                                        inv_call.region_ref_outer.to_base1_string(),
-                                        inv_call.region_ref_inner.to_base1_string(),
+                                        hap,
 
                                         inv_call.region_tig_outer.to_base1_string(),
+                                        '-' if is_rev else '+',
+
+                                        0,
+
+                                        inv_call.region_ref_inner.to_base1_string(),
                                         inv_call.region_tig_inner.to_base1_string(),
 
                                         inv_call.region_ref_discovery.to_base1_string(),
                                         inv_call.region_tig_discovery.to_base1_string(),
-                                        inv_call.region_flag.to_base1_string(),
-                                        inv_call.max_inv_den_diff,
-                                        CALL_SOURCE,
-                                        '-' if is_rev else '+',
+
+                                        inv_call.region_flag.region_id(),
+                                        'ALNTRUNC',
+
+                                        '{},{}'.format(row1['INDEX'], row2['INDEX']),
+                                        row1['CLUSTER_MATCH'],
+
+                                        asmlib.inv.CALL_SOURCE,
+
                                         seq
                                     ],
                                     index=[
-                                        '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                                        'RGN_REF_OUTER', 'RGN_REF_INNER',
-                                        'RGN_TIG_OUTER', 'RGN_TIG_INNER',
-                                        'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                                        'MAX_DENSITY_DIFF',
+                                        '#CHROM', 'POS', 'END',
+                                        'ID', 'SVTYPE', 'SVLEN',
+                                        'HAP',
+                                        'TIG_REGION', 'QUERY_STRAND',
+                                        'CI',
+                                        'RGN_REF_INNER', 'RGN_TIG_INNER',
+                                        'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                        'FLAG_ID', 'FLAG_TYPE',
+                                        'ALIGN_INDEX', 'CLUSTER_MATCH',
                                         'CALL_SOURCE',
-                                        'STRAND',
                                         'SEQ'
                                     ]
                                 ))
@@ -303,32 +320,45 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     inv_call.region_ref_outer.chrom,
                                     inv_call.region_ref_outer.pos,
                                     inv_call.region_ref_outer.end,
+
                                     inv_call.id,
                                     'INV',
                                     inv_call.svlen,
 
-                                    inv_call.region_ref_outer.to_base1_string(),
-                                    inv_call.region_ref_inner.to_base1_string(),
+                                    hap,
 
                                     inv_call.region_tig_outer.to_base1_string(),
+                                    '-' if is_rev else '+',
+
+                                    0,
+
+                                    inv_call.region_ref_inner.to_base1_string(),
                                     inv_call.region_tig_inner.to_base1_string(),
 
                                     inv_call.region_ref_discovery.to_base1_string(),
                                     inv_call.region_tig_discovery.to_base1_string(),
-                                    inv_call.region_flag.to_base1_string(),
-                                    inv_call.max_inv_den_diff,
-                                    CALL_SOURCE,
-                                    '-' if is_rev else '+',
+
+                                    inv_call.region_flag.region_id(),
+                                    'ALNTRUNC',
+
+                                    '{},{},{}'.format(row1['INDEX'], row2['INDEX'], row3['INDEX']),
+                                    row1['CLUSTER_MATCH'],
+
+                                    asmlib.inv.CALL_SOURCE,
+
                                     seq
                                 ],
                                 index=[
-                                    '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-                                    'RGN_REF_OUTER', 'RGN_REF_INNER',
-                                    'RGN_TIG_OUTER', 'RGN_TIG_INNER',
-                                    'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-                                    'MAX_DENSITY_DIFF',
+                                    '#CHROM', 'POS', 'END',
+                                    'ID', 'SVTYPE', 'SVLEN',
+                                    'HAP',
+                                    'TIG_REGION', 'QUERY_STRAND',
+                                    'CI',
+                                    'RGN_REF_INNER', 'RGN_TIG_INNER',
+                                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                    'FLAG_ID', 'FLAG_TYPE',
+                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
                                     'CALL_SOURCE',
-                                    'STRAND',
                                     'SEQ'
                                 ]
                             ))
@@ -355,12 +385,13 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         df_ins = pd.concat(ins_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
     else:
         df_ins = pd.DataFrame([], columns=[
-            '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+            '#CHROM', 'POS', 'END',
+            'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND',
-            'CALL_SOURCE', 'CLUSTER_MATCH',
-            'STRAND',
+            'TIG_REGION', 'QUERY_STRAND',
             'CI',
+            'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'CALL_SOURCE',
             'SEQ'
         ])
 
@@ -368,12 +399,13 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         df_del = pd.concat(del_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
     else:
         df_del = pd.DataFrame([], columns=[
-            '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+            '#CHROM', 'POS', 'END',
+            'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND',
-            'CALL_SOURCE', 'CLUSTER_MATCH',
-            'STRAND',
+            'TIG_REGION', 'QUERY_STRAND',
             'CI',
+            'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'CALL_SOURCE',
             'SEQ'
         ])
 
@@ -381,13 +413,16 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         df_inv = pd.concat(inv_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
     else:
         df_inv = pd.DataFrame([], columns=[
-            '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
-            'RGN_REF_OUTER', 'RGN_REF_INNER',
-            'RGN_TIG_OUTER', 'RGN_TIG_INNER',
-            'RGN_REF_DISC', 'RGN_TIG_DISC', 'RGN_REF_FLAG',
-            'MAX_DENSITY_DIFF',
+            '#CHROM', 'POS', 'END',
+            'ID', 'SVTYPE', 'SVLEN',
+            'HAP',
+            'TIG_REGION', 'QUERY_STRAND',
+            'CI',
+            'RGN_REF_INNER', 'RGN_TIG_INNER',
+            'RGN_REF_DISC', 'RGN_TIG_DISC',
+            'FLAG_ID', 'FLAG_TYPE',
+            'ALIGN_INDEX', 'CLUSTER_MATCH',
             'CALL_SOURCE',
-            'STRAND',
             'SEQ'
         ])
 

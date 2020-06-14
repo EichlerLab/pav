@@ -69,24 +69,6 @@ if not os.path.isfile(ENV_FILE):
     raise RuntimeError('Shell configuration source not found: {}'.format(ENV_FILE))
 
 
-# Max variant offset for clustering (RO or size-RO-offset)
-OFFSET_MAX = int(config.get(
-    'offset_max',
-    200
-))
-
-# Max reciprocal overlap or size reciprocal-overlap for clustering (RO or size-RO-offset)
-RO_MIN = float(config.get(
-    'ro_min',
-    0.5
-))
-
-INV_KMER_SIZE = int(config.get(
-    'inv_kmer_size',
-    31
-))
-
-
 #
 # Assembly library and dependency imports
 #

@@ -2,34 +2,105 @@
 Call variants from aligned contigs.
 """
 
+
 #
-# INS/DEL/SNV
+# Definitions
 #
+
+CALL_CIGAR_BATCH_COUNT = 10
 
 
 #
 # Finalize variant calls
 #
 
+# call_final_bed
+#
+# Separate variants into final BED and FA files and write to results.
+rule call_final_bed:
+    input:
+        bed_insdel='temp/{asm_name}/bed/svindel_insdel.bed.gz',
+        bed_inv='temp/{asm_name}/bed/sv_inv.bed.gz',
+        bed_snv='temp/{asm_name}/bed/snv_snv.bed.gz'
+    output:
+        bed_snv_snv='results/{asm_name}/bed/snv_snv.bed.gz',
+        bed_indel_ins='results/{asm_name}/bed/indel_ins.bed.gz',
+        bed_indel_del='results/{asm_name}/bed/indel_del.bed.gz',
+        bed_sv_ins='results/{asm_name}/bed/sv_ins.bed.gz',
+        bed_sv_del='results/{asm_name}/bed/sv_del.bed.gz',
+        bed_sv_inv='results/{asm_name}/bed/sv_inv.bed.gz',
+        fa_indel_ins='results/{asm_name}/bed/fa/indel_ins.fa.gz',
+        fa_indel_del='results/{asm_name}/bed/fa/indel_del.fa.gz',
+        fa_sv_ins='results/{asm_name}/bed/fa/sv_ins.fa.gz',
+        fa_sv_del='results/{asm_name}/bed/fa/sv_del.fa.gz',
+        fa_sv_inv='results/{asm_name}/bed/fa/sv_inv.fa.gz'
+    run:
+
+        # Process INS/DEL/INV (SV and indel)
+        df_insdel = pd.read_csv(input.bed_insdel, sep='\t', low_memory=False)
+        df_inv = pd.read_csv(input.bed_inv, sep='\t', low_memory=False)
+
+        for vartype, svtype in [('sv', 'ins'), ('sv', 'del'), ('sv', 'inv'), ('indel', 'ins'), ('indel', 'del')]:
+
+            # Subset
+            if vartype == 'sv':
+                if svtype == 'inv':
+                    df = df_inv
+                else:
+                    df = df_insdel.loc[df_insdel['SVLEN'] >= 50]
+
+            elif vartype == 'indel':
+                df = df_insdel.loc[df_insdel['SVLEN'] < 50]
+
+            else:
+                raise RuntimeError('Program Bug: Unknown variant type: {}'.format(vartype))
+
+            df = df.loc[df['SVTYPE'] == svtype.upper()]
+
+            # Get output file names
+            bed_file_name = output[f'bed_{vartype}_{svtype}']
+            fa_file_name = output[f'fa_{vartype}_{svtype}']
+
+            # Write FASTA
+            with Bio.bgzf.BgzfWriter(fa_file_name, 'wb') as out_file:
+                SeqIO.write(analib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
+
+            del(df['SEQ'])
+
+            # Write BED
+            df.to_csv(bed_file_name, sep='\t', index=False, compression='gzip')
+
+        # Process SNVs
+        df = pd.read_csv(input.bed_snv_snv, sep='\t', low_memory=False)
+        df.to_csv(output.bed_snv_snv, sep='\t', index=False, compression='gzip')
+
+
 # pg_variant_bed
 #
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
 rule call_merge_haplotypes:
     input:
-        bed1='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h1.bed.gz',
-        bed2='temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_h2.bed.gz',
-        bed_align1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
-        bed_align2='results/{asm_name}/align/aligned_tig_h2.bed.gz'
+        bed_var_h1='temp/{asm_name}/bed/h1/{vartype_svtype}.bed.gz',
+        bed__var_h2='temp/{asm_name}/bed/h2/{vartype_svtype}.bed.gz',
+        bed_align_h1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
+        bed_align_h2='results/{asm_name}/align/aligned_tig_h2.bed.gz',
+        bed_lg_del_h1='results/{asm_name}/lg_sv/sv_del_h1.bed.gz',
+        bed_lg_del_h2='results/{asm_name}/lg_sv/sv_del_h2.bed.gz'
     output:
-        bed='results/{asm_name}/bed/{vartype}_{svtype}.bed.gz',
-        fa='results/{asm_name}/fa/{vartype}_{svtype}.fa.gz'
+        bed=temp('temp/{asm_name}/bed/{vartype_svtype}.bed.gz'),
+        fa=temp('temp/{asm_name}/fa/{vartype_svtype}.fa.gz')
+    params:
+        ro_min=float(config.get('ro_min', 0.5)),
+        offset_max=int(config.get('offset_max', 200)),
+        merge_threads=int(config.get('merge_threads', 12)),
+        merge_mem=config.get('merge_mem', '2G')
     run:
 
         # Get configured merge definition
         if wildcards.vartype == 'snv':
             config_def = 'nrid'
         else:
-            config_def = 'nr:szro={}:offset={}:roor'.format(int(RO_MIN * 100), OFFSET_MAX)
+            config_def = 'nr:szro={}:offset={}:roor'.format(int(ro_min * 100), offset_max)
 
         print('Merging with def: ' + config_def)
         sys.stdout.flush()
@@ -39,7 +110,7 @@ rule call_merge_haplotypes:
             bed_list=[input.bed1, input.bed2],
             sample_names=['h1', 'h2'],
             strategy=config_def,
-            threads=6
+            threads=wildcards.merge_threads
         )
 
         # Restructure columns
@@ -55,7 +126,6 @@ rule call_merge_haplotypes:
         df.columns = ['HAP_SRC' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
         # Restructure columns
-        # TODO: Collapse QUERY_ID, _POS, and _END into one field?
         # TODO: Add alternate QUERY_ID:POS-END and alternate strand for h2 in homozygous calls. Add alternate CALL_SOURCE?
 
         # Load mapped regions
@@ -72,7 +142,16 @@ rule call_merge_haplotypes:
             map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
 
         # Add large SVs to map trees
-        # TODO: Read dataframes, patch large SV coordinates into map-trees
+        df_lg_del_h1 = pd.read_csv(input.bed_lg_del_h1, sep='\t', low_memory=False)
+
+        for index, row in df_lg_del_h1.iterrows():
+            map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
+
+        df_lg_del_h2 = pd.read_csv(input.bed_lg_del_h2, sep='\t', low_memory=False)
+
+        for index, row in df_lg_del_h2.iterrows():
+            map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
+
 
         # Get genotypes setting no-call for non-mappable regions
         df['GT_H1'] = df.apply(asmlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
@@ -80,67 +159,168 @@ rule call_merge_haplotypes:
 
         df['GT'] = df.apply(lambda row: '{}|{}'.format(row['GT_H1'], row['GT_H2']), axis=1)
 
-        # Save SEQ as a FASTA
-        if 'SEQ' in df.columns:
-            with Bio.bgzf.BgzfWriter(output.fa, 'wb') as out_file:
-                SeqIO.write(analib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
-
-            del(df['SEQ'])
-        else:
-            with open(output.fa, 'w') as out_file:
-                pass
-
         # Save BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 
-#
-# Call inversions and filter inter-INV variants
-#
-
 # call_correct_inter_inv
 #
 # Filter variants from inside inversions
-rule call_correct_inter_inv:
+rule call_integrate_sources:
     input:
-        bed='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz',
-        bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz',
-        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
+        bed_cigar_insdel='temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz',
+        bed_cigar_snv='temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz',
+        bed_lg_ins='results/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
+        bed_lg_del='results/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
+        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
+        bed_inv='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
-        bed=temp('temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz'),
-        bed_dropped='results/{asm_name}/bed/dropped/interinv_{vartype}_{svtype}_{hap}.bed.gz'
-    wildcard_constraints:
-        vartype='sv|indel|snv',
-        svtype='ins|del|snv'
+        bed_insdel=temp('temp/{asm_name}/bed/{hap}/svindel_insdel.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/bed/{hap}/sv_inv.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/bed/{hap}/snv_snv.bed.gz')
+    params:
+        min_inv=config.get('min_inv', 300),
+        max_inv=config.get('max_inv', 2000000)
     run:
 
-        # Read
-        df = pd.read_csv(input.bed, sep='\t')
+        # Set parameters
+        if params.min_inv is not None and params.min_inv != 'unlimited':
+            min_inv = int(params.min_inv)
+        else:
+            min_inv = None
 
+        if params.max_inv is not None and params.max_inv != 'unlimited':
+            max_inv = int(params.max_inv)
+        else:
+            max_inv = None
+
+
+        # Read INV calls
         df_inv = pd.concat(
             [
-                pd.read_csv(input.bed_inv, sep='\t', usecols=['#CHROM', 'POS', 'END']),
-                pd.read_csv(input.bed_lg_inv, sep='\t', usecols=['#CHROM', 'POS', 'END'])
+                pd.read_csv(input.bed_inv, sep='\t', low_memory=False),
+                pd.read_csv(input.bed_lg_inv, sep='\t', low_memory=False)
             ],
             axis=0
-        )
+        ).sort_values(['#CHROM', 'POS'])
 
-        # Build tree
-        invtree = collections.defaultdict(intervaltree.IntervalTree)
+        if min_inv is not None:
+            df_inv = df_inv.loc[df_inv['SVLEN'] >= min_inv]
 
-        for index, row in pd.read_csv(input.bed_inv, sep='\t').iterrows():
-            invtree[row['#CHROM']][row['POS']:row['END']] = (row['ID'])
+        if max_inv is not None:
+            df_inv = df_inv.loc[df_inv['SVLEN'] <= max_inv]
 
-        # Filter
-        filter_list = df.apply(
-            lambda row: len(invtree[row['#CHROM']][row['POS']:row['END']]) > 0, axis=1
-        )
+        # Initialize filter with inversions
+        filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        # Write dropped
-        df.loc[filter_list].to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
+        for index, row in df_inv.iterrows():
+            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+
+        # Read large variants and filter by inversions
+        df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False)
+        df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False)
+
+        df_lg_ins = df_lg_ins.loc[
+            df_lg_ins.apply(
+                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                axis=1
+            )
+        ]
+
+        df_lg_del = df_lg_del.loc[
+            df_lg_del.apply(
+                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                axis=1
+            )
+        ]
+
+        # Add large deletions to filter
+        for index, row in df_lg_del.iterrows():
+            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+
+        # Read CIGAR calls
+        df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False)
+        df_snv = pd.read_csv(input.bed_cigar_snv, sep='\t', low_memory=False)
+
+        # Check column conformance among INS/DEL callsets (required for merging)
+        if list(df_cigar_insdel.columns) != list(df_lg_ins.columns):
+            raise RuntimeError('Columns from CIGAR and large SV INS callsets do not match')
+
+        if list(df_cigar_insdel.columns) != list(df_lg_del.columns):
+            raise RuntimeError('Columns from CIGAR and large SV DEL callsets do not match')
+
+        # Filter CIGAR calls
+        df_cigar_insdel = df_cigar_insdel.loc[
+            df_cigar_insdel.apply(
+                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                axis=1
+            )
+        ]
+
+        df_snv = df_snv.loc[
+            df_snv.apply(
+                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                axis=1
+            )
+        ]
+
+        # Merge insertion/deletion variants
+        df_insdel = pd.concat(
+            [
+                df_lg_ins,
+                df_lg_del,
+                df_cigar_insdel
+            ],
+            axis=0
+        ).sort_values(['#CHROM', 'POS'])
 
         # Write
-        df.loc[~ filter_list].to_csv(output.bed, sep='\t', index=False, compression='gzip')
+        df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
+        df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
+        df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
+
+
+
+# rule call_integrate_sources:
+#     input:
+#         bed='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz',
+#         bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz',
+#         bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
+#     output:
+#         bed=temp('temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz'),
+#         bed_dropped='results/{asm_name}/bed/dropped/interinv_{vartype}_{svtype}_{hap}.bed.gz'
+#     wildcard_constraints:
+#         vartype='sv|indel|snv',
+#         svtype='ins|del|snv'
+#     run:
+#
+#         # Read
+#         df = pd.read_csv(input.bed, sep='\t')
+#
+#         df_inv = pd.concat(
+#             [
+#                 pd.read_csv(input.bed_inv, sep='\t', usecols=['#CHROM', 'POS', 'END']),
+#                 pd.read_csv(input.bed_lg_inv, sep='\t', usecols=['#CHROM', 'POS', 'END'])
+#             ],
+#             axis=0
+#         )
+#
+#         # Build tree
+#         invtree = collections.defaultdict(intervaltree.IntervalTree)
+#
+#         for index, row in pd.read_csv(input.bed_inv, sep='\t').iterrows():
+#             invtree[row['#CHROM']][row['POS']:row['END']] = (row['ID'])
+#
+#         # Filter
+#         filter_list = df.apply(
+#             lambda row: len(invtree[row['#CHROM']][row['POS']:row['END']]) > 0, axis=1
+#         )
+#
+#         # Write dropped
+#         df.loc[filter_list].to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
+#
+#         # Write
+#         df.loc[~ filter_list].to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 # call_inv_bed
 #
@@ -152,7 +332,7 @@ rule call_inv_bed:
         bed=temp('temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'),
         bed_dropped='results/{asm_name}/bed/dropped/shortinv_sv_inv_{hap}.bed.gz'
     params:
-        min_svlen=config.get('inv_min_svlen', 500)
+        min_svlen=config.get('inv_min_svlen', 300)
     run:
 
         # Read inversions
@@ -166,193 +346,68 @@ rule call_inv_bed:
 
         df.drop_duplicates('ID', inplace=True)
 
-        # Set common columns
-        tig_region_match = re.match('^([^:]+):(\d+)-(\d+)$', df.iloc[0]['RGN_TIG_OUTER'])
-
-        df['HAP'] = wildcards.hap
-        df['TIG_N'] = 1
-        df['QUERY_ID'] = tig_region_match[1]
-        df['QUERY_POS'] = tig_region_match[2]
-        df['QUERY_END'] = tig_region_match[3]
-
-        # Add SEQ column
-        df['SEQ'] = df.apply(
-            lambda row: asmlib.seq.region_seq_fasta(
-                asmlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
-                REF_FA,
-                False
-            ).upper(),
-            axis=1
-        )
-
         # Write BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
+
 #
-# Merge SV (ins, del), indel, SNV
+# Call from CIGAR
 #
 
-# call_variant_inter_align
+# call_cigar_merge
 #
-# Filter variants by trimmed alignments. PrintGaps was run on the full alignment, including redundantly-mapped
-# contigs and reference loci.
-rule call_variant_inter_align:
+# Merge discovery sets from each batch.
+rule call_cigar_merge:
     input:
-        bed='temp/{asm_name}/pg/raw/{vartype}_{hap}.bed',
-        bed_align='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/insdel_{{hap}}_{batch}.bed.gz', batch=range(CALL_CIGAR_BATCH_COUNT)),
+        bed_snv=expand('temp/{{asm_name}}/cigar/batched/snv.bed_{{hap}}_{batch}.gz', batch=range(CALL_CIGAR_BATCH_COUNT))
     output:
-         bed=temp('temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz'),
-         bed_dropped='results/{asm_name}/bed/dropped/align-trim_{vartype}_{svtype}_{hap}.bed.gz'
-    wildcard_constraints:
-        vartype='sv|indel|snv',
-        svtype='ins|del|snv',
-        hap='h1|h2'
+        bed_insdel=temp('temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz')
     run:
 
-        # Read variants
-        df = pd.read_csv(input.bed, sep='\t')
+        # Read, merge, sort, write
+        pd.concat(
+            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_insdel],
+            axis=0
+        ).sort_values(
+            ['#CHROM', 'POS']
+        ).to_csv(
+            output.bed_insdel, sep='\t', index=False, compression='gzip'
+        )
 
-        df = df.loc[df['SVTYPE'] == wildcards.svtype.upper()].copy()
-
-        if df.shape[0] == 0:
-            print('Empty variant set')
-
-            with open(output.bed, 'w') as out_file:
-                pass
-
-            df.to_csv(output.bed_dropped, sep='\t', index=False)
-
-            return
-
-        if wildcards.vartype == 'snv':
-
-            df['REF'] = df['REF'].apply(lambda val: val.upper())
-            df['ALT'] = df['ALT'].apply(lambda val: val.upper())
-
-            df['QUERY_END'] = df['QUERY_POS'] + 1
-
-            df['SVLEN'] = 1
-
-        # Transform columns (by ref), set ID, sort
-        df['END'] = df.apply(lambda row: (row['POS'] + 1) if row['SVTYPE'] == 'INS' else row['END'], axis=1)
-        df['ID'] = analib.variant.get_variant_id(df)
-        df.sort_values(['#CHROM', 'POS'], inplace=True)
-
-        df['HAP'] = wildcards.hap
-
-        # Add source
-        df['CALL_SOURCE'] = 'CIGAR'
-
-        # Order columns
-        tail_cols = ['HAP', 'QUERY_ID', 'QUERY_POS', 'QUERY_END', 'QUERY_STRAND', 'CALL_SOURCE']
-
-        if 'SEQ' in df.columns:
-            tail_cols += ['SEQ',]
-
-        df = analib.variant.order_variant_columns(df, tail_cols=tail_cols)
-
-        # Filter to accepted alignments (after trimming multiply mapped tig and reference regions)
-        df_align = pd.read_csv(input.bed_align, sep='\t')
-
-        tiling_tree = collections.defaultdict(intervaltree.IntervalTree)
-
-        for index, row in df_align.iterrows():
-            tiling_tree[row['#CHROM']][row['POS']:row['END']] = (row['QUERY_ID'], row['QUERY_POS'], row['QUERY_END'])
-
-        def is_pass_region(row):
-            for pass_record in tiling_tree[row['#CHROM']][row['POS']:row['END']]:
-                pass_record_data = pass_record.data
-
-                if (
-                    row['QUERY_ID'] == pass_record_data[0] and
-                    row['QUERY_POS'] >= pass_record_data[1] and
-                    row['QUERY_END'] <= pass_record_data[2]
-                ):
-                    return True
-
-            return False
+        pd.concat(
+            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_snv],
+            axis=0
+        ).sort_values(
+            ['#CHROM', 'POS']
+        ).to_csv(
+            output.bed_snv, sep='\t', index=False, compression='gzip'
+        )
 
 
-        df['PASS_REGION'] = df.apply(is_pass_region, axis=1)
-
-        # Split variants
-        df_dropped = df.loc[~ df['PASS_REGION']].copy()
-        df = df.loc[df['PASS_REGION']].copy()
-
-        del(df['PASS_REGION'])
-        del(df_dropped['PASS_REGION'])
-
-        # Check for duplicate variant IDs (should not occur)
-        # dup_id = {key for key,val in collections.Counter(df['ID']).items() if val > 1}
-        #
-        # if dup_id:
-        #     raise RuntimeError('Found {} duplicate variant IDs after filtering: {}{}'.format(
-        #         len(dup_id),
-        #         ', '.join(sorted(dup_id)[:3]),
-        #         '...' if len(dup_id) > 3 else ''
-        #     ))
-        df.drop_duplicates('ID', inplace=True)  # DBGTMP: Fix process so duplicates are never generated (filtering is limited)
-
-        # Save BED
-        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
-
-        # Save dropped bed
-        df_dropped.to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
-
-
+# call_cigar
 #
-# PrintGaps
-#
-
-# call_printgaps_sv
-#
-# Get SVs for one alignment.
-rule call_printgaps_sv:
+# Call variants by alignment CIGAR parsing.
+rule call_cigar:
     input:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
+        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        tig_fa_name='results/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
-        bed=temp('temp/{asm_name}/pg/raw/sv_{hap}.bed')
-    shell:
-        """samtools view -h {input.aln} | """
-        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
-            """{REF_FA} /dev/stdin """
-            """--condense 20 """
-            """--minq 0 """
-            """--outFile {output.bed}"""
+        bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/batched/snv.bed_{hap}_{batch}.gz')
+    run:
 
-# call_printgaps_indel
-#
-# Get SVs for one sample.
-rule call_printgaps_indel:
-    input:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
-    output:
-        bed=temp('temp/{asm_name}/pg/raw/indel_{hap}.bed')
-    shell:
-        """samtools view -h {input.aln} | """
-        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
-            """{REF_FA} /dev/stdin """
-            """--minLength 0 --maxLength 50 """
-            """--removeAdjacentIndels """
-            """--onTarget """
-            """--condense 0 """
-            """--minq 0 """
-            """--outFile {output.bed}"""
+        batch = int(wildcards.batch)
 
-# call_printgaps_snv
-#
-# Get SNVs for one sample.
-rule call_printgaps_snv:
-    input:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram'
-    output:
-        bed=temp('temp/{asm_name}/pg/raw/snv_{hap}.bed')
-    shell:
-        """samtools view -h {input.aln} | """
-        """python3 {PIPELINE_DIR}/scripts/PrintGaps.py """
-            """{REF_FA} /dev/stdin """
-            """--minLength 0 --maxLength 0 """
-            """--minq 0 """
-            """--condense 0 """
-            """--snv {output.bed} """
-            """> /dev/null"""
+        # Read
+        df_align = pd.read_csv(input.bed, sep='\t')
+
+        df_align = df_align.loc[df_align['INDEX'] % CALL_CIGAR_BATCH_COUNT == batch]
+
+        # Call
+        df_snv, df_insdel = asmlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap)
+
+        # Write
+        df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
+        df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')

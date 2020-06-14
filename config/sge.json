@@ -13,8 +13,8 @@
         "rt": "96:00:00"
     },
     "call_merge_haplotypes": {
-        "cpu": 6,
-        "mem": "3G",
+        "cpu": "{params.merge_threads}",
+        "mem": "{params.merge_mem}",
         "rt": "12:00:00"
     },
     "call_lg_discover": {
@@ -22,23 +22,18 @@
         "mem": "{params.inv_mem}",
         "rt": "24:00:00"
     },
-    "call_variant_inter_align": {
-        "mem": "4G",
-        "rt": "12:00:00"
-    },
-    "call_printgaps_sv": {
-        "rt": "24:00:00"
-    },
-    "call_printgaps_indel": {
-        "rt": "24:00:00"
-    },
-    "call_printgaps_snv": {
-        "rt": "24:00:00"
-    },
     "call_inv_batch": {
         "cpu": "{params.inv_threads}",
         "mem": "{params.inv_mem}",
         "rt": "24:00:00"
+    },
+    "call_cigar_merge": {
+        "mem": "6G",
+        "rt": "2:00:00"
+    },
+    "call_cigar": {
+        "mem": "2G",
+        "rt": "12:00:00"
     },
 
     "align_postcut_cram": {
@@ -61,5 +56,9 @@
         "cpu": "4",
         "mem": "8G",
         "rt": "24:00:00"
+    },
+
+    "figures_inv_dot_density": {
+        "mem": "12G"
     }
 }

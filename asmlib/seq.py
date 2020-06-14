@@ -18,9 +18,22 @@ class Region:
 
     Tracks orientation as `is_rev` for other code to use (not used by this object). By default, it assumes that `is_rev`
     is `True` if `pos` > `end`.
+
+    If breakpoints are uncertain, minimum and maximum values can be set for pos and end.
+
+    If the region is associated with alignment records, the alignment record index for pos and end can be also be
+    tracked with this object.
     """
 
-    def __init__(self, chrom, pos, end, is_rev=None, pos_min=None, pos_max=None, end_min=None, end_max=None):
+    def __init__(
+            self,
+            chrom, pos, end,
+            is_rev=None,
+            pos_min=None, pos_max=None,
+            end_min=None, end_max=None,
+            pos_aln_index=None,
+            end_aln_index=None
+    ):
         self.chrom = chrom
         self.pos = int(pos)
         self.end = int(end)
@@ -29,6 +42,9 @@ class Region:
         self.pos_max = self.pos if pos_max is None else int(pos_max)
         self.end_min = self.end if end_min is None else int(end_min)
         self.end_max = self.end if end_max is None else int(end_max)
+
+        self.pos_aln_index = pos_aln_index
+        self.end_aln_index = end_aln_index
 
         # Swap and set orientation to reverse if pos and end are reversed
         if self.pos > self.end:
@@ -40,6 +56,10 @@ class Region:
             self.end_max = self.pos if pos_max is None else int(pos_max)
             self.pos_min = self.end if end_min is None else int(end_min)
             self.pos_max = self.end if end_max is None else int(end_max)
+
+            tmp = self.pos_aln_index
+            self.pos_aln_index = self.end_aln_index
+            self.end_aln_index = tmp
 
             if is_rev is None:
                 is_rev = True
@@ -241,6 +261,23 @@ def region_from_string(rgn_str, is_rev=None, base0half=False):
         pos -= 1
 
     return Region(match_obj[1], pos, end, is_rev=is_rev)
+
+
+def region_from_id(region_id):
+    """
+    Take a region ID (CHROM-POS-SVTYPE-LEN) and translate to a Region object. Typically used to translate "RGN" IDs.
+
+    :param region_id: Region ID.
+
+    :return: Region object.
+    """
+
+    tok = region_id.split('-')
+
+    if len(tok) != 4:
+        raise RuntimeError('Unrecognized region ID: {}'.format(region_id))
+
+    return Region(tok[0], int(tok[1]) - 1, int(tok[1]) - 1 + int(tok[3]))
 
 
 def ref_kmers(region, fa_file_name, k_util):
