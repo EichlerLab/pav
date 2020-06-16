@@ -740,7 +740,7 @@ class AlignLift:
                     row['REV'],
                     lift_pos,
                     lift_pos,
-                    row['INDEX']
+                    (row['INDEX'],)
                 ))
 
             else:  # Lift from missing bases on the target (insertion or deletion)
@@ -750,7 +750,7 @@ class AlignLift:
                     row['REV'],
                     match_interval.data[1],
                     match_interval.data[1],
-                    row['INDEX']
+                    (row['INDEX'],)
                 ))
 
         # Return coordinates
@@ -847,7 +847,7 @@ class AlignLift:
                 row['REV'],
                 qry_pos,
                 qry_pos,
-                row['INDEX']
+                (row['INDEX'],)
             ))
 
         # Return coordinates
@@ -882,8 +882,8 @@ class AlignLift:
             is_rev=False,
             pos_min=sub_pos[3], pos_max=sub_pos[4],
             end_min=sub_end[3], end_max=sub_end[4],
-            pos_aln_index=sub_pos[5],
-            end_aln_index=sub_end[5]
+            pos_aln_index=(sub_pos[5],),
+            end_aln_index=(sub_end[5],)
         )
 
     def lift_region_to_qry(self, region):
@@ -911,8 +911,8 @@ class AlignLift:
             is_rev=query_pos[2],
             pos_min=query_pos[3], pos_max=query_pos[4],
             end_min=query_end[3], end_max=query_end[4],
-            pos_aln_index=query_pos[5],
-            end_aln_index=query_end[5]
+            pos_aln_index=(query_pos[5],),
+            end_aln_index=(query_end[5],)
         )
 
     def _get_subject_gap(self, query_id, pos):
@@ -957,7 +957,8 @@ class AlignLift:
                 np.int64((row_l['QUERY_TIG_END'] + row_r['QUERY_TIG_POS']) / 2),
                 row_l['REV'] if row_l['REV'] == row_r['REV'] else None,
                 row_l['QUERY_TIG_END'],
-                row_r['QUERY_TIG_POS']
+                row_r['QUERY_TIG_POS'],
+                (row_l['INDEX'], row_r['INDEX'])
             )
         )
 

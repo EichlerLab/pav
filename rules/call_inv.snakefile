@@ -213,13 +213,16 @@ rule call_inv_batch:
 
                         # Get alignment record data
                         aln_index_set = {
-                            inv_call.region_ref_outer.pos_aln_index,
-                            inv_call.region_ref_outer.end_aln_index,
-                            inv_call.region_ref_inner.pos_aln_index,
-                            inv_call.region_ref_inner.end_aln_index
+                            val for val_list in [
+                                inv_call.region_ref_outer.pos_aln_index,
+                                inv_call.region_ref_outer.end_aln_index,
+                                inv_call.region_ref_inner.pos_aln_index,
+                                inv_call.region_ref_inner.end_aln_index
+
+                            ] for val in val_list
                         }
 
-                        cluster_match_set = {df_aln.loc[index, 'CLUSTER_MATCH'] for index in aln_index_set}
+                        cluster_match_set = {df_aln.loc[index, 'CLUSTER_MATCH'] for index_tuple in aln_index_set for index in index_tuple}
 
                         if False in cluster_match_set:
                             cluster_match = False

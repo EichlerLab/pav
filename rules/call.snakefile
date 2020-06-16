@@ -19,9 +19,9 @@ CALL_CIGAR_BATCH_COUNT = 10
 # Separate variants into final BED and FA files and write to results.
 rule call_final_bed:
     input:
-        bed_insdel='temp/{asm_name}/bed/svindel_insdel.bed.gz',
-        bed_inv='temp/{asm_name}/bed/sv_inv.bed.gz',
-        bed_snv='temp/{asm_name}/bed/snv_snv.bed.gz'
+        bed_insdel='temp/{asm_name}/bed/merged/svindel_insdel.bed.gz',
+        bed_inv='temp/{asm_name}/bed/merged/sv_inv.bed.gz',
+        bed_snv='temp/{asm_name}/bed/merged/snv_snv.bed.gz'
     output:
         bed_snv_snv='results/{asm_name}/bed/snv_snv.bed.gz',
         bed_indel_ins='results/{asm_name}/bed/indel_ins.bed.gz',
@@ -71,7 +71,7 @@ rule call_final_bed:
             df.to_csv(bed_file_name, sep='\t', index=False, compression='gzip')
 
         # Process SNVs
-        df = pd.read_csv(input.bed_snv_snv, sep='\t', low_memory=False)
+        df = pd.read_csv(input.bed_snv, sep='\t', low_memory=False)
         df.to_csv(output.bed_snv_snv, sep='\t', index=False, compression='gzip')
 
 
@@ -80,15 +80,14 @@ rule call_final_bed:
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
 rule call_merge_haplotypes:
     input:
-        bed_var_h1='temp/{asm_name}/bed/h1/{vartype_svtype}.bed.gz',
-        bed__var_h2='temp/{asm_name}/bed/h2/{vartype_svtype}.bed.gz',
+        bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
+        bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
         bed_align_h1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
         bed_align_h2='results/{asm_name}/align/aligned_tig_h2.bed.gz',
         bed_lg_del_h1='results/{asm_name}/lg_sv/sv_del_h1.bed.gz',
         bed_lg_del_h2='results/{asm_name}/lg_sv/sv_del_h2.bed.gz'
     output:
-        bed=temp('temp/{asm_name}/bed/{vartype_svtype}.bed.gz'),
-        fa=temp('temp/{asm_name}/fa/{vartype_svtype}.fa.gz')
+        bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     params:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
@@ -97,20 +96,20 @@ rule call_merge_haplotypes:
     run:
 
         # Get configured merge definition
-        if wildcards.vartype == 'snv':
+        if wildcards.vartype_svtype == 'snv_snv':
             config_def = 'nrid'
         else:
-            config_def = 'nr:szro={}:offset={}:roor'.format(int(ro_min * 100), offset_max)
+            config_def = 'nr:szro={}:offset={}:roor'.format(int(params.ro_min * 100), params.offset_max)
 
         print('Merging with def: ' + config_def)
         sys.stdout.flush()
 
         # Merge
         df = analib.svmerge.merge_variants(
-            bed_list=[input.bed1, input.bed2],
+            bed_list=[input.bed_var_h1, input.bed_var_h2],
             sample_names=['h1', 'h2'],
             strategy=config_def,
-            threads=wildcards.merge_threads
+            threads=params.merge_threads
         )
 
         # Restructure columns
@@ -132,8 +131,8 @@ rule call_merge_haplotypes:
         map_tree_h1= collections.defaultdict(intervaltree.IntervalTree)
         map_tree_h2= collections.defaultdict(intervaltree.IntervalTree)
 
-        df_map_h1 = pd.read_csv(input.bed_align1, sep='\t')
-        df_map_h2 = pd.read_csv(input.bed_align2, sep='\t')
+        df_map_h1 = pd.read_csv(input.bed_align_h1, sep='\t')
+        df_map_h2 = pd.read_csv(input.bed_align_h2, sep='\t')
 
         for index, row in df_map_h1.iterrows():
             map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
@@ -151,7 +150,6 @@ rule call_merge_haplotypes:
 
         for index, row in df_lg_del_h2.iterrows():
             map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
-
 
         # Get genotypes setting no-call for non-mappable regions
         df['GT_H1'] = df.apply(asmlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
@@ -175,9 +173,9 @@ rule call_integrate_sources:
         bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
         bed_inv='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
-        bed_insdel=temp('temp/{asm_name}/bed/{hap}/svindel_insdel.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/bed/{hap}/sv_inv.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/bed/{hap}/snv_snv.bed.gz')
+        bed_insdel=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_insdel.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/bed/integrated/{hap}/sv_inv.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz')
     params:
         min_inv=config.get('min_inv', 300),
         max_inv=config.get('max_inv', 2000000)
@@ -202,13 +200,26 @@ rule call_integrate_sources:
                 pd.read_csv(input.bed_lg_inv, sep='\t', low_memory=False)
             ],
             axis=0
-        ).sort_values(['#CHROM', 'POS'])
+        ).sort_values(
+            ['#CHROM', 'POS']
+        ).reset_index(drop=True)
 
         if min_inv is not None:
             df_inv = df_inv.loc[df_inv['SVLEN'] >= min_inv]
 
         if max_inv is not None:
             df_inv = df_inv.loc[df_inv['SVLEN'] <= max_inv]
+
+        # Filter overlapping inversion calls
+        inv_tree = collections.defaultdict(intervaltree.IntervalTree)
+        inv_index_set = set()
+
+        for index, row in df_inv.sort_values(['SVLEN', 'POS']).iterrows():
+            if len(inv_tree[row['#CHROM']][row['POS']:row['END']]) == 0:
+                inv_index_set.add(index)
+                inv_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+
+        df_inv = df_inv.loc[inv_index_set].sort_values(['#CHROM', 'POS'])
 
         # Initialize filter with inversions
         filter_tree = collections.defaultdict(intervaltree.IntervalTree)
