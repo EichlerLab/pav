@@ -194,8 +194,11 @@ rule align_cut_tig_overlap:
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     params:
-        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', True))  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
+        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', True)),  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
+        min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000))  # Minimum aligned tig length
     run:
+
+        min_trim_tig_len = params.min_trim_tig_len
 
         # Read uncut alignments
         df = pd.read_csv(input.bed, sep='\t')
@@ -224,6 +227,11 @@ rule align_cut_tig_overlap:
 
         else:
             df['CLUSTER_MATCH'] = np.nan
+
+        # Remove short alignments
+        for index in df.index:
+            if df.loc[index, 'QUERY_TIG_END'] - df.loc[index, 'QUERY_TIG_POS'] < min_trim_tig_len:
+                df.loc[index, 'INDEX'] = -1
 
         # Resolve overlapping contig regions aligned (one contig region aligned more than once)
         iter_index_l = 0
@@ -272,8 +280,17 @@ rule align_cut_tig_overlap:
                         )
 
                         if record_l is not None and record_r is not None:
-                            df.loc[index_l] = record_l
-                            df.loc[index_r] = record_r
+
+                            # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                            if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                                df.loc[index_l] = record_l
+                            else:
+                                df.loc[index_l, 'INDEX'] = -1
+
+                            if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                                df.loc[index_r] = record_r
+                            else:
+                                df.loc[index_r, 'INDEX'] = -1
 
                         # print('\t* Trimmed')
 
@@ -339,8 +356,17 @@ rule align_cut_tig_overlap:
                         record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
 
                         if record_l is not None and record_r is not None:
-                            df.loc[index_l] = record_l
-                            df.loc[index_r] = record_r
+
+                            # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                            if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                                df.loc[index_l] = record_l
+                            else:
+                                df.loc[index_l, 'INDEX'] = -1
+
+                            if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                                df.loc[index_r] = record_r
+                            else:
+                                df.loc[index_r, 'INDEX'] = -1
 
                         # print('\t* Trimmed')
 
@@ -385,6 +411,35 @@ rule align_get_read_bed:
     wildcard_constraints:
         hap='h(0|1|2)'
     run:
+
+        # Write an empty file if SAM is emtpy
+        if os.stat(input.sam).st_size == 0:
+
+            pd.DataFrame(
+                [], columns=['INDEX', 'SEQ', 'QUAL']
+            ).to_csv(
+                output.bed_qualseq, sep='\t', index=False, compression='gzip'
+            )
+
+            pd.DataFrame(
+                [],
+                columns=[
+                    '#CHROM', 'POS', 'END',
+                    'INDEX',
+                    'QUERY_ID', 'QUERY_POS', 'QUERY_END',
+                    'QUERY_TIG_POS', 'QUERY_TIG_END',
+                    'RG',
+                    'MAPQ',
+                    'REV', 'FLAGS', 'HAP',
+                    'CIGAR',
+                    'SEQ', 'QUAL'
+                ]
+            ).to_csv(
+                output.bed, sep='\t', index=False, compression='gzip'
+            )
+
+            with open(output.align_head, 'w') as out_file:
+                pass
 
         # Read FAI
         df_tig_fai = analib.ref.get_df_fai(input.tig_fai)
@@ -472,7 +527,23 @@ rule align_get_read_bed:
                 align_index += 1
 
         # Merge records
-        df = pd.concat(record_list, axis=1).T
+        if len(record_list) > 0:
+            df = pd.concat(record_list, axis=1).T
+        else:
+            df = pd.DataFrame(
+                [],
+                columns=[
+                    '#CHROM', 'POS', 'END',
+                    'INDEX',
+                    'QUERY_ID', 'QUERY_POS', 'QUERY_END',
+                    'QUERY_TIG_POS', 'QUERY_TIG_END',
+                    'RG',
+                    'MAPQ',
+                    'REV', 'FLAGS', 'HAP',
+                    'CIGAR',
+                    'SEQ', 'QUAL'
+                ]
+            )
 
         df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
 
@@ -518,24 +589,102 @@ rule align_map:
         fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam')
-    shell:
-        """minimap2 """
-            """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
-            """--secondary=no -a -t 20 --eqx -Y """
-            """-O 5,56 -E 4,1 -B 5 """
-            """{REF_FA} {input.fa} """
-            """> {output.sam}"""
+    run:
 
-# align_index
+        # Write an empty file if input is empty
+        if os.stat(input.fa).st_size == 0:
+            with open(output.sam, 'w') as out_file:
+                pass
+
+        # Align
+        shell(
+            """minimap2 """
+                """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
+                """--secondary=no -a -t 20 --eqx -Y """
+                """-O 5,56 -E 4,1 -B 5 """
+                """{REF_FA} {input.fa} """
+                """> {output.sam}"""
+        )
+
+rule align_ref:
+    input:
+        fa=config['reference'],
+
+    output:
+        fa='data/ref/ref.fa.gz',
+        fai='data/ref/ref.fa.gz.fai'
+    run:
+
+        # Determine if file is BGZF compressed
+        is_bgzf = False
+
+        try:
+            with Bio.bgzf.open(input.fa, 'r') as in_file_test:
+                is_bgzf = True
+
+        except ValueError:
+            pass
+
+        # Copy or compress
+        if is_bgzf:
+
+            # Copy file if already compressed
+            shutil.copyfile(input.fa, output.fa)
+
+        else:
+            # Compress to BGZF
+
+            is_gz = False
+
+            try:
+                with gzip.open(input.fa, 'r') as in_file_test:
+
+                    line = next(in_file_test)
+
+                    is_gz = True
+
+            except OSError:
+                pass
+
+            if is_gz:
+                # Re-compress to BGZF
+
+                with gzip.open(input.fa, 'rb') as in_file:
+                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
+                        for line in in_file:
+                            out_file.write(line)
+
+            else:
+                # Compress plain text
+
+                with open(input.fa, 'r') as in_file:
+                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
+                        for line in in_file:
+                            out_file.write(line)
+
+        # Index
+        shell("""samtools faidx {output.fa}""")
+
+# align_get_tig_fa
 #
 # Get FASTA files.
-rule align_index:
+rule align_get_tig_fa:
     input:
         fa=align_input_fasta
     output:
         fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
         fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     run:
+
+        # Write empty files in FASTA is empty
+        if os.stat(input.fa).st_size == 0:
+            with open(output.fa, 'w') as out_file:
+                pass
+
+            with open(output.fai, 'w') as out_file:
+                pass
+
+            return
 
         # Determine if file is BGZF compressed
         is_bgzf = False

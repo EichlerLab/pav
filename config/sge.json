@@ -7,10 +7,8 @@
         "params": ""
     },
 
-    "pg_variant_bed": {
-        "cpu": "6",
-        "mem": "4G",
-        "rt": "96:00:00"
+    "call_integrate_sources": {
+        "mem": "4G"
     },
     "call_merge_haplotypes": {
         "cpu": "{params.merge_threads}",
@@ -36,6 +34,9 @@
         "rt": "12:00:00"
     },
 
+    "align_postcut_sam": {
+      "mem": "12G"
+    },
     "align_postcut_cram": {
         "mem": "16G"
     },
@@ -56,6 +57,9 @@
         "cpu": "4",
         "mem": "8G",
         "rt": "24:00:00"
+    },
+    "align_lra_index": {
+        "mem": "18G"
     },
 
     "figures_inv_dot_density": {

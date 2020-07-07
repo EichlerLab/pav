@@ -21,10 +21,9 @@ rule figures_inv_dot_density:
         bed_density='results/{asm_name}/{flag_source}/density_table/density_{inv_id}_{hap}.tsv.gz'
     output:
         fig_dot='figures/inv/{asm_name}/{hap}/{flag_source}/{inv_id}_dot.{ext}',
-        fig_den='figures/inv/{asm_name}/{hap}/{flag_source}/{inv_id}_density_{whiskers}.{ext}'
+        fig_den='figures/inv/{asm_name}/{hap}/{flag_source}/{inv_id}_density.{ext}'
     wildcard_constraints:
-        ext='pdf|png',
-        whiskers='whisk|nowhisk'
+        ext='pdf|png'
     run:
 
         # Read inversion calls and get record
@@ -49,7 +48,7 @@ rule figures_inv_dot_density:
         )
 
         fig_density = asmlib.plot.kmer_density_plot(
-            inv_call, hap=wildcards.hap, flank_whiskers=(wildcards.whiskers == 'whisk')
+            inv_call, hap=wildcards.hap, flank_whiskers=True
         )
 
         # Write plots

@@ -97,16 +97,19 @@ class InvCall:
         self.svlen = len(region_ref_outer)
         self.id = '{}-{}-INV-{}'.format(region_ref_outer.chrom, region_ref_outer.pos + 1, self.svlen)
 
-        # Get max INV density height
-        self.max_inv_den_diff = np.max(
-            df.loc[
-                df['STATE'] == 2, 'KERN_REV'
-            ] - df.loc[
-                df['STATE'] == 2, ['KERN_FWD', 'KERN_FWDREV']
-            ].apply(
-                np.max, axis=1
-            )
-        )
+        # # Get max INV density height
+        # if df is not None:
+        #     self.max_inv_den_diff = np.max(
+        #         df.loc[
+        #             df['STATE'] == 2, 'KERN_REV'
+        #         ] - df.loc[
+        #             df['STATE'] == 2, ['KERN_FWD', 'KERN_FWDREV']
+        #         ].apply(
+        #             np.max, axis=1
+        #         )
+        #     )
+        # else:
+        #     self.max_inv_den_diff = None
 
     def __repr__(self):
         return self.id

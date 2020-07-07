@@ -12,13 +12,13 @@ import asmlib
 import kanapy
 
 
-def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None):
+def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
     """
     Make a dotplot of an inversion call.
 
     :param inv_call: asmlib.inv.InvCall object describing the inversion.
     :param ref_fa: Reference FASTA.
-    :param aln_file_name: Alignment file name.
+    :param tig_fa: Alignment file name.
     :param seq_tig: Contig alignment sequence or `None`. If `None`, then `aln_file_name` must be set.
 
 
@@ -26,33 +26,19 @@ def dotplot_inv_call(inv_call, ref_fa, aln_file_name=None, seq_tig=None):
         free memory.
     """
 
-    region_ref = inv_call.region_ref_outer
-    region_tig = inv_call.region_tig_outer
+    region_ref = inv_call.region_ref_discovery
+    region_tig = inv_call.region_tig_discovery
 
     # Get reference sequence
     seq_ref = asmlib.seq.region_seq_fasta(region_ref, ref_fa, False)
 
     # Get contig sequence
     if seq_tig is None:
-        contig_record_list = asmlib.seq.get_matching_alignments(region_ref, region_tig, aln_file_name, ref_fa)
 
-        if len(contig_record_list) != 1:
-            raise RuntimeError('Expected 1 overlapping region for {} aligned to {}: Found {}'.format(
-                region_tig, region_ref, len(contig_record_list)
-            ))
+        if tig_fa is None:
+            raise RuntimeError('Cannot get contig sequence: tig_fa is None')
 
-        contig_record = contig_record_list[0]
-        del contig_record_list
-
-        # Count hard-clipped bases
-        query_start = 0
-
-        index = 0
-        while contig_record.cigar[index][0] == 5:  # 5 = H cigar op
-            query_start += contig_record.cigar[index][1]
-            index += 1
-
-        seq_tig = contig_record.query_sequence[(region_tig.pos - query_start):(region_tig.end - query_start)]
+        seq_tig = asmlib.seq.region_seq_fasta(region_tig, tig_fa)
 
     # Create plot config
     plot_config = {

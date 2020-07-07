@@ -438,20 +438,24 @@ rule call_inv_merge_flagged_loci:
             ))
 
         # Merge
-        df_merged = pd.concat(region_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+        if len(region_list) > 0:
+            df_merged = pd.concat(region_list, axis=1).T.sort_values(['#CHROM', 'POS'])
 
-        # Annotate accepted regions
-        df_merged['TRY_INV'] = df_merged.apply(_call_inv_accept_flagged_region, axis=1)
+            # Annotate accepted regions
+            df_merged['TRY_INV'] = df_merged.apply(_call_inv_accept_flagged_region, axis=1)
 
-        # Group into batches
-        df_merged['BATCH'] = -1
+            # Group into batches
+            df_merged['BATCH'] = -1
 
-        batch = 0
+            batch = 0
 
-        for index, row in df_merged.iterrows():
-            if row['TRY_INV']:
-                df_merged.loc[index, 'BATCH'] = batch
-                batch = (batch + 1) % BATCH_COUNT
+            for index, row in df_merged.iterrows():
+                if row['TRY_INV']:
+                    df_merged.loc[index, 'BATCH'] = batch
+                    batch = (batch + 1) % BATCH_COUNT
+
+        else:
+            df_merged = pd.DataFrame([], columns=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV', 'TRY_INV', 'BATCH'])
 
         # Write
         df_merged.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -487,6 +491,16 @@ rule call_inv_flag_insdel_cluster:
         if wildcards.vartype == 'indel':
             df = df.loc[df['SVLEN'] < 50]
 
+        # Stop if variants are empty
+        if df.shape[0] == 0:
+            pd.DataFrame(
+                [],
+                columns=['#CHROM', 'POS', 'END']
+            ).to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+            return
+
+        # Subset by SVTYPE
         df_ins = df.loc[df['SVTYPE'] == 'INS']
         df_del = df.loc[df['SVTYPE'] == 'DEL']
 
@@ -513,6 +527,14 @@ rule call_inv_flag_insdel_cluster:
                     ],
                     index=['#CHROM', 'POS', 'END']
                 ))
+
+        if len(match_list) == 0:
+            pd.DataFrame(
+                [],
+                columns=['#CHROM', 'POS', 'END']
+            ).to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+            return
 
         # Merge overlapping intervals
         df_match = pd.concat(match_list, axis=1).T.sort_values(['#CHROM', 'POS'])

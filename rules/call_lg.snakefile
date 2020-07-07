@@ -38,7 +38,7 @@ rule call_lg_discover:
         bed_del=temp('temp/{asm_name}/lg_sv/sv_del_{hap}_{batch}.bed.gz'),
         bed_inv=temp('temp/{asm_name}/lg_sv/sv_inv_{hap}_{batch}.bed.gz')
     log:
-        log='results/{asm_name}/lg_sv/log/sv_ins_{hap}_{batch}.log'
+        log='results/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
     params:
         k_size=int(config.get('inv_k_size', 31)),
         inv_threads=int(config.get('inv_threads_lg', config.get('inv_threads', 12))),

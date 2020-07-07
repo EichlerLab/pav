@@ -19,7 +19,8 @@ CALL_CIGAR_BATCH_COUNT = 10
 # Separate variants into final BED and FA files and write to results.
 rule call_final_bed:
     input:
-        bed_insdel='temp/{asm_name}/bed/merged/svindel_insdel.bed.gz',
+        bed_ins='temp/{asm_name}/bed/merged/svindel_ins.bed.gz',
+        bed_del='temp/{asm_name}/bed/merged/svindel_del.bed.gz',
         bed_inv='temp/{asm_name}/bed/merged/sv_inv.bed.gz',
         bed_snv='temp/{asm_name}/bed/merged/snv_snv.bed.gz'
     output:
@@ -37,25 +38,29 @@ rule call_final_bed:
     run:
 
         # Process INS/DEL/INV (SV and indel)
-        df_insdel = pd.read_csv(input.bed_insdel, sep='\t', low_memory=False)
+        df_ins = pd.read_csv(input.bed_ins, sep='\t', low_memory=False)
+        df_del = pd.read_csv(input.bed_del, sep='\t', low_memory=False)
         df_inv = pd.read_csv(input.bed_inv, sep='\t', low_memory=False)
+
+        df_svtype_dict = {
+            'ins': df_ins,
+            'del': df_del,
+            'inv': df_inv
+        }
 
         for vartype, svtype in [('sv', 'ins'), ('sv', 'del'), ('sv', 'inv'), ('indel', 'ins'), ('indel', 'del')]:
 
+            df = df_svtype_dict[svtype]
+
             # Subset
             if vartype == 'sv':
-                if svtype == 'inv':
-                    df = df_inv
-                else:
-                    df = df_insdel.loc[df_insdel['SVLEN'] >= 50]
+                df = df.loc[df['SVLEN'] >= 50]
 
             elif vartype == 'indel':
-                df = df_insdel.loc[df_insdel['SVLEN'] < 50]
+                df = df.loc[df['SVLEN'] < 50]
 
             else:
                 raise RuntimeError('Program Bug: Unknown variant type: {}'.format(vartype))
-
-            df = df.loc[df['SVTYPE'] == svtype.upper()]
 
             # Get output file names
             bed_file_name = output[f'bed_{vartype}_{svtype}']
@@ -66,6 +71,25 @@ rule call_final_bed:
                 SeqIO.write(analib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
 
             del(df['SEQ'])
+
+            # Arrange columns
+            df = analib.variant.order_variant_columns(
+                df,
+                head_cols=[
+                    '#CHROM', 'POS', 'END', 'ID',
+                    'SVTYPE', 'SVLEN', 'REF', 'ALT',
+                    'HAP', 'GT', 'CLUSTER_MATCH', 'CALL_SOURCE',
+                    'TIG_REGION', 'QUERY_STRAND', 'ALIGN_INDEX'
+                    'CI',
+                ],
+                tail_cols=[
+                    'CALL_SOURCE',
+                    'HAP_VARIANTS',
+                    'CI',
+                    'HAP_RO', 'HAP_OFFSET', 'HAP_SZRO', 'HAP_OFFSZ'
+                ],
+                allow_missing=True
+            )
 
             # Write BED
             df.to_csv(bed_file_name, sep='\t', index=False, compression='gzip')
@@ -82,10 +106,8 @@ rule call_merge_haplotypes:
     input:
         bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
         bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
-        bed_align_h1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
-        bed_align_h2='results/{asm_name}/align/aligned_tig_h2.bed.gz',
-        bed_lg_del_h1='results/{asm_name}/lg_sv/sv_del_h1.bed.gz',
-        bed_lg_del_h2='results/{asm_name}/lg_sv/sv_del_h2.bed.gz'
+        callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
+        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     params:
@@ -99,7 +121,7 @@ rule call_merge_haplotypes:
         if wildcards.vartype_svtype == 'snv_snv':
             config_def = 'nrid'
         else:
-            config_def = 'nr:szro={}:offset={}:roor'.format(int(params.ro_min * 100), params.offset_max)
+            config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
 
         print('Merging with def: ' + config_def)
         sys.stdout.flush()
@@ -112,7 +134,10 @@ rule call_merge_haplotypes:
             threads=params.merge_threads
         )
 
+        df.set_index('ID', inplace=True, drop=False)
+
         # Restructure columns
+        del(df['HAP'])
         del(df['DISC_CLASS'])
 
         df.columns = [re.sub('^MERGE_', 'HAP_', val) for val in df.columns]
@@ -122,33 +147,63 @@ rule call_merge_haplotypes:
         del(df['HAP_AC'])
         del(df['HAP_AF'])
 
-        df.columns = ['HAP_SRC' if val == 'HAP_SAMPLES' else val for val in df.columns]
+        df.columns = ['HAP' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
-        # Restructure columns
-        # TODO: Add alternate QUERY_ID:POS-END and alternate strand for h2 in homozygous calls. Add alternate CALL_SOURCE?
+        # Change , to ; from merger
+        df['HAP'] = df['HAP'].apply(lambda val: ';'.join(val.split(',')))
+        df['HAP_VARIANTS'] = df['HAP_VARIANTS'].apply(lambda val: ';'.join(val.split(',')))
+
+        if 'HAP_RO' in df.columns:
+            df['HAP_RO'] = df['HAP_RO'].apply(lambda val: ';'.join(val.split(',')))
+
+        if 'HAP_OFFSET' in df.columns:
+            df['HAP_OFFSET'] = df['HAP_OFFSET'].apply(lambda val: ';'.join(val.split(',')))
+
+        if 'HAP_SZRO' in df.columns:
+            df['HAP_SZRO'] = df['HAP_SZRO'].apply(lambda val: ';'.join(val.split(',')))
+
+        if 'HAP_OFFSZ' in df.columns:
+            df['HAP_OFFSZ'] = df['HAP_OFFSZ'].apply(lambda val: ';'.join(val.split(',')))
+
+        # Add h1 and h2 to columns
+        df_h1 = pd.read_csv(input.bed_var_h1, sep='\t', low_memory=False)
+        df_h1.set_index('ID', inplace=True, drop=False)
+        df_h1['CLUSTER_MATCH'].fillna('NA', inplace=True)
+        df_h1 = df_h1.astype(str)
+
+        df_h2 = pd.read_csv(input.bed_var_h2, sep='\t', low_memory=False)
+        df_h2.set_index('ID', inplace=True, drop=False)
+        df_h2['CLUSTER_MATCH'].fillna('NA', inplace=True)
+        df_h2 = df_h2.astype(str)
+
+        df['TIG_REGION'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
+        df['QUERY_STRAND'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
+        df['CI'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CI')
+        df['ALIGN_INDEX'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'ALIGN_INDEX')
+        df['CLUSTER_MATCH'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CLUSTER_MATCH')
+        df['CALL_SOURCE'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CALL_SOURCE')
+
+        # Set inversion columns
+        if wildcards.vartype_svtype == 'sv_inv':
+            del(df['RGN_REF_DISC'])
+            del(df['RGN_TIG_DISC'])
+            del(df['FLAG_ID'])
+            del(df['FLAG_TYPE'])
+
+            df['RGN_REF_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_REF_INNER')
+            df['RGN_TIG_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_TIG_INNER')
 
         # Load mapped regions
-        map_tree_h1= collections.defaultdict(intervaltree.IntervalTree)
-        map_tree_h2= collections.defaultdict(intervaltree.IntervalTree)
+        map_tree_h1 = collections.defaultdict(intervaltree.IntervalTree)
+        map_tree_h2 = collections.defaultdict(intervaltree.IntervalTree)
 
-        df_map_h1 = pd.read_csv(input.bed_align_h1, sep='\t')
-        df_map_h2 = pd.read_csv(input.bed_align_h2, sep='\t')
+        df_map_h1 = pd.read_csv(input.callable_h1, sep='\t')
+        df_map_h2 = pd.read_csv(input.callable_h2, sep='\t')
 
         for index, row in df_map_h1.iterrows():
             map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
 
         for index, row in df_map_h2.iterrows():
-            map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
-
-        # Add large SVs to map trees
-        df_lg_del_h1 = pd.read_csv(input.bed_lg_del_h1, sep='\t', low_memory=False)
-
-        for index, row in df_lg_del_h1.iterrows():
-            map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
-
-        df_lg_del_h2 = pd.read_csv(input.bed_lg_del_h2, sep='\t', low_memory=False)
-
-        for index, row in df_lg_del_h2.iterrows():
             map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
 
         # Get genotypes setting no-call for non-mappable regions
@@ -157,9 +212,51 @@ rule call_merge_haplotypes:
 
         df['GT'] = df.apply(lambda row: '{}|{}'.format(row['GT_H1'], row['GT_H2']), axis=1)
 
+        if np.any(df['GT'].apply(lambda val: val == '0|0')):
+            raise RuntimeError('Program bug: Found 0|0 genotypes after merging haplotypes')
+
+        del df['GT_H1']
+        del df['GT_H2']
+
         # Save BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
+
+# call_mappable_bed
+#
+# Make a table of mappable regions by merging aligned loci with loci covered by alignment-truncating events.
+# "flank" parameter is an integer describing how far away records may be to merge (similar to the "bedtools merge"
+# "slop" parameter). The flank is not added to the regions that are output.
+rule call_mappable_bed:
+    input:
+        bed_align='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        bed_lg_del='results/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
+        bed_lg_ins='results/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
+        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
+    output:
+        bed='results/{asm_name}/callable/callable_regions_{hap}_{flank}.bed.gz'
+    run:
+
+        # Get flank param
+        try:
+            flank = np.int32(wildcards.flank)
+
+        except ValueError:
+            raise RuntimeError('Flank parameter is not an integer: {flank}'.format(**wildcards))
+
+        # Merge
+        df = asmlib.util.region_merge(
+            [
+                input.bed_align,
+                input.bed_lg_del,
+                input.bed_lg_ins,
+                input.bed_lg_inv
+            ],
+            pad=flank
+        )
+
+        # Write
+        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 # call_correct_inter_inv
 #
@@ -173,7 +270,8 @@ rule call_integrate_sources:
         bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
         bed_inv='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
-        bed_insdel=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_insdel.bed.gz'),
+        bed_ins=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_ins.bed.gz'),
+        bed_del=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_del.bed.gz'),
         bed_inv=temp('temp/{asm_name}/bed/integrated/{hap}/sv_inv.bed.gz'),
         bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz')
     params:
@@ -286,52 +384,20 @@ rule call_integrate_sources:
         ).sort_values(['#CHROM', 'POS'])
 
         # Write
-        df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
+        df_insdel.loc[
+            df_insdel['SVTYPE'] == 'INS'
+        ].to_csv(
+            output.bed_ins, sep='\t', index=False, compression='gzip'
+        )
+
+        df_insdel.loc[
+            df_insdel['SVTYPE'] == 'DEL'
+        ].to_csv(
+            output.bed_del, sep='\t', index=False, compression='gzip'
+        )
+
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
         df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
-
-
-
-# rule call_integrate_sources:
-#     input:
-#         bed='temp/{asm_name}/bed/pre_merge/pre_inv_correction/{vartype}_{svtype}_{hap}.bed.gz',
-#         bed_inv='temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz',
-#         bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
-#     output:
-#         bed=temp('temp/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz'),
-#         bed_dropped='results/{asm_name}/bed/dropped/interinv_{vartype}_{svtype}_{hap}.bed.gz'
-#     wildcard_constraints:
-#         vartype='sv|indel|snv',
-#         svtype='ins|del|snv'
-#     run:
-#
-#         # Read
-#         df = pd.read_csv(input.bed, sep='\t')
-#
-#         df_inv = pd.concat(
-#             [
-#                 pd.read_csv(input.bed_inv, sep='\t', usecols=['#CHROM', 'POS', 'END']),
-#                 pd.read_csv(input.bed_lg_inv, sep='\t', usecols=['#CHROM', 'POS', 'END'])
-#             ],
-#             axis=0
-#         )
-#
-#         # Build tree
-#         invtree = collections.defaultdict(intervaltree.IntervalTree)
-#
-#         for index, row in pd.read_csv(input.bed_inv, sep='\t').iterrows():
-#             invtree[row['#CHROM']][row['POS']:row['END']] = (row['ID'])
-#
-#         # Filter
-#         filter_list = df.apply(
-#             lambda row: len(invtree[row['#CHROM']][row['POS']:row['END']]) > 0, axis=1
-#         )
-#
-#         # Write dropped
-#         df.loc[filter_list].to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
-#
-#         # Write
-#         df.loc[~ filter_list].to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 # call_inv_bed
 #

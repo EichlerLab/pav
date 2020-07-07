@@ -35,7 +35,7 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
 
     For example, a large repeat-mediated deletion will have two reference copies, but one copy in the contig, and the
     single contig copy is aligned to both by breaking the alignment record into two (one up to the deletion, and one
-    following it). If the contig coordinates were ignored, the alignment gap is smaller than the actual deletion event,
+    following it). If the contig coordinates were ignored, the alignment gap is smaller than the actual deletion event
     and one or both sides of the deletion are filled with false variants. In this example, the alignment is walked-
     out from both ends of the deletion until there is no duplication of aligned contig (e.g. the alignment stops at
     one contig base and picks up at the next contig base). In this case, this function would be asked to resolve the
@@ -366,12 +366,11 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
                 ])
 
                 # Cannot cut whole record, so remove one from event_count if count for left or right is greater than 0
-                if trace_l[tc_idx_l][TC_EVENT] > 0:
+                if trace_l[tc_idx_l][TC_EVENT] > 0 and event_count > 0:
                     event_count -= 1
 
-                if trace_r[tc_idx_r][TC_EVENT] > 0:
+                if trace_r[tc_idx_r][TC_EVENT] > 0 and event_count > 0:
                     event_count -= 1
-
 
                 diff_optimal = 0  # diff_bp is exactly achievable
             else:

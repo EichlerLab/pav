@@ -230,8 +230,39 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                     ))
 
     # Merge tables
-    df_snv = pd.concat(df_snv_list, axis=1).T.sort_values(['#CHROM', 'POS'])
-    df_insdel = pd.concat(df_insdel_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+    if len(df_snv_list) > 0:
+        df_snv = pd.concat(df_snv_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+    else:
+        df_snv = pd.DataFrame(
+            [],
+            columns=[
+                '#CHROM', 'POS', 'END',
+                'ID', 'SVTYPE', 'SVLEN',
+                'REF', 'ALT',
+                'HAP',
+                'TIG_REGION', 'QUERY_STRAND',
+                'CI',
+                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                'CALL_SOURCE'
+            ]
+        )
+
+    if len(df_insdel_list) > 0:
+        df_insdel = pd.concat(df_insdel_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+    else:
+        df_insdel = pd.DataFrame(
+            [],
+            columns=[
+                '#CHROM', 'POS', 'END',
+                'ID', 'SVTYPE', 'SVLEN',
+                'HAP',
+                'TIG_REGION', 'QUERY_STRAND',
+                'CI',
+                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                'CALL_SOURCE',
+                'SEQ'
+            ]
+        )
 
     # Return tables
     return df_snv, df_insdel
