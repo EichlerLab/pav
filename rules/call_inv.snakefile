@@ -126,8 +126,8 @@ rule call_inv_batch:
         log='results/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.log'
     params:
         k_size=config.get('inv_k_size', 31),
-        inv_threads=config.get('inv_threads', 8),
-        inv_mem=config.get('inv_mem', '1G')
+        inv_threads=config.get('inv_threads', 12),
+        inv_mem=config.get('inv_mem', '4G')
     run:
 
         # Get params
@@ -226,13 +226,13 @@ rule call_inv_batch:
 
                         if False in cluster_match_set:
                             cluster_match = False
-                        elif np.nan in cluster_match_set:
+                        elif np.any(pd.isnull(list(cluster_match_set))):
                             cluster_match = np.nan
                         else:
                             if cluster_match_set != {True}:
                                 raise RuntimeError(
                                     'Found unexpected values in cluster_match: Expected True, False, and np.nan: {}'.format(
-                                        ', '.join([str(val) for val in cluster_match])
+                                        ', '.join([str(val) for val in cluster_match_set])
                                     )
                                 )
 

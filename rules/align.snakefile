@@ -6,140 +6,101 @@ Process alignments and alignment tiling paths.
 # Auxiliary rules for testing and troubleshooting
 #
 
-# align_genomecov
-#
-# # Get genome coverage.
-# rule align_genomecov:
-#     input:
-#         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz'
-#     output:
-#         bed='results/{asm_name}/align/pre-cut/genomecov_{hap}.bed.gz'
-#     shell:
-#         """{{ \n"""
-#         """    echo -e "#CHROM\tPOS\tEND\tDEPTH"; \n"""
-#         """    bedtools genomecov -bga -i {input.bed} -g {REF_FAI}; \n"""
-#         """}} | """
-#         """gzip > {output.bed}"""
-#
-# # align_merge_h12_read_bed
+
+# # align_sort_cram
 # #
-# # Alignment table for all reads.
-# rule align_merge_h12_read_bed:
+# # Sort alignments.
+# rule align_sort_cram:
 #     input:
-#         bed1='results/{asm_name}/align/aligned_tig_h1.bed.gz',
-#         bed2='results/{asm_name}/align/aligned_tig_h2.bed.gz'
+#         ref_fa='data/ref/ref.fa.gz',
+#         sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam'
 #     output:
-#         bed='results/{asm_name}/align/aligned_tig_h12.bed.gz'
+#         aln='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram',
+#         alni='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram.crai'
+#     run:
+#
+#         # Make temp
+#         temp_dir = tempfile.mkdtemp(prefix='pg_align_map_')
+#
+#         try:
+#             shell(
+#                 """samtools sort -@ 4 -T {temp_dir}/sort_ {input.sam} | """
+#                 """samtools view -T {input.ref_fa} -O CRAM -o {output.aln}; """
+#                 """samtools index {output.aln}; """
+#                 """touch -r {output.aln} {output.alni}"""
+#             )
+#
+#         finally:
+#
+#             # Remove temp
+#             shutil.rmtree(temp_dir)
+
+# # align_postcut_sam
+# #
+# # Make post-cut SAM.
+# rule align_postcut_cram:
+#     input:
+#         ref_fa='data/ref/ref.fa.gz',
+#         sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
+#     output:
+#         aln='results/{asm_name}/align/aligned_tig_{hap}.cram',
+#         alni='results/{asm_name}/align/aligned_tig_{hap}.cram.crai'
+#     shell:
+#         """samtools view -T {input.ref_fa} -O CRAM -o {output.aln} {input.sam}; """
+#         """samtools index {output.aln}; """
+#         """touch -r {output.aln} {output.alni}"""
+
+
+# # align_postcut_sam
+# #
+# # Make post-cut SAM.
+# rule align_postcut_sam:
+#     input:
+#         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+#         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
+#         bed_qualseq='results/{asm_name}/align/pre-cut/aligned_tig_{hap}_qual-seq.bed.gz'
+#     output:
+#         sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
 #     run:
 #
 #         # Read
-#         df1 = pd.read_csv(input.bed1, sep='\t', low_memory=False)
-#         df1['HAP'] = 'h1'
+#         df = pd.read_csv(input.bed, sep='\t')
+#         df.set_index('INDEX', inplace=True, drop=False)
 #
-#         df2 = pd.read_csv(input.bed2, sep='\t', low_memory=False)
-#         df1['HAP'] = 'h2'
+#         df_seq = pd.read_csv(input.bed_qualseq, sep='\t')
 #
-#         # Merge & sort
-#         df = pd.concat([df1, df2], axis=0)
+#         df_seq.set_index('INDEX', inplace=True, drop=False)
+#         df_seq.fillna('*', inplace=True)
 #
-#         df.sort_values(['#CHROM', 'POS'], inplace=True)
+#         # Transform fields
+#         df['POS'] += 1
+#         df['SAM_FLAGS'] = df['FLAGS'].apply(lambda val: int(val, 0))
+#
+#         # Get QUAL and SEQ
+#         # Note: read bed_qualseq
+#         df['QUAL'] = df_seq['QUAL']
+#         df['SEQ'] = df_seq['SEQ']
 #
 #         # Write
-#         df.to_csv(output.bed, sep='\t', index=False)
-
-
-# align_sort_cram
+#         print('Writing...')
 #
-# Sort alignments.
-rule align_sort_cram:
-    input:
-        sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam'
-    output:
-        aln='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram',
-        alni='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram.crai'
-    run:
-
-        # Make temp
-        temp_dir = tempfile.mkdtemp(prefix='pg_align_map_')
-
-        try:
-            shell(
-                """samtools sort -@ 4 -T {temp_dir}/sort_ {input.sam} | """
-                """samtools view -T {REF_FA} -O CRAM -o {output.aln}; """
-                """samtools index {output.aln}; """
-                """touch -r {output.aln} {output.alni}"""
-            )
-
-        finally:
-
-            # Remove temp
-            shutil.rmtree(temp_dir)
-
-# align_postcut_sam
+#         with open(output.sam, 'w') as out_file:
 #
-# Make post-cut SAM.
-rule align_postcut_cram:
-    input:
-        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
-    output:
-        aln='results/{asm_name}/align/aligned_tig_{hap}.cram',
-        alni='results/{asm_name}/align/aligned_tig_{hap}.cram.crai'
-    shell:
-        """samtools view -T {REF_FA} -O CRAM -o {output.aln} {input.sam}; """
-        """samtools index {output.aln}; """
-        """touch -r {output.aln} {output.alni}"""
-
-
-# align_postcut_sam
+#             out_file.write('@HD\tVN:1.6\tSO:coordinate\n')
 #
-# Make post-cut SAM.
-rule align_postcut_sam:
-    input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
-        bed_qualseq='results/{asm_name}/align/pre-cut/aligned_tig_{hap}_qual-seq.bed.gz'
-    output:
-        sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
-    run:
-
-        # Read
-        df = pd.read_csv(input.bed, sep='\t')
-        df.set_index('INDEX', inplace=True, drop=False)
-
-        df_seq = pd.read_csv(input.bed_qualseq, sep='\t')
-
-        df_seq.set_index('INDEX', inplace=True, drop=False)
-        df_seq.fillna('*', inplace=True)
-
-        # Transform fields
-        df['POS'] += 1
-        df['SAM_FLAGS'] = df['FLAGS'].apply(lambda val: int(val, 0))
-
-        # Get QUAL and SEQ
-        # Note: read bed_qualseq
-        df['QUAL'] = df_seq['QUAL']
-        df['SEQ'] = df_seq['SEQ']
-
-        # Write
-        print('Writing...')
-
-        with open(output.sam, 'w') as out_file:
-
-            out_file.write('@HD\tVN:1.6\tSO:coordinate\n')
-
-            # Write headers
-            with gzip.open(input.align_head, 'rt') as in_file:
-
-                for line in in_file:
-                    if not line.startswith('@HD'):
-                        out_file.write(line)
-
-                out_file.write('@PG\tID:PAV-Cut\tPN:PAV\tVN:{}\n'.format(asmlib.constants.get_version_string()))
-
-            for index, row in df.iterrows():
-                out_file.write(
-                    '{QUERY_ID}\t{SAM_FLAGS}\t{#CHROM}\t{POS}\t{MAPQ}\t{CIGAR}\t*\t0\t0\t{SEQ}\t{QUAL}\n'.format(**row)
-                )
+#             # Write headers
+#             with gzip.open(input.align_head, 'rt') as in_file:
+#
+#                 for line in in_file:
+#                     if not line.startswith('@HD'):
+#                         out_file.write(line)
+#
+#                 out_file.write('@PG\tID:PAV-Cut\tPN:PAV\tVN:{}\n'.format(asmlib.constants.get_version_string()))
+#
+#             for index, row in df.iterrows():
+#                 out_file.write(
+#                     '{QUERY_ID}\t{SAM_FLAGS}\t{#CHROM}\t{POS}\t{MAPQ}\t{CIGAR}\t*\t0\t0\t{SEQ}\t{QUAL}\n'.format(**row)
+#                 )
 
 
 #
@@ -150,6 +111,8 @@ rule align_postcut_sam:
 #
 # Find locations of N-gaps.
 rule align_ref_anno_n_gap:
+    input:
+        ref_fa='data/ref/ref.fa.gz'
     output:
         bed='data/ref/n_gap.bed.gz'
     run:
@@ -157,27 +120,28 @@ rule align_ref_anno_n_gap:
         with gzip.open(output.bed, 'wt') as out_file:
             out_file.write('#CHROM\tPOS\tEND\n')
 
-            for record in Bio.SeqIO.parse(REF_FA, 'fasta'):
+            with gzip.open(input.ref_fa, 'rt') as in_file:
+                for record in Bio.SeqIO.parse(in_file, 'fasta'):
 
-                pos = None
-                end = None
+                    pos = None
+                    end = None
 
-                enum_list = [i for i, val in enumerate(str(record.seq).upper()) if val == 'N']
+                    enum_list = [i for i, val in enumerate(str(record.seq).upper()) if val == 'N']
 
-                for index in enum_list:
+                    for index in enum_list:
 
-                    if pos is None:
-                        pos = end = index
+                        if pos is None:
+                            pos = end = index
 
-                    elif index == end + 1:
-                        end = index
+                        elif index == end + 1:
+                            end = index
 
-                    else:
+                        else:
+                            out_file.write(f'{record.id}\t{pos}\t{end + 1}\n')
+                            pos = end = index
+
+                    if pos is not None:
                         out_file.write(f'{record.id}\t{pos}\t{end + 1}\n')
-                        pos = end = index
-
-                if pos is not None:
-                    out_file.write(f'{record.id}\t{pos}\t{end + 1}\n')
 
 
 #
@@ -402,12 +366,11 @@ rule align_cut_tig_overlap:
 # Get alignment BED for one part (one aligned cell or split BAM) in one assembly.
 rule align_get_read_bed:
     input:
-        sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam',
+        sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz',
         tig_fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz',
-        align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
-        bed_qualseq='results/{asm_name}/align/pre-cut/aligned_tig_{hap}_qual-seq.bed.gz'
+        align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz'
     wildcard_constraints:
         hap='h(0|1|2)'
     run:
@@ -416,23 +379,16 @@ rule align_get_read_bed:
         if os.stat(input.sam).st_size == 0:
 
             pd.DataFrame(
-                [], columns=['INDEX', 'SEQ', 'QUAL']
-            ).to_csv(
-                output.bed_qualseq, sep='\t', index=False, compression='gzip'
-            )
-
-            pd.DataFrame(
                 [],
                 columns=[
                     '#CHROM', 'POS', 'END',
                     'INDEX',
                     'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                     'QUERY_TIG_POS', 'QUERY_TIG_END',
-                    'RG',
+                    'RG', 'AO',
                     'MAPQ',
                     'REV', 'FLAGS', 'HAP',
-                    'CIGAR',
-                    'SEQ', 'QUAL'
+                    'CIGAR'
                 ]
             ).to_csv(
                 output.bed, sep='\t', index=False, compression='gzip'
@@ -498,6 +454,7 @@ rule align_get_read_bed:
                         tig_len - record.query_alignment_start if record.is_reverse else record.query_alignment_end,
 
                         tags['RG'] if 'RG' in tags else 'NA',
+                        tags['AO'] if 'AO' in tags else 'NA',
 
                         record.mapping_quality,
 
@@ -505,21 +462,17 @@ rule align_get_read_bed:
                         '0x{:04x}'.format(record.flag),
 
                         wildcards.hap,
-                        record.cigarstring,
-
-                        record.seq,
-                        record.qual
+                        record.cigarstring
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
                         'INDEX',
                         'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                         'QUERY_TIG_POS', 'QUERY_TIG_END',
-                        'RG',
+                        'RG', 'AO',
                         'MAPQ',
                         'REV', 'FLAGS', 'HAP',
-                        'CIGAR',
-                        'SEQ', 'QUAL'
+                        'CIGAR'
                     ]
                 ))
 
@@ -537,11 +490,10 @@ rule align_get_read_bed:
                     'INDEX',
                     'QUERY_ID', 'QUERY_POS', 'QUERY_END',
                     'QUERY_TIG_POS', 'QUERY_TIG_END',
-                    'RG',
+                    'RG', 'AO',
                     'MAPQ',
                     'REV', 'FLAGS', 'HAP',
-                    'CIGAR',
-                    'SEQ', 'QUAL'
+                    'CIGAR'
                 ]
             )
 
@@ -551,7 +503,7 @@ rule align_get_read_bed:
         df.apply(asmlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
 
         # Write SAM headers
-        with open(input.sam) as in_file:
+        with gzip.open(input.sam, 'rt') as in_file:
             with gzip.open(output.align_head, 'wt') as out_file:
 
                 line = next(in_file)
@@ -571,12 +523,6 @@ rule align_get_read_bed:
                     except StopIteration:
                         break
 
-        # Write SEQ/QUAL table
-        df[['INDEX', 'SEQ', 'QUAL']].to_csv(output.bed_qualseq, sep='\t', index=False, compression='gzip')
-
-        del(df['SEQ'])
-        del(df['QUAL'])
-
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
@@ -586,10 +532,27 @@ rule align_get_read_bed:
 # "=X" to "M" in the CIGAR.
 rule align_map:
     input:
-        fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
+        ref_fa='data/ref/ref.fa.gz',
+        fa='results/{asm_name}/align/contigs_{hap}.fa.gz' if config.get('aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
+        gli='data/ref/ref.fa.gz.gli' if config.get('aligner', 'minimap2') == 'lra' else [],
+        mmi='data/ref/ref.fa.gz.mmi' if config.get('aligner', 'minimap2') == 'lra' else []
     output:
-        sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam')
+        sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
+    params:
+        cpu='12',
+        mem='3G' if config.get('aligner', 'minimap2') != 'lra' else '4G'
     run:
+
+        # Get aligner
+        if 'aligner' in config:
+
+            if config['aligner'] not in {'minimap2', 'lra'}:
+                raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(config['aligner']))
+
+            aligner = config['aligner']
+
+        else:
+            aligner = 'minimap2'
 
         # Write an empty file if input is empty
         if os.stat(input.fa).st_size == 0:
@@ -597,73 +560,68 @@ rule align_map:
                 pass
 
         # Align
-        shell(
-            """minimap2 """
-                """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
-                """--secondary=no -a -t 20 --eqx -Y """
-                """-O 5,56 -E 4,1 -B 5 """
-                """{REF_FA} {input.fa} """
-                """> {output.sam}"""
-        )
+        if aligner == 'minimap2':
+            shell(
+                """minimap2 """
+                    """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
+                    """--secondary=no -a -t {params.cpu} --eqx -Y """
+                    """-O 5,56 -E 4,1 -B 5 """
+                    """{input.ref_fa} {input.fa} | """
+                    """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
+                    """gzip > {output.sam}"""
+            )
 
+        if aligner == 'lra':
+            shell(
+                """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {params.cpu} | """
+                """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
+                """gzip > {output.sam}"""
+            )
+
+# align_uncompress_tig
+#
+# Uncompress contig for aligners that cannot read gzipped FASTAs.
+rule align_uncompress_tig:
+    input:
+        fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
+    output:
+        fa='temp/{asm_name}/align/contigs_{hap}.fa'
+    shell:
+        """zcat {input.fa} > {output.fa}"""
+
+# align_ref_lra_index
+#
+# Index reference for LRA.
+rule align_ref_lra_index:
+    input:
+        fa='data/ref/ref.fa.gz',
+    output:
+        gli='data/ref/ref.fa.gz.gli',
+        mmi='data/ref/ref.fa.gz.mmi'
+    shell:
+        """lra index -CONTIG {input.fa}"""
+
+# align_ref
+#
+# Setup reference.
 rule align_ref:
     input:
-        fa=config['reference'],
-
+        ref_fa=config['reference']
     output:
-        fa='data/ref/ref.fa.gz',
-        fai='data/ref/ref.fa.gz.fai'
+        ref_fa='data/ref/ref.fa.gz',
+        ref_fai='data/ref/ref.fa.gz.fai'
     run:
 
-        # Determine if file is BGZF compressed
-        is_bgzf = False
-
-        try:
-            with Bio.bgzf.open(input.fa, 'r') as in_file_test:
-                is_bgzf = True
-
-        except ValueError:
-            pass
-
-        # Copy or compress
-        if is_bgzf:
-
-            # Copy file if already compressed
-            shutil.copyfile(input.fa, output.fa)
-
-        else:
-            # Compress to BGZF
-
-            is_gz = False
-
-            try:
-                with gzip.open(input.fa, 'r') as in_file_test:
-
-                    line = next(in_file_test)
-
-                    is_gz = True
-
-            except OSError:
-                pass
-
-            if is_gz:
-                # Re-compress to BGZF
-
-                with gzip.open(input.fa, 'rb') as in_file:
-                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
-                        for line in in_file:
-                            out_file.write(line)
-
-            else:
-                # Compress plain text
-
-                with open(input.fa, 'r') as in_file:
-                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
-                        for line in in_file:
-                            out_file.write(line)
+        # Copy FASTA to FA/GZ
+        asmlib.seq.copy_fa_to_gz(input.ref_fa, output.ref_fa)
 
         # Index
-        shell("""samtools faidx {output.fa}""")
+        if os.stat(output.ref_fa).st_size > 0:
+            shell("""samtools faidx {output.ref_fa}""")
+
+        else:
+            with open(output.ref_fai, 'w') as out_file:
+                pass
 
 # align_get_tig_fa
 #
@@ -676,62 +634,14 @@ rule align_get_tig_fa:
         fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     run:
 
-        # Write empty files in FASTA is empty
-        if os.stat(input.fa).st_size == 0:
-            with open(output.fa, 'w') as out_file:
-                pass
+        # Copy FASTA to FA/GZ
+        asmlib.seq.copy_fa_to_gz(input.fa, output.fa)
 
+        # Index
+        if os.stat(output.fa).st_size > 0:
+            shell("""samtools faidx {output.fa}""")
+
+        else:
             with open(output.fai, 'w') as out_file:
                 pass
 
-            return
-
-        # Determine if file is BGZF compressed
-        is_bgzf = False
-
-        try:
-            with Bio.bgzf.open(input.fa, 'r') as in_file_test:
-                is_bgzf = True
-
-        except ValueError:
-            pass
-
-        # Copy or compress
-        if is_bgzf:
-
-            # Copy file if already compressed
-            shutil.copyfile(input.fa, output.fa)
-
-        else:
-            # Compress to BGZF
-
-            is_gz = False
-
-            try:
-                with gzip.open(input.fa, 'r') as in_file_test:
-
-                    line = next(in_file_test)
-
-                    is_gz = True
-
-            except OSError:
-                pass
-
-            if is_gz:
-                # Re-compress to BGZF
-
-                with gzip.open(input.fa, 'rb') as in_file:
-                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
-                        for line in in_file:
-                            out_file.write(line)
-
-            else:
-                # Compress plain text
-
-                with open(input.fa, 'r') as in_file:
-                    with Bio.bgzf.open(output.fa, 'wb') as out_file:
-                        for line in in_file:
-                            out_file.write(line)
-
-        # Index
-        shell("""samtools faidx {output.fa}""")

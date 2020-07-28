@@ -55,7 +55,8 @@ rule call_lg_discover:
 
         group_set = set(df_group[['CHROM', 'TIG']].apply(tuple, axis=1))
 
-        df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QUERY_ID']) in group_set, axis=1)]
+        if df.shape[0] > 0:
+            df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QUERY_ID']) in group_set, axis=1)]
 
         # Get trees of N bases
         n_tree = collections.defaultdict(intervaltree.IntervalTree)
@@ -117,7 +118,10 @@ rule call_lg_split:
             index += 1
 
         # Merge (CHROM, TIG, BATCH)
-        df_group = pd.concat(df_group_list, axis=1).T
+        if len(df_group_list) > 0:
+            df_group = pd.concat(df_group_list, axis=1).T
+        else:
+            df_group = pd.DataFrame([], columns=['CHROM', 'TIG', 'BATCH'])
 
         # Write
         df_group.to_csv(output.tsv, sep='\t', index=False, compression='gzip')

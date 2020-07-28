@@ -4,10 +4,13 @@ Routines for aligned contigs.
 
 import Bio.SeqIO
 import collections
+import gzip
 import numpy as np
+import os
 import pandas as pd
 import pysam
 import re
+import shutil
 
 import kanapy
 
@@ -317,6 +320,61 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
 
         return sequence
 
+def copy_fa_to_gz(in_file_name, out_file_name):
+
+    # Write empty files in FASTA is empty
+    if os.stat(in_file_name).st_size == 0:
+        with open(out_file_name, 'w') as out_file:
+            pass
+
+        return
+
+    # Determine if file is BGZF compressed
+    is_bgzf = False
+
+    try:
+        with Bio.bgzf.open(in_file_name, 'r') as in_file_test:
+            is_bgzf = True
+
+    except ValueError:
+        pass
+
+    # Copy or compress
+    if is_bgzf:
+
+        # Copy file if already compressed
+        shutil.copyfile(in_file_name, out_file_name)
+
+    else:
+        # Compress to BGZF
+
+        is_gz = False
+
+        try:
+            with gzip.open(in_file_name, 'r') as in_file_test:
+
+                line = next(in_file_test)
+
+                is_gz = True
+
+        except OSError:
+            pass
+
+        if is_gz:
+            # Re-compress to BGZF
+
+            with gzip.open(in_file_name, 'rb') as in_file:
+                with Bio.bgzf.open(out_file_name, 'wb') as out_file:
+                    for line in in_file:
+                        out_file.write(line)
+
+        else:
+            # Compress plain text
+
+            with open(in_file_name, 'r') as in_file:
+                with Bio.bgzf.open(out_file_name, 'wb') as out_file:
+                    for line in in_file:
+                        out_file.write(line)
 
 # Some pysam implementations do not d o well with repeated calls against an open pysam.FastaFile, so use
 # region_seq_fasta() for all calls.

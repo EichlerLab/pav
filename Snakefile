@@ -40,21 +40,9 @@ configfile: config.get('config_file', 'config.json')
 ### Parameters from config ###
 
 # Reference FASTA & FAI
-REF_FA = config.get(
-    'reference',
-    '/net/eichler/vol26/eee_shared/assemblies/hg38/no_alt/hg38.no_alt.fa'
-)
+REF_FA = 'data/ref/ref.fa.gz'
 
-if not os.path.isfile(REF_FA):
-    raise RuntimeError('Reference file does not exist or is not a file: {}'.format(REF_FA))
-
-REF_FAI = config.get(
-    'ref_fai',
-    REF_FA + '.fai'
-)
-
-if not os.path.isfile(REF_FAI):
-    raise RuntimeError('Reference FAI file does not exist or is not a file: {}'.format(REF_FAI))
+REF_FAI = REF_FA + '.fai'
 
 
 # Environment source file for shell commands
@@ -130,7 +118,7 @@ shell.prefix('set -euo pipefail; source {}; '.format(ENV_FILE))
 ### Wildcard constraints ###
 
 wildcard_constraints:
-    asm_name='[A-Za-z_\-0-9]+'
+    asm_name='[A-Za-z_\-0-9\.]+'
 
 ### Default rule ###
 

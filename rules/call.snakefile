@@ -329,23 +329,25 @@ rule call_integrate_sources:
         df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False)
         df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False)
 
-        df_lg_ins = df_lg_ins.loc[
-            df_lg_ins.apply(
-                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                axis=1
-            )
-        ]
+        if df_lg_ins.shape[0] > 0:
+            df_lg_ins = df_lg_ins.loc[
+                df_lg_ins.apply(
+                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                    axis=1
+                )
+            ]
 
-        df_lg_del = df_lg_del.loc[
-            df_lg_del.apply(
-                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                axis=1
-            )
-        ]
+        if df_lg_del.shape[0] > 0:
+            df_lg_del = df_lg_del.loc[
+                df_lg_del.apply(
+                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                    axis=1
+                )
+            ]
 
-        # Add large deletions to filter
-        for index, row in df_lg_del.iterrows():
-            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+            # Add large deletions to filter
+            for index, row in df_lg_del.iterrows():
+                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
 
         # Read CIGAR calls
         df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False)
@@ -359,19 +361,21 @@ rule call_integrate_sources:
             raise RuntimeError('Columns from CIGAR and large SV DEL callsets do not match')
 
         # Filter CIGAR calls
-        df_cigar_insdel = df_cigar_insdel.loc[
-            df_cigar_insdel.apply(
-                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                axis=1
-            )
-        ]
+        if df_cigar_insdel.shape[0] > 0:
+            df_cigar_insdel = df_cigar_insdel.loc[
+                df_cigar_insdel.apply(
+                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                    axis=1
+                )
+            ]
 
-        df_snv = df_snv.loc[
-            df_snv.apply(
-                lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                axis=1
-            )
-        ]
+        if df_snv.shape[0] > 0:
+            df_snv = df_snv.loc[
+                df_snv.apply(
+                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
+                    axis=1
+                )
+            ]
 
         # Merge insertion/deletion variants
         df_insdel = pd.concat(

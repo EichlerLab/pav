@@ -30,7 +30,7 @@
         "rt": "2:00:00"
     },
     "call_cigar": {
-        "mem": "2G",
+        "mem": "8G",
         "rt": "12:00:00"
     },
 
@@ -54,12 +54,12 @@
         "mem": "16G"
     },
     "align_map": {
-        "cpu": "4",
-        "mem": "8G",
+        "cpu": "{params.cpu}",
+        "mem": "{params.mem}",
         "rt": "24:00:00"
     },
-    "align_lra_index": {
-        "mem": "18G"
+    "align_ref_lra_index": {
+        "mem": "30G"
     },
 
     "figures_inv_dot_density": {

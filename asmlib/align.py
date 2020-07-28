@@ -629,6 +629,13 @@ class AlignLift:
     """
 
     def __init__(self, df, df_fai, cache_align=10):
+        """
+        Create AlignLift instance.
+
+        :param df: Alignment BED file (post-cut) as DataFrame.
+        :param df_fai: Contig FAI file as Series.
+        :param cache_align: Number of alignment records to cache.
+        """
 
         self.df = df
         self.df_fai = df_fai
@@ -722,7 +729,7 @@ class AlignLift:
             if len(match_set) != 1:
                 raise RuntimeError(
                     (
-                        'Program bug: Found no matches in a lift-tree for a record withing a '
+                        'Program bug: Found no matches in a lift-tree for a record within a '
                         'global to-subject tree: {}:{} (index={})'
                     ).format(query_id, pos, index)
                 )
