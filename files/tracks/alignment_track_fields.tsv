@@ -14,6 +14,7 @@ QUERY_POS	uint	queryPos	Query align POS	Query start position in alignment
 QUERY_END	uint	queryEnd	Query align END	Query end position in alignment
 QUERY_TIG_POS	uint	queryTigPos	Query tig POS	Query start position in original contig (not reverse complemented if alignment was)
 QUERY_TIG_END	uint	queryTigEnd	Query tig END	Query end position in original contig (not reverse complemented if alignment was)
+AO	string	chainOrder	Global chain order	Global chain order (PAV alignments)
 RG	string	readGroup	Read group	Read group
 MAPQ	uint	mapQual	MAPQ	Maping quality
 REV	string	isRev	Rev	Alignment was reversed if True

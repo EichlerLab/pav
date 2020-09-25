@@ -93,4 +93,7 @@ def region_merge(file_list, pad=500):
         df_list.append(pd.Series([chrom, pos + pad, end - pad], index=['#CHROM', 'POS', 'END']))
 
     # Return
-    return pd.concat(df_list, axis=1).T
+    if len(df_list) > 0:
+        return pd.concat(df_list, axis=1).T
+    else:
+        return pd.DataFrame([], columns=['#CHROM', 'POS', 'END'])

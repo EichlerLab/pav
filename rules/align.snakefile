@@ -3,105 +3,25 @@ Process alignments and alignment tiling paths.
 """
 
 #
-# Auxiliary rules for testing and troubleshooting
+# Definitions
 #
 
+def _align_map_cpu(wildcards, config):
 
-# # align_sort_cram
-# #
-# # Sort alignments.
-# rule align_sort_cram:
-#     input:
-#         ref_fa='data/ref/ref.fa.gz',
-#         sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam'
-#     output:
-#         aln='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram',
-#         alni='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.cram.crai'
-#     run:
-#
-#         # Make temp
-#         temp_dir = tempfile.mkdtemp(prefix='pg_align_map_')
-#
-#         try:
-#             shell(
-#                 """samtools sort -@ 4 -T {temp_dir}/sort_ {input.sam} | """
-#                 """samtools view -T {input.ref_fa} -O CRAM -o {output.aln}; """
-#                 """samtools index {output.aln}; """
-#                 """touch -r {output.aln} {output.alni}"""
-#             )
-#
-#         finally:
-#
-#             # Remove temp
-#             shutil.rmtree(temp_dir)
+    if 'map_threads' in config:
+        try:
+            return int(config['map_threads'])
+        except ValueError as ex:
+            raise ValueError('Config parameter "map_threads" is not an integer: {map_threads}'.format(**config))
 
-# # align_postcut_sam
-# #
-# # Make post-cut SAM.
-# rule align_postcut_cram:
-#     input:
-#         ref_fa='data/ref/ref.fa.gz',
-#         sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
-#     output:
-#         aln='results/{asm_name}/align/aligned_tig_{hap}.cram',
-#         alni='results/{asm_name}/align/aligned_tig_{hap}.cram.crai'
-#     shell:
-#         """samtools view -T {input.ref_fa} -O CRAM -o {output.aln} {input.sam}; """
-#         """samtools index {output.aln}; """
-#         """touch -r {output.aln} {output.alni}"""
+    return 12
 
+def _align_map_mem(wildcards, config):
 
-# # align_postcut_sam
-# #
-# # Make post-cut SAM.
-# rule align_postcut_sam:
-#     input:
-#         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-#         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
-#         bed_qualseq='results/{asm_name}/align/pre-cut/aligned_tig_{hap}_qual-seq.bed.gz'
-#     output:
-#         sam='temp/{asm_name}/align/aligned_tig_{hap}.sam'
-#     run:
-#
-#         # Read
-#         df = pd.read_csv(input.bed, sep='\t')
-#         df.set_index('INDEX', inplace=True, drop=False)
-#
-#         df_seq = pd.read_csv(input.bed_qualseq, sep='\t')
-#
-#         df_seq.set_index('INDEX', inplace=True, drop=False)
-#         df_seq.fillna('*', inplace=True)
-#
-#         # Transform fields
-#         df['POS'] += 1
-#         df['SAM_FLAGS'] = df['FLAGS'].apply(lambda val: int(val, 0))
-#
-#         # Get QUAL and SEQ
-#         # Note: read bed_qualseq
-#         df['QUAL'] = df_seq['QUAL']
-#         df['SEQ'] = df_seq['SEQ']
-#
-#         # Write
-#         print('Writing...')
-#
-#         with open(output.sam, 'w') as out_file:
-#
-#             out_file.write('@HD\tVN:1.6\tSO:coordinate\n')
-#
-#             # Write headers
-#             with gzip.open(input.align_head, 'rt') as in_file:
-#
-#                 for line in in_file:
-#                     if not line.startswith('@HD'):
-#                         out_file.write(line)
-#
-#                 out_file.write('@PG\tID:PAV-Cut\tPN:PAV\tVN:{}\n'.format(asmlib.constants.get_version_string()))
-#
-#             for index, row in df.iterrows():
-#                 out_file.write(
-#                     '{QUERY_ID}\t{SAM_FLAGS}\t{#CHROM}\t{POS}\t{MAPQ}\t{CIGAR}\t*\t0\t0\t{SEQ}\t{QUAL}\n'.format(**row)
-#                 )
+    if 'map_mem' in config:
+        return config['map_mem']
 
+    return '3G' if config.get('aligner', 'minimap2') != 'lra' else '4G'
 
 #
 # Reference annotation
@@ -539,8 +459,8 @@ rule align_map:
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:
-        cpu='12',
-        mem='3G' if config.get('aligner', 'minimap2') != 'lra' else '4G'
+        cpu=lambda wildcards: _align_map_cpu(wildcards, config),
+        mem=lambda wildcards: _align_map_mem(wildcards, config)
     run:
 
         # Get aligner
@@ -586,8 +506,15 @@ rule align_uncompress_tig:
         fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         fa='temp/{asm_name}/align/contigs_{hap}.fa'
-    shell:
-        """zcat {input.fa} > {output.fa}"""
+    run:
+
+        if os.stat(input.fa).st_size > 0:
+            shell(
+                """zcat {input.fa} > {output.fa}"""
+            )
+        else:
+            with open(output.fa, 'w') as out_file:
+                pass
 
 # align_ref_lra_index
 #

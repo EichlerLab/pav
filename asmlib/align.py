@@ -694,6 +694,7 @@ class AlignLift:
         lift_coord_list = list()
 
         for pos in coord:
+            pos_org = pos  # Pre-reverse position
 
             # Find matching records
             match_set = self.tig_tree[query_id][pos:(pos + 1)]
@@ -724,14 +725,16 @@ class AlignLift:
                 pos = self.df_fai[query_id] - pos
 
             # Get match record
-            match_set = lift_tree[pos:(pos + 1)]
+            match_set = lift_tree[pos]
 
             if len(match_set) != 1:
+                lift_coord_list.append(None)
+
                 raise RuntimeError(
                     (
-                        'Program bug: Found no matches in a lift-tree for a record within a '
-                        'global to-subject tree: {}:{} (index={})'
-                    ).format(query_id, pos, index)
+                        'Found no matches in a lift-tree for a record within a '
+                        'global to-subject tree: {}:{} (index={}, gap={})'
+                    ).format(query_id, pos_org, index,  gap)
                 )
 
             match_interval = list(match_set)[0]

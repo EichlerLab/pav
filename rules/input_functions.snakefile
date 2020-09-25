@@ -39,7 +39,23 @@ def align_input_fasta(wildcards):
         if '{asm_name}' not in fa_pattern:
             raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" config entry is missing wildcard {{asm_name}}'.format(**wildcards))
 
-        if '{hap}' not in fa_pattern:
+        # May have "hap" or "parent" in path (not both). If hap, expect "h1", "h2", etc. If parent, expect "mat" and "pat" (hifiasm-trio)
+        if '{hap}' in fa_pattern:
+            if '{parent}' in fa_pattern:
+                raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" contains both {{hap}} and {{parent}} wildcards'.format(**wildcards))
+
+            parent = None
+
+        elif '{parent}' in fa_pattern:
+
+            if wildcards.hap == 'h1':
+                parent = 'mat'
+            elif wildcards.hap == 'h2':
+                parent = 'pat'
+            else:
+                raise RuntimeError('"Cannot get input fasta for {asm_name} with "{{parent}}" pattern: Haplotype must be "h1" or "h2": Found {hap}'.format(**wildcards))
+
+        else:
             raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" config entry is missing wildcard {{hap}}'.format(**wildcards))
 
         if '{sample}' in fa_pattern:
@@ -56,5 +72,6 @@ def align_input_fasta(wildcards):
         return fa_pattern.format(
             sample=sample,
             asm_name=wildcards.asm_name,
-            hap=wildcards.hap
+            hap=wildcards.hap,
+            parent=parent
         )

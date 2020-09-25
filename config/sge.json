@@ -8,7 +8,7 @@
     },
 
     "call_integrate_sources": {
-        "mem": "4G"
+        "mem": "8G"
     },
     "call_merge_haplotypes": {
         "cpu": "{params.merge_threads}",
@@ -18,7 +18,7 @@
     "call_lg_discover": {
         "cpu": "{params.inv_threads}",
         "mem": "{params.inv_mem}",
-        "rt": "24:00:00"
+        "rt": "96:00:00"
     },
     "call_inv_batch": {
         "cpu": "{params.inv_threads}",
@@ -26,11 +26,11 @@
         "rt": "24:00:00"
     },
     "call_cigar_merge": {
-        "mem": "6G",
+        "mem": "12G",
         "rt": "2:00:00"
     },
     "call_cigar": {
-        "mem": "8G",
+        "mem": "12G",
         "rt": "12:00:00"
     },
 
@@ -56,7 +56,7 @@
     "align_map": {
         "cpu": "{params.cpu}",
         "mem": "{params.mem}",
-        "rt": "24:00:00"
+        "rt": "48:00:00"
     },
     "align_ref_lra_index": {
         "mem": "30G"

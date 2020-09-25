@@ -122,21 +122,21 @@ wildcard_constraints:
 
 ### Default rule ###
 
-localrules: pg_all
+localrules: pav_all
 
-# pg_all
+# pav_all
 #
 # Make all files for all samples.
-rule pg_all:
+rule pav_all:
     input:
         bed=expand(
-            'results/{asm_name}/bed/{vartype}_{svtype}_h12.bed.gz',
+            'results/{asm_name}/bed/{vartype}_{svtype}.bed.gz',
             asm_name=ASM_TABLE['NAME'],
             vartype=('sv', 'indel'),
             svtype=('ins', 'del')
         ),
         bed_snv=expand(
-            'results/{asm_name}/bed/snv_snv_h12.bed.gz',
+            'results/{asm_name}/bed/snv_snv.bed.gz',
             asm_name=ASM_TABLE['NAME']
         )
 
