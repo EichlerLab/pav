@@ -290,6 +290,20 @@ rule call_integrate_sources:
         else:
             max_inv = None
 
+        # Read tig filter (if present)
+        tig_filter_tree = None
+
+        if 'tig_filter_pattern' in config:
+
+            tig_filter_file = config['tig_filter_pattern'].format(**wildcards)
+
+            if os.path.isfile(tig_filter_file):
+                tig_filter_tree = collections.defaultdict(intervaltree.IntervalTree)
+                df_filter = pd.read_csv(tig_filter_file, sep='\t', header=None, comment='#', usecols=(0, 1, 2))
+                df_filter.columns = ['#CHROM', 'POS', 'END']
+
+                for index, row in df_filter.iterrows():
+                    tig_filter_tree[row['#CHROM']][row['POS']:row['END']] = True
 
         # Read INV calls
         df_inv = pd.concat(
@@ -307,6 +321,9 @@ rule call_integrate_sources:
 
         if max_inv is not None:
             df_inv = df_inv.loc[df_inv['SVLEN'] <= max_inv]
+
+        # Apply contig filter to INV
+        df_inv = asmlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
         # Filter overlapping inversion calls
         inv_tree = collections.defaultdict(intervaltree.IntervalTree)
@@ -337,6 +354,9 @@ rule call_integrate_sources:
                 )
             ]
 
+            # Apply contig filter to large INS
+            df_lg_ins = asmlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
+
         if df_lg_del.shape[0] > 0:
             df_lg_del = df_lg_del.loc[
                 df_lg_del.apply(
@@ -344,6 +364,9 @@ rule call_integrate_sources:
                     axis=1
                 )
             ]
+
+            # Apply contig filter to large DEL
+            df_lg_del = asmlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
 
             # Add large deletions to filter
             for index, row in df_lg_del.iterrows():
@@ -376,6 +399,10 @@ rule call_integrate_sources:
                     axis=1
                 )
             ]
+
+        # Apply contig filter to small variants
+        df_cigar_insdel = asmlib.call.filter_by_tig_tree(df_cigar_insdel, tig_filter_tree)
+        df_snv = asmlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
 
         # Merge insertion/deletion variants
         df_insdel = pd.concat(

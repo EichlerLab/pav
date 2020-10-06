@@ -2,6 +2,7 @@
 Variant caller functions.
 """
 
+import re
 
 def get_gt(row, hap, map_tree):
     """
@@ -55,3 +56,36 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
     ).apply(
         lambda val_list: delim.join(df_dict[val[0]].loc[val[1], col_name] for val in val_list)
     )
+
+def filter_by_tig_tree(df, tig_filter_tree):
+    """
+    Filter records from a callset DataFrame by matching "TIG_REGION" with regions in an IntervalTree.
+
+    :param df: DataFrame to filter. Must contain field "TIG_REGION".
+    :param tig_filter_tree: A `collections.defaultdict` of `intervaltree.IntervalTree` (indexed by contig name) of
+        no-call regions. Variants with a tig region intersecting these records will be removed (any intersect). If
+        `None`, then `df` is not filtered.
+
+    :return: Filtered `df`.
+    """
+
+    if tig_filter_tree is None:
+        return df
+
+    rm_index_set = set()
+
+    for index, row in df.iterrows():
+        match_obj = re.match('^([^:]+):(\d+)-(\d+)$', row['TIG_REGION'])
+
+        if match_obj is None:
+            raise RuntimeError('Unrecognized TIG_REGION format for record {}: {}'.format(index, row['TIG_REGION']))
+
+        if tig_filter_tree[match_obj[1]][int(match_obj[2]) - 1:int(match_obj[3])]:
+            rm_index_set.add(index)
+
+    # Return
+    if not rm_index_set:
+        return df
+
+    return df.loc[[val not in rm_index_set for val in df.index]]
+

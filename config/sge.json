@@ -7,6 +7,10 @@
         "params": ""
     },
 
+    "call_final_bed": {
+        "mem": "8G",
+        "rt": "8:00:00"
+    },
     "call_integrate_sources": {
         "mem": "8G"
     },
