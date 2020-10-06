@@ -45,6 +45,9 @@ rule call_lg_discover:
         inv_mem=str(config.get('inv_mem', '4G'))
     run:
 
+        # Get SRS (state-run-smooth)
+        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list'), None)  # If none, tree contains a default for all region sizes
+
         # Read
         df = pd.read_csv(input.bed, sep='\t')
         df_tig_fai = analib.ref.get_df_fai(input.fai)
@@ -76,6 +79,7 @@ rule call_lg_discover:
                 df, df_tig_fai, wildcards.hap, REF_FA, input.fa,
                 k_size=params.k_size,
                 n_tree=n_tree,
+                srs_tree=srs_tree,
                 threads=params.inv_threads,
                 log=log_file,
                 density_out_dir=density_out_dir,

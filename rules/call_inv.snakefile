@@ -138,6 +138,9 @@ rule call_inv_batch:
 
         os.makedirs(density_out_dir, exist_ok=True)
 
+        # Get SRS (state-run-smooth)
+        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list'), None)  # If none, tree contains a default for all region sizes
+
         # Read and subset table to records in this batch
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
         df_flag = df_flag.loc[df_flag['BATCH'] == batch]
@@ -194,7 +197,7 @@ rule call_inv_batch:
                     try:
                         inv_call = asmlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
-                            threads=params.inv_threads, log=log_file
+                            threads=params.inv_threads, log=log_file, srs_tree=srs_tree
                         )
 
                     except RuntimeError as ex:

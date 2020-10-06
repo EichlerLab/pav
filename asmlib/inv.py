@@ -3,6 +3,7 @@ Routines for calling inversions.
 """
 
 import codecs
+import intervaltree
 import numpy as np
 import os
 import pickle
@@ -33,6 +34,8 @@ MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within t
 
 MIN_EXP_COUNT = 3  # The number of region expansions to try (including the initial expansion) and finding only fwd k-mer
                    # states after smoothing before giving up on the region.
+
+DEFAULT_STATE_RUN_SMOOTH = 20  # Default value for --staterunsmooth parameter to density.py if none specified
 
 CALL_SOURCE = 'INVDENSITY'
 
@@ -143,7 +146,9 @@ def get_inv_from_record(row, df_density):
     )
 
 
-def scan_for_inv(region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None, threads=1, log=None):
+def scan_for_inv(
+        region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None, threads=1, log=None, srs_tree=None
+    ):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
     might be. Scan that region for an inversion expanding as necessary.
@@ -158,6 +163,16 @@ def scan_for_inv(region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tr
         dict-like keyed by chromosome names where each value is an IntervalTree of N bases.
     :param threads: Number of concurrent threads to use.
     :param log: Log file (open file handle).
+    :param srs_tree: Inversion density "--staterunsmooth" parameters (for `density.py`). Can set different
+        state-run-smoothing parameters depending on the size of the region being explored. The density mechanism
+        subsets by this many k-mers (20 by default initially calculates density only on every 20th k-mer). If there
+        are state changes or large changes in density within the window, then the density is calculated for the whole
+        window. Otherwise, it is interpolated using the density values at the flanks. This allows PAV to optimize
+        calling large inversions without over-computing density values, which takes a long time for large inversions.
+        This parameter may be an intervaltree (assumed to cover all valid inversion sizes, but should have a record
+        starting at 0 and a record ending at `np.inf`). It may also be a list of tuples where the first value is the
+        region size being computed and the second value is the --staterunsmooth parameter that should be used for the
+        region.
 
     :return: A `InvCall` object describing the inversion found or `None` if no inversion was found.
     """
@@ -182,6 +197,13 @@ def scan_for_inv(region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tr
         n_tree_chrom = n_tree[region_ref.chrom]
     else:
         n_tree_chrom = None
+
+    # Get tree for state-run-smooth parameters
+    if srs_tree is None:
+        srs_tree = get_srs_tree(None)  # Gets default
+
+    elif not issubclass(srs_tree.__class__, intervaltree.IntervalTree):
+            srs_tree = get_srs_tree(srs_tuple_list)
 
     # Scan and expand
     while True:
@@ -214,7 +236,8 @@ def scan_for_inv(region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tr
             '--tig', tig_fa_name,
             '-k', str(k_util.k_size),
             '-t', str(threads),
-            '-r', 'true' if region_tig.is_rev else 'false'
+            '-r', 'true' if region_tig.is_rev else 'false',
+            '--staterunsmooth', srs_tree[len(region_tig)]
         ]
 
         proc = subprocess.Popen(
@@ -515,6 +538,64 @@ def annotate_inv_dup_mers(
     del(df['TIG_INDEX'])
 
     return df
+
+def get_srs_tree(srs_tuple_list):
+
+    # Use default value for all lengths by default
+    if srs_tuple_list is None or len(srs_tuple_list) == 0:
+        srs_tree = intervaltree.IntervalTree()  # State-run-smooth
+        srs_tree[0:np.inf] = DEFAULT_STATE_RUN_SMOOTH
+        return srs_tree
+
+    # Check and sort
+    for srs_element in srs_tuple_list:
+        if len(srs_element) != 2:
+            raise RuntimeError('Element in "state run smooth" tuple list that is not length 2: ' + srs_element)
+
+    srs_tuple_list = sorted(srs_tuple_list)
+
+    # Create tree
+    srs_tree = intervaltree.IntervalTree()  # State-run-smooth
+
+    # Get first limit
+    last_inv_lim, last_smooth_factor = srs_tuple_list[0]
+    last_inv_lim = int(last_inv_lim)
+    last_smooth_factor = int(last_smooth_factor)
+
+    if last_inv_lim < 0:
+        raise RuntimeError('State run inversion size limits must be 0 or greater: {}'.format(last_inv_lim))
+
+    if last_smooth_factor < 4:
+        raise RuntimeError('Not tested with "state run smooth" factor less than 4: {}'.format(last_smooth_factor))
+
+    # Add first limit from 0
+    if last_inv_lim > 0:
+        srs_tree[0:last_inv_lim] = np.min([last_inv_lim, 20])  # 20 or last_inv_lim, whichever is smaller
+
+    # Process remaining intervals
+    for inv_lim, smooth_factor in srs_tuple_list[1:]:
+        inv_lim = int(inv_lim)
+        smooth_factor = int(smooth_factor)
+
+        # Check
+        if smooth_factor < 20:
+            raise RuntimeError('Not tested with "state run smooth" factor less than 20: {}'.format(smooth_factor))
+
+        if inv_lim == last_inv_lim:
+            raise RuntimeError('Duplicate limit in state run limits: {}'.format(inv_lim))
+
+        # Add to tree
+        srs_tree[last_inv_lim:inv_lim] = last_smooth_factor
+
+        # Advance last_inv_lim and last_smooth_factor
+        last_inv_lim = inv_lim
+        last_smooth_factor = smooth_factor
+
+    # Add sample to infinity
+    srs_tree[last_inv_lim:np.inf] = last_smooth_factor
+
+    # Return tree
+    return srs_tree
 
 
 def _write_log(message, log):

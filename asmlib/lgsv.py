@@ -21,6 +21,7 @@ CALL_SOURCE = 'ALNTRUNC'  # Call source annotation for alignment-truncating even
 
 def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tree=None,
                     threads=1, log=sys.stdout, density_out_dir=None, max_tig_dist_prop=None, max_ref_dist_prop=None,
+                    srs_tree=None
     ):
     """
     Scan trimmed alignments for alignment-truncating SV events.
@@ -40,6 +41,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         function is called.
     :param max_tig_dist_prop: Max allowed tig gap as a factor of the minimum alignment length of two records.
     :param max_ref_dist_prop: Max allowed ref gap as a factor of the minimum alignment length of two records.
+    :param srs_tree: Inversion density "--staterunsmooth" parameters (for `density.py`). May be a tree, a list of
+        limits, or `None` to use the default for all sizes. See `inv.scan_for_inv()` for details.
 
     :return: A tuple of dataframes for SV calls: (INS, DEL, INV).
     """
@@ -206,6 +209,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 align_lift, k_util,
                                 threads=threads,
                                 n_tree=n_tree,
+                                srs_tree=srs_tree,
                                 log=log
                             )
 
@@ -302,6 +306,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             align_lift, k_util,
                             threads=threads,
                             n_tree=n_tree,
+                            srs_tree=srs_tree,
                             log=log
                         )
 
