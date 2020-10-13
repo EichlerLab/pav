@@ -78,7 +78,7 @@ rule align_cut_tig_overlap:
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     params:
-        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', True)),  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
+        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', False)),  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
         min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000))  # Minimum aligned tig length
     run:
 
@@ -319,6 +319,7 @@ rule align_get_read_bed:
 
         # Read FAI
         df_tig_fai = analib.ref.get_df_fai(input.tig_fai)
+        df_tig_fai.index = df_tig_fai.index.astype(str)
 
         # Get records
         clip_l = 0

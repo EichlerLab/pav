@@ -37,7 +37,7 @@ class Region:
             pos_aln_index=None,
             end_aln_index=None
     ):
-        self.chrom = chrom
+        self.chrom = str(chrom)
         self.pos = int(pos)
         self.end = int(end)
 

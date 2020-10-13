@@ -509,7 +509,7 @@ rule call_cigar:
         batch = int(wildcards.batch)
 
         # Read
-        df_align = pd.read_csv(input.bed, sep='\t')
+        df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str})
 
         df_align = df_align.loc[df_align['INDEX'] % CALL_CIGAR_BATCH_COUNT == batch]
 

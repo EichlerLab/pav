@@ -139,7 +139,7 @@ rule call_inv_batch:
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get SRS (state-run-smooth)
-        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list'), None)  # If none, tree contains a default for all region sizes
+        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
 
         # Read and subset table to records in this batch
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)

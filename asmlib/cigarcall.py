@@ -53,12 +53,12 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
         if seq_ref_name is None or row['#CHROM'] != seq_ref_name:
             with pysam.FastaFile(ref_fa_name) as ref_fa:
                 seq_ref_name = row['#CHROM']
-                seq_ref = ref_fa.fetch(seq_ref_name).upper()
+                seq_ref = ref_fa.fetch(str(seq_ref_name)).upper()
 
         if seq_tig_name is None or row['QUERY_ID'] != seq_tig_name or is_rev != seq_tig_rev:
             with pysam.FastaFile(tig_fa_name) as tig_fa:
                 seq_tig_name = row['QUERY_ID']
-                seq_tig = tig_fa.fetch(seq_tig_name).upper()
+                seq_tig = tig_fa.fetch(str(seq_tig_name)).upper()
                 seq_tig_len = len(seq_tig)
 
                 if is_rev:

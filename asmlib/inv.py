@@ -203,7 +203,7 @@ def scan_for_inv(
         srs_tree = get_srs_tree(None)  # Gets default
 
     elif not issubclass(srs_tree.__class__, intervaltree.IntervalTree):
-            srs_tree = get_srs_tree(srs_tuple_list)
+        srs_tree = get_srs_tree(srs_tuple_list)
 
     # Scan and expand
     while True:
@@ -237,7 +237,7 @@ def scan_for_inv(
             '-k', str(k_util.k_size),
             '-t', str(threads),
             '-r', 'true' if region_tig.is_rev else 'false',
-            '--staterunsmooth', srs_tree[len(region_tig)]
+            '--staterunsmooth', str(list(srs_tree[len(region_tig)])[0].data)
         ]
 
         proc = subprocess.Popen(

@@ -46,7 +46,7 @@ rule call_lg_discover:
     run:
 
         # Get SRS (state-run-smooth)
-        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list'), None)  # If none, tree contains a default for all region sizes
+        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
 
         # Read
         df = pd.read_csv(input.bed, sep='\t')
