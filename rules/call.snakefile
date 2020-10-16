@@ -137,8 +137,11 @@ rule call_merge_haplotypes:
         df.set_index('ID', inplace=True, drop=False)
 
         # Restructure columns
-        del(df['HAP'])
-        del(df['DISC_CLASS'])
+        if 'HAP' in df.columns:
+            del(df['HAP'])
+
+        if 'DISC_CLASS' in df.columns:
+            del(df['DISC_CLASS'])
 
         df.columns = [re.sub('^MERGE_', 'HAP_', val) for val in df.columns]
 
