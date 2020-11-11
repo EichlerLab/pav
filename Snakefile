@@ -50,12 +50,19 @@ ENV_FILE = config.get(
     'env_source', None
 )
 
-if ENV_FILE is None:
-    ENV_FILE = os.path.join(PIPELINE_DIR, 'config/setenv.sh')
+if ENV_FILE is not None:
+    ENV_FILE = os.path.join(PIPELINE_DIR, ENV_FILE)
 
-if not os.path.isfile(ENV_FILE):
-    raise RuntimeError('Shell configuration source not found: {}'.format(ENV_FILE))
+    if not os.path.isfile(ENV_FILE):
+        raise RuntimeError('Shell configuration source not found: {}'.format(ENV_FILE))
+else:
 
+    # Try default location
+    ENV_FILE = os.path.join(PIPELINE_DIR, ENV_FILE)
+
+    if not os.path.isfile(ENV_FILE):
+        # No environment file if not set
+        ENV_FILE = None
 
 #
 # Assembly library and dependency imports
@@ -112,7 +119,10 @@ else:
 # Rules
 #
 
-shell.prefix('set -euo pipefail; source {}; '.format(ENV_FILE))
+if ENV_FILE:
+    shell.prefix('set -euo pipefail; source {}; '.format(ENV_FILE))
+else:
+    shell.prefix('set -euo pipefail; ')
 
 
 ### Wildcard constraints ###
