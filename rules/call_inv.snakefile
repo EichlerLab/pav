@@ -127,7 +127,8 @@ rule call_inv_batch:
     params:
         k_size=config.get('inv_k_size', 31),
         inv_threads=config.get('inv_threads', 12),
-        inv_mem=config.get('inv_mem', '4G')
+        inv_mem=config.get('inv_mem', '4G'),
+        inv_region_limit=config.get('inv_region_limit', None)
     run:
 
         # Get params
@@ -197,6 +198,7 @@ rule call_inv_batch:
                     try:
                         inv_call = asmlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
+                            max_region_size=params.inv_region_limit,
                             threads=params.inv_threads, log=log_file, srs_tree=srs_tree
                         )
 

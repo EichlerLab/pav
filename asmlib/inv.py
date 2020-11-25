@@ -19,8 +19,8 @@ import analib
 INITIAL_EXPAND = 4000      # Expand the flagged region by this much before starting.
 EXPAND_FACTOR = 1.5        # Expand by this factor while searching
 
-MIN_REGION_SIZE = 5000     # Extract a region at least this size
-MAX_REGION_SIZE = 1000000  # Maximum region size
+#MIN_REGION_SIZE = 5000     # Extract a region at least this size
+MAX_REGION_SIZE = 1200000  # Maximum region size
 
 MIN_INFORMATIVE_KMERS = 2000  # Minimum number of informative k-mers
 MIN_KMER_STATE_COUNT = 20     # Remove states with fewer than this number of k-mers. Eliminates spikes in density
@@ -147,7 +147,8 @@ def get_inv_from_record(row, df_density):
 
 
 def scan_for_inv(
-        region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None, threads=1, log=None, srs_tree=None
+        region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None,
+        max_region_size=None, threads=1, log=None, srs_tree=None
     ):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
@@ -161,6 +162,8 @@ def scan_for_inv(
     :param n_tree: Locations of n-base regions in the reference to ignore regions with N's or `None` if no N-filtering
         should be attempted. If a region is expanded into N's, then it is discarded. If defined, this object should be
         dict-like keyed by chromosome names where each value is an IntervalTree of N bases.
+    :param max_region_size: Max region size. If inversion (+ flank) exceeds this size, stop searching for inversions.
+        If `None`, set to default, `MAX_REGION_SIZE`. If 0, ignore max and scale to arbitrarily large inversions.
     :param threads: Number of concurrent threads to use.
     :param log: Log file (open file handle).
     :param srs_tree: Inversion density "--staterunsmooth" parameters (for `density.py`). Can set different
@@ -176,6 +179,9 @@ def scan_for_inv(
 
     :return: A `InvCall` object describing the inversion found or `None` if no inversion was found.
     """
+
+    if max_region_size is None:
+        max_region_size = MAX_REGION_SIZE
 
     # Init
     _write_log(
@@ -207,6 +213,11 @@ def scan_for_inv(
 
     # Scan and expand
     while True:
+
+        # Max region size
+        if 0 < max_region_size < len(region_ref):
+            _write_log('Region size exceeds max: {} ({} > {})'.format(region_ref, len(region_ref), max_region_size), log)
+            return None
 
         # Stop over N's
         if n_tree_chrom is not None:

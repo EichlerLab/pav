@@ -44,25 +44,14 @@ REF_FA = 'data/ref/ref.fa.gz'
 
 REF_FAI = REF_FA + '.fai'
 
-
 # Environment source file for shell commands
-ENV_FILE = config.get(
-    'env_source', None
-)
 
-if ENV_FILE is not None:
-    ENV_FILE = os.path.join(PIPELINE_DIR, ENV_FILE)
+env_file = config.get('env_source', 'local/setenv.sh')
 
-    if not os.path.isfile(ENV_FILE):
-        raise RuntimeError('Shell configuration source not found: {}'.format(ENV_FILE))
-else:
+ENV_FILE = os.path.join(PIPELINE_DIR, env_file)
 
-    # Try default location
-    ENV_FILE = os.path.join(PIPELINE_DIR, ENV_FILE)
-
-    if not os.path.isfile(ENV_FILE):
-        # No environment file if not set
-        ENV_FILE = None
+if not os.path.isfile(ENV_FILE):
+    ENV_FILE = None
 
 #
 # Assembly library and dependency imports

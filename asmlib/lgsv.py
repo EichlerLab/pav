@@ -21,7 +21,7 @@ CALL_SOURCE = 'ALNTRUNC'  # Call source annotation for alignment-truncating even
 
 def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tree=None,
                     threads=1, log=sys.stdout, density_out_dir=None, max_tig_dist_prop=None, max_ref_dist_prop=None,
-                    srs_tree=None
+                    srs_tree=None, max_region_size=None
     ):
     """
     Scan trimmed alignments for alignment-truncating SV events.
@@ -43,6 +43,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     :param max_ref_dist_prop: Max allowed ref gap as a factor of the minimum alignment length of two records.
     :param srs_tree: Inversion density "--staterunsmooth" parameters (for `density.py`). May be a tree, a list of
         limits, or `None` to use the default for all sizes. See `inv.scan_for_inv()` for details.
+    :param max_region_size: Max region size for inversion scanning. Value 0 disables the limit, and `None` sets the
+        default limit, `inv.MAX_REGION_SIZE`. See `inv.scan_for_inv()` for details.
 
     :return: A tuple of dataframes for SV calls: (INS, DEL, INV).
     """
@@ -207,6 +209,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 region_flag,
                                 ref_fa_name, tig_fa_name,
                                 align_lift, k_util,
+                                max_region_size=max_region_size,
                                 threads=threads,
                                 n_tree=n_tree,
                                 srs_tree=srs_tree,
@@ -304,11 +307,29 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             region_flag,
                             ref_fa_name, tig_fa_name,
                             align_lift, k_util,
+                            max_region_size=max_region_size,
                             threads=threads,
                             n_tree=n_tree,
                             srs_tree=srs_tree,
                             log=log
                         )
+
+                        if inv_call is None and subindex2 == subindex1 + 1 and subindex3 == subindex1 + 2:
+                            region_ref = asmlib.seq.Region(chrom, row2['POS'], row2['END'])
+                            region_tig = asmlib.seq.Region(row2['QUERY_ID'], row2['QUERY_TIG_POS'], row2['QUERY_TIG_END'])
+
+                            inv_call = asmlib.inv.InvCall(
+                                region_ref, region_ref,
+                                region_tig, region_tig,
+                                region_ref, region_tig,
+                                region_ref,
+                                None
+                            )
+
+                            inv_method = 'ALNTRUNC-NODEN'
+
+                        else:
+                            inv_method = 'ALNTRUNC'
 
                         if inv_call is not None:
                             log.write('INV (3-tig): {}\n'.format(inv_call))
@@ -344,7 +365,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     inv_call.region_tig_discovery.to_base1_string(),
 
                                     inv_call.region_flag.region_id(),
-                                    'ALNTRUNC',
+                                    inv_method,
 
                                     '{},{},{}'.format(row1['INDEX'], row2['INDEX'], row3['INDEX']),
                                     row1['CLUSTER_MATCH'],
@@ -369,7 +390,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             ))
 
                             # Save density table
-                            if density_out_dir is not None:
+                            if density_out_dir is not None and inv_call.df is not None:
                                 inv_call.df.to_csv(
                                     os.path.join(density_out_dir,
                                                  'density_{}_{}.tsv.gz'.format(inv_call.id, hap)),

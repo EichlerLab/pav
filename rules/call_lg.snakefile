@@ -42,7 +42,8 @@ rule call_lg_discover:
     params:
         k_size=int(config.get('inv_k_size', 31)),
         inv_threads=int(config.get('inv_threads_lg', config.get('inv_threads', 12))),
-        inv_mem=str(config.get('inv_mem', '4G'))
+        inv_mem=str(config.get('inv_mem', '4G')),
+        inv_region_limit=config.get('inv_region_limit', None)
     run:
 
         # Get SRS (state-run-smooth)
@@ -83,6 +84,7 @@ rule call_lg_discover:
                 threads=params.inv_threads,
                 log=log_file,
                 density_out_dir=density_out_dir,
+                max_region_size=params.inv_region_limit
             )
 
         # Write
