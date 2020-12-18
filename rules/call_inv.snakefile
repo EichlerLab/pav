@@ -36,7 +36,7 @@ def _input_call_inv_cluster(wildcards):
         wildcards.vartype
     ))
 
-def _call_inv_accept_flagged_region(row):
+def _call_inv_accept_flagged_region(row, allow_single_cluster=False, match_any=set()):
     """
     Annotate which flagged regions are "accepted" (will try to call INV).
 
@@ -45,12 +45,15 @@ def _call_inv_accept_flagged_region(row):
     :return: `True` if the inversion caller should try the region.
     """
 
-    if row['TYPE'] in {'CLUSTER_SNV', 'CLUSTER_INDEL'}:
+    if not allow_single_cluster and (row['TYPE'] == {'CLUSTER_SNV'} or row['TYPE'] == {'CLUSTER_INDEL'}):
+        return False
+
+    if match_any and not row['TYPE'] & match_any:
         return False
 
     return True
 
-BATCH_COUNT = config.get('inv_sig_batch_count', 60)
+BATCH_COUNT_DEFAULT = 60
 
 
 #############
@@ -97,7 +100,7 @@ BATCH_COUNT = config.get('inv_sig_batch_count', 60)
 # Merge batches.
 rule call_inv_batch_merge:
     input:
-        bed=expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(BATCH_COUNT))
+        bed=expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
     output:
         bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     run:
@@ -128,7 +131,8 @@ rule call_inv_batch:
         k_size=config.get('inv_k_size', 31),
         inv_threads=config.get('inv_threads', 12),
         inv_mem=config.get('inv_mem', '4G'),
-        inv_region_limit=config.get('inv_region_limit', None)
+        inv_region_limit=config.get('inv_region_limit', None),
+        inv_min_expand=config.get('inv_min_expand', None)
     run:
 
         # Get params
@@ -185,7 +189,6 @@ rule call_inv_batch:
                 squeeze=False
             )
 
-
             # Call inversions
             call_list = list()
 
@@ -199,7 +202,8 @@ rule call_inv_batch:
                         inv_call = asmlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
                             max_region_size=params.inv_region_limit,
-                            threads=params.inv_threads, log=log_file, srs_tree=srs_tree
+                            threads=params.inv_threads, log=log_file, srs_tree=srs_tree,
+                            min_exp_count=params.inv_min_expand
                         )
 
                     except RuntimeError as ex:
@@ -343,10 +347,29 @@ rule call_inv_merge_flagged_loci:
         bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz'
     params:
         flank=config.get('inv_sig_merge_flank', 500) , # Merge windows within this many bp
-        batch_count=config.get('inv_sig_batch_count', 40)  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
+        batch_count=int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT)),  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
+        region_filter=config.get('inv_sig_filter', None)   # Filter flagged regions
     run:
         # Parameters
         flank = params.flank
+
+        # Get region filter parameters
+        allow_single_cluster = False
+        match_any = set()
+
+        if params.region_filter is not None:
+            if params.region_filter == 'single_cluster':
+                allow_single_cluster = True
+
+            elif params.region_filter == 'svindel':
+                match_any.add('MATCH_SV')
+                match_any.add('MATCH_INDEL')
+
+            elif params.region_filter == 'sv':
+                match_any.add('MATCH_SV')
+
+            else:
+                raise RuntimeError(f'Unrecognized region filter: {params.region_filter} (must be "single_cluster", "svindel", or "sv")')
 
         # Read
         df_indsdel_sv = pd.read_csv(input.bed_insdel_sv, sep='\t')
@@ -414,7 +437,8 @@ rule call_inv_merge_flagged_loci:
                             chrom, pos, end,
                             '{}-{}-RGN-{}'.format(chrom, pos, end - pos),
                             'RGN', end - pos,
-                            ','.join(sorted(type_set)),
+                            type_set,
+                            #','.join(sorted(type_set)),
                             indel_count, snv_count
                         ],
                         index=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV']
@@ -436,7 +460,8 @@ rule call_inv_merge_flagged_loci:
                     chrom, pos, end,
                     '{}-{}-RGN-{}'.format(chrom, pos, end - pos),
                     'RGN', end - pos,
-                    ','.join(sorted(type_set)),
+                    type_set,
+                    #','.join(sorted(type_set)),
                     indel_count, snv_count
                 ],
                 index=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV']
@@ -447,7 +472,10 @@ rule call_inv_merge_flagged_loci:
             df_merged = pd.concat(region_list, axis=1).T.sort_values(['#CHROM', 'POS'])
 
             # Annotate accepted regions
-            df_merged['TRY_INV'] = df_merged.apply(_call_inv_accept_flagged_region, axis=1)
+            df_merged['TRY_INV'] = df_merged.apply(
+                _call_inv_accept_flagged_region, allow_single_cluster=allow_single_cluster, match_any=match_any,
+                axis=1
+            )
 
             # Group into batches
             df_merged['BATCH'] = -1
@@ -457,7 +485,7 @@ rule call_inv_merge_flagged_loci:
             for index, row in df_merged.iterrows():
                 if row['TRY_INV']:
                     df_merged.loc[index, 'BATCH'] = batch
-                    batch = (batch + 1) % BATCH_COUNT
+                    batch = (batch + 1) % params.batch_count
 
         else:
             df_merged = pd.DataFrame([], columns=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV', 'TRY_INV', 'BATCH'])

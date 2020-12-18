@@ -32,8 +32,8 @@ MIN_INV_KMER_RUN = 100  # States must have a continuous run of this many strictl
 MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within this factor (reciprocal) or the event
                         # is likely unbalanced (INS or DEL) and would already be in the callset
 
-MIN_EXP_COUNT = 3  # The number of region expansions to try (including the initial expansion) and finding only fwd k-mer
-                   # states after smoothing before giving up on the region.
+DEFAULT_MIN_EXP_COUNT = 3  # The default number of region expansions to try (including the initial expansion) and
+                           # finding only fwd k-mer tates after smoothing before giving up on the region.
 
 DEFAULT_STATE_RUN_SMOOTH = 20  # Default value for --staterunsmooth parameter to density.py if none specified
 
@@ -148,7 +148,8 @@ def get_inv_from_record(row, df_density):
 
 def scan_for_inv(
         region_flag, ref_fa_name, tig_fa_name, align_lift, k_util, n_tree=None,
-        max_region_size=None, threads=1, log=None, srs_tree=None
+        max_region_size=None, threads=1, log=None, srs_tree=None,
+        min_exp_count=DEFAULT_MIN_EXP_COUNT
     ):
     """
     Scan region for inversions. Start with a flagged region (`region`) where variants indicated that an inversion
@@ -176,9 +177,15 @@ def scan_for_inv(
         starting at 0 and a record ending at `np.inf`). It may also be a list of tuples where the first value is the
         region size being computed and the second value is the --staterunsmooth parameter that should be used for the
         region.
+    :param min_exp_count: The number of region expansions to try (including the initial expansion) and finding only
+        forward-oriented k-mer states after smoothing before giving up on the region. `None` sets the default value,
+        `DEFAULT_MIN_EXP_COUNT`.
 
     :return: A `InvCall` object describing the inversion found or `None` if no inversion was found.
     """
+
+    if min_exp_count is None:
+        min_exp_count = DEFAULT_MIN_EXP_COUNT
 
     if max_region_size is None:
         max_region_size = MAX_REGION_SIZE
@@ -284,7 +291,7 @@ def scan_for_inv(
             state_rl = [record for record in asmlib.density.rl_encoder(df)]
             condensed_states = [record[0] for record in state_rl]  # States only
 
-            if len(state_rl) == 1 and state_rl[0][0] == 0 and expansion_count >= MIN_EXP_COUNT:
+            if len(state_rl) == 1 and state_rl[0][0] == 0 and expansion_count >= min_exp_count:
                 _write_log(
                     'Found no inverted k-mer states after {} expansion(s)'.format(expansion_count),
                     log

@@ -213,7 +213,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 threads=threads,
                                 n_tree=n_tree,
                                 srs_tree=srs_tree,
-                                log=log
+                                log=log,
+                                min_exp_count=1  # If alignment truncation does not contain inverted k-mers at sufficient density, stop searching
                             )
 
                             if inv_call is not None:
@@ -311,9 +312,11 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             threads=threads,
                             n_tree=n_tree,
                             srs_tree=srs_tree,
-                            log=log
+                            log=log,
+                            min_exp_count=1  # If alignment truncation does not contain inverted k-mers at sufficient density, stop searching
                         )
 
+                        # Recover inversion if alignment supports and density fails.
                         if inv_call is None and subindex2 == subindex1 + 1 and subindex3 == subindex1 + 2:
                             region_ref = asmlib.seq.Region(chrom, row2['POS'], row2['END'])
                             region_tig = asmlib.seq.Region(row2['QUERY_ID'], row2['QUERY_TIG_POS'], row2['QUERY_TIG_END'])

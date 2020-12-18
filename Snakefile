@@ -142,6 +142,7 @@ rule pav_all:
 
 ### Includes ###
 
+include: 'rules/data.snakefile'
 include: 'rules/input_functions.snakefile'
 include: 'rules/align.snakefile'
 include: 'rules/call.snakefile'
@@ -149,3 +150,4 @@ include: 'rules/call_inv.snakefile'
 include: 'rules/call_lg.snakefile'
 include: 'rules/tracks.snakefile'
 include: 'rules/figures.snakefile'
+include: 'rules/vcf.snakefile'

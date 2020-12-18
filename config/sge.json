@@ -7,6 +7,11 @@
         "params": ""
     },
 
+    "vcf_write_vcf": {
+        "mem": "12G",
+        "rt": "12:00:00"
+    },
+
     "call_final_bed": {
         "mem": "8G",
         "rt": "8:00:00"

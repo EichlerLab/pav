@@ -11,10 +11,10 @@ import scipy.stats
 # K-mer orientation matrix: Tig k-mer against forward (vertical axis)
 # and reverse (horizontal axis) k-mers in the reference
 #
-#       T         F
+#       F         T
 #   ---------------------------------
-# T | No data (-1)  | Rev (2)       |
-# F | Reference (0) | Fwd & Rev (1) |
+# F | No data (-1)  | Rev (2)       |
+# T | Reference (0) | Fwd & Rev (1) |
 #   ---------------------------------
 KMER_ORIENTATION_STATE = np.asarray(
     [

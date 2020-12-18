@@ -727,17 +727,34 @@ class AlignLift:
             # Get match record
             match_set = lift_tree[pos]
 
-            if len(match_set) != 1:
+            if len(match_set) == 1:
+                match_interval = list(match_set)[0]
+
+            if len(match_set) == 0:
+                # Allow queries to match if they end exactly at the alignment end
+                match_set = lift_tree[pos - 1]
+
+                match_interval = list(match_set)[0] if len(match_set) == 1 else None
+
+                if not match_interval or match_interval.end != pos:
+                    lift_coord_list.append(None)
+
+                    raise RuntimeError(
+                        (
+                            'Found no matches in a lift-tree for a record within a '
+                            'global to-subject tree: {}:{} (index={}, gap={})'
+                        ).format(query_id, pos_org, index, gap)
+                    )
+
+            elif len(match_set) > 1:
                 lift_coord_list.append(None)
 
                 raise RuntimeError(
                     (
-                        'Found no matches in a lift-tree for a record within a '
+                        'Found multiple matches in a lift-tree for a record within a '
                         'global to-subject tree: {}:{} (index={}, gap={})'
                     ).format(query_id, pos_org, index,  gap)
                 )
-
-            match_interval = list(match_set)[0]
 
             # Interpolate coordinates
             if match_interval.data[1] - match_interval.data[0] > 1:
