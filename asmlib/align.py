@@ -997,10 +997,17 @@ class AlignLift:
 
         # No alignment to add if it's already cached.
         if index in self.ref_cache.keys():
+
+            # Append to end (last used) and skip adding alignment
+            while index in self.cache_queue:
+                self.cache_queue.remove(index)
+
+            self.cache_queue.appendleft(index)
+
             return
 
         # Make space for this alignment
-        # self._check_and_clear()
+        self._check_and_clear()
 
         # Get row
         row = self.df.loc[index]
@@ -1070,6 +1077,7 @@ class AlignLift:
         self.ref_cache[index] = itree_ref
         self.tig_cache[index] = itree_tig
 
+        # Add index to end of queue
         self.cache_queue.appendleft(index)
 
     def _check_and_clear(self):
@@ -1078,7 +1086,7 @@ class AlignLift:
         """
 
         while len(self.cache_queue) >= self.cache_align:
-            index = self.cache_align.pop()
+            index = self.cache_queue.pop()
 
             del(self.ref_cache[index])
             del(self.tig_cache[index])

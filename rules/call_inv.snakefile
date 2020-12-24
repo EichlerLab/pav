@@ -129,8 +129,8 @@ rule call_inv_batch:
         log='results/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.log'
     params:
         k_size=config.get('inv_k_size', 31),
-        inv_threads=config.get('inv_threads', 12),
-        inv_mem=config.get('inv_mem', '4G'),
+        inv_threads=config.get('inv_threads', 4),
+        inv_mem=config.get('inv_mem', '1.5G'),
         inv_region_limit=config.get('inv_region_limit', None),
         inv_min_expand=config.get('inv_min_expand', None)
     run:
@@ -300,6 +300,9 @@ rule call_inv_batch:
                             os.path.join(density_out_dir, 'density_{}_{}.tsv.gz'.format(inv_call.id, wildcards.hap)),
                             sep='\t', index=False, compression='gzip'
                         )
+
+                        # Call garbage collector
+                        gc.collect()
 
             # Merge records
             if len(call_list) > 0:

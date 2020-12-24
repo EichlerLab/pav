@@ -117,7 +117,7 @@ def get_smoothed_density(
         df = df.loc[df['STATE_MER'] != low_state]
 
     # Check for number of informative k-mers before computing density
-    if df.shape[0] < min_informative_kmers:
+    if df.shape[0] < min_informative_kmers or np.all(df['STATE_MER'] == 0):
         return pd.DataFrame([], columns=['INDEX', 'STATE_MER', 'STATE', 'KERN_FWD', 'KERN_FWDREV', 'KERN_REV', 'KMER'])
 
     # Setup bandwidth and index in informative k-mer space (ignore df['INDEX'] for density)

@@ -4,6 +4,7 @@ Make variant calls from aligned contigs.
 
 
 import collections
+import gc
 import gzip
 import intervaltree
 import matplotlib as mpl

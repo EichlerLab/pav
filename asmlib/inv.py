@@ -291,7 +291,7 @@ def scan_for_inv(
             state_rl = [record for record in asmlib.density.rl_encoder(df)]
             condensed_states = [record[0] for record in state_rl]  # States only
 
-            if len(state_rl) == 1 and state_rl[0][0] == 0 and expansion_count >= min_exp_count:
+            if len(state_rl) == 1 and state_rl[0][0] in {0, -1} and expansion_count >= min_exp_count:
                 _write_log(
                     'Found no inverted k-mer states after {} expansion(s)'.format(expansion_count),
                     log
