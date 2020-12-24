@@ -27,7 +27,7 @@ rule vcf_write_vcf:
         fa_sv_inv='results/{asm_name}/bed/fa/sv_inv.fa.gz',
         ref_tsv='data/ref/contig_info.tsv.gz'
     output:
-        vcf='vcf/{alt_fmt}/pav_{asm_name}.vcf.gz'
+        vcf='pav_{asm_name}.vcf.gz'
     wildcard_constraints:
         alt_fmt='alt|sym'
     run:
@@ -37,12 +37,13 @@ rule vcf_write_vcf:
             raise RuntimeError(f'Assembly name conflicts with a VCF header column name: {wildcards.asm_name}')
 
         # Check alt format
-        if wildcards.alt_fmt == 'alt':
-            symbolic_alt = False
-        elif wildcards.alt_fmt == 'sym':
-            symbolic_alt = True
-        else:
-            raise RuntimeError(f'Unknown alt format wildcard (alt_fmt): {alt_fmt}')
+        symbolic_alt = False
+        # if wildcards.alt_fmt == 'alt':
+        #     symbolic_alt = False
+        # elif wildcards.alt_fmt == 'sym':
+        #     symbolic_alt = True
+        # else:
+        #     raise RuntimeError(f'Unknown alt format wildcard (alt_fmt): {alt_fmt}')
 
         # Process variant types
         df_list = list()
