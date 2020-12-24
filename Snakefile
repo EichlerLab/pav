@@ -130,16 +130,9 @@ localrules: pav_all
 rule pav_all:
     input:
         bed=expand(
-            'results/{asm_name}/bed/{vartype}_{svtype}.bed.gz',
-            asm_name=ASM_TABLE['NAME'],
-            vartype=('sv', 'indel'),
-            svtype=('ins', 'del')
-        ),
-        bed_snv=expand(
-            'results/{asm_name}/bed/snv_snv.bed.gz',
+            'pav_{asm_name}.vcf.gz',
             asm_name=ASM_TABLE['NAME']
         )
-
 
 ### Includes ###
 
