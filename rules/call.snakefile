@@ -99,15 +99,29 @@ rule call_final_bed:
         df.to_csv(output.bed_snv_snv, sep='\t', index=False, compression='gzip')
 
 
+#
+# Merge haplotypes
+#
+
 # pg_variant_bed
 #
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
+#
+# If merging is not done by chromosome (default), then this rule reads from each haplotype and merges in one step
+# (wildcards.merge_level = merged). If merging is done per chromosome (config['merge_by_chrom'] is defined), then this
+# rule calls itself recursively first by chromosome (wildcards.merge_level = bychrom) then by concatenating the merged
+# chromosomes (wildcards.merge_level = merged). The code will know which step its on based on the wildcards and config.
 rule call_merge_haplotypes:
     input:
         bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
         bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
         callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
-        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
+        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
+        bed_chrom=lambda wildcards: [
+            'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'.format(
+                asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, chrom=chrom
+            ) for chrom in sorted(analib.ref.get_df_fai(config['reference'] + '.fai').index)
+        ] if config.get('merge_by_chrom', None) is not None else []
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     params:
@@ -116,6 +130,74 @@ rule call_merge_haplotypes:
         merge_threads=int(config.get('merge_threads', 12)),
         merge_mem=config.get('merge_mem', '2G')
     run:
+
+        if config.get('merge_by_chrom', None) is None:
+            # Merge in one step
+
+            # Get configured merge definition
+            if wildcards.vartype_svtype == 'snv_snv':
+                config_def = 'nrid'
+            else:
+                config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
+
+            print('Merging with def: ' + config_def)
+            sys.stdout.flush()
+
+            # Merge
+            df = asmlib.call.merge_haplotypes(
+                input.bed_var_h1, input.bed_var_h2,
+                input.callable_h1,input.callable_h2,
+                config_def,
+                threads=params.merge_threads,
+                chrom=None
+            )
+
+            # Save BED
+            df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+        else:
+            # Concatenate merged chromosomes
+
+            write_header = True
+
+            with gzip.open(output.bed, 'wt') as out_file:
+                for in_file_name in input.bed_chrom:
+
+                    df_iter = pd.read_csv(
+                        in_file_name,
+                        sep='\t', iterator=True, chunksize=20000
+                    )
+
+                    for df in df_iter:
+                        df.to_csv(
+                            out_file,sep='\t', index=False, header=write_header
+                        )
+
+                        write_header = False
+
+
+# call_merge_haplotypes_chrom
+#
+# Merge by chromosome.
+rule call_merge_haplotypes_chrom:
+    input:
+        bed_var_h1 = 'temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
+        bed_var_h2 = 'temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
+        callable_h1 = 'results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
+        callable_h2 = 'results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
+    output:
+        bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'
+    params:
+        ro_min=float(config.get('ro_min', 0.5)),
+        offset_max=int(config.get('offset_max', 200)),
+        merge_threads=int(config.get('merge_threads', 12)),
+        merge_mem=config.get('merge_mem', '2G')
+    run:
+
+        var_svtype_list = wildcards.vartype_svtype.split('_')
+
+        if len(var_svtype_list) != 2:
+            raise RuntimeError('Wildcard "vartype_svtype" must be two elements separated by an underscore: {}'.format(wildcards.var_svtype))
 
         # Get configured merge definition
         if wildcards.vartype_svtype == 'snv_snv':
@@ -127,103 +209,22 @@ rule call_merge_haplotypes:
         sys.stdout.flush()
 
         # Merge
-        df = analib.svmerge.merge_variants(
-            bed_list=[input.bed_var_h1, input.bed_var_h2],
-            sample_names=['h1', 'h2'],
-            strategy=config_def,
-            threads=params.merge_threads
+        df = asmlib.call.merge_haplotypes(
+            input.bed_var_h1, input.bed_var_h2,
+            input.callable_h1, input.callable_h2,
+            config_def,
+            threads=params.merge_threads,
+            chrom=wildcards.chrom,
+            is_inv=var_svtype_list[1] == 'inv'
         )
-
-        df.set_index('ID', inplace=True, drop=False)
-
-        # Restructure columns
-        if 'HAP' in df.columns:
-            del(df['HAP'])
-
-        if 'DISC_CLASS' in df.columns:
-            del(df['DISC_CLASS'])
-
-        df.columns = [re.sub('^MERGE_', 'HAP_', val) for val in df.columns]
-
-        del(df['HAP_SRC'])
-        del(df['HAP_SRC_ID'])
-        del(df['HAP_AC'])
-        del(df['HAP_AF'])
-
-        df.columns = ['HAP' if val == 'HAP_SAMPLES' else val for val in df.columns]
-
-        # Change , to ; from merger
-        df['HAP'] = df['HAP'].apply(lambda val: ';'.join(val.split(',')))
-        df['HAP_VARIANTS'] = df['HAP_VARIANTS'].apply(lambda val: ';'.join(val.split(',')))
-
-        if 'HAP_RO' in df.columns:
-            df['HAP_RO'] = df['HAP_RO'].apply(lambda val: ';'.join(val.split(',')))
-
-        if 'HAP_OFFSET' in df.columns:
-            df['HAP_OFFSET'] = df['HAP_OFFSET'].apply(lambda val: ';'.join(val.split(',')))
-
-        if 'HAP_SZRO' in df.columns:
-            df['HAP_SZRO'] = df['HAP_SZRO'].apply(lambda val: ';'.join(val.split(',')))
-
-        if 'HAP_OFFSZ' in df.columns:
-            df['HAP_OFFSZ'] = df['HAP_OFFSZ'].apply(lambda val: ';'.join(val.split(',')))
-
-        # Add h1 and h2 to columns
-        df_h1 = pd.read_csv(input.bed_var_h1, sep='\t', low_memory=False)
-        df_h1.set_index('ID', inplace=True, drop=False)
-        df_h1['CLUSTER_MATCH'].fillna('NA', inplace=True)
-        df_h1 = df_h1.astype(str)
-
-        df_h2 = pd.read_csv(input.bed_var_h2, sep='\t', low_memory=False)
-        df_h2.set_index('ID', inplace=True, drop=False)
-        df_h2['CLUSTER_MATCH'].fillna('NA', inplace=True)
-        df_h2 = df_h2.astype(str)
-
-        df['TIG_REGION'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
-        df['QUERY_STRAND'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
-        df['CI'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CI')
-        df['ALIGN_INDEX'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'ALIGN_INDEX')
-        df['CLUSTER_MATCH'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CLUSTER_MATCH')
-        df['CALL_SOURCE'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CALL_SOURCE')
-
-        # Set inversion columns
-        if wildcards.vartype_svtype == 'sv_inv':
-            del(df['RGN_REF_DISC'])
-            del(df['RGN_TIG_DISC'])
-            del(df['FLAG_ID'])
-            del(df['FLAG_TYPE'])
-
-            df['RGN_REF_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_REF_INNER')
-            df['RGN_TIG_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_TIG_INNER')
-
-        # Load mapped regions
-        map_tree_h1 = collections.defaultdict(intervaltree.IntervalTree)
-        map_tree_h2 = collections.defaultdict(intervaltree.IntervalTree)
-
-        df_map_h1 = pd.read_csv(input.callable_h1, sep='\t')
-        df_map_h2 = pd.read_csv(input.callable_h2, sep='\t')
-
-        for index, row in df_map_h1.iterrows():
-            map_tree_h1[row['#CHROM']][row['POS']:row['END']] = True
-
-        for index, row in df_map_h2.iterrows():
-            map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
-
-        # Get genotypes setting no-call for non-mappable regions
-        df['GT_H1'] = df.apply(asmlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
-        df['GT_H2'] = df.apply(asmlib.call.get_gt, hap='h2', map_tree=map_tree_h2, axis=1)
-
-        df['GT'] = df.apply(lambda row: '{}|{}'.format(row['GT_H1'], row['GT_H2']), axis=1)
-
-        if np.any(df['GT'].apply(lambda val: val == '0|0')):
-            raise RuntimeError('Program bug: Found 0|0 genotypes after merging haplotypes')
-
-        del df['GT_H1']
-        del df['GT_H2']
 
         # Save BED
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
+
+#
+# Integrate variant calls
+#
 
 # call_mappable_bed
 #

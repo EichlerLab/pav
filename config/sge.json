@@ -24,6 +24,11 @@
         "mem": "{params.merge_mem}",
         "rt": "12:00:00"
     },
+    "call_merge_haplotypes_chrom": {
+        "cpu": "{params.merge_threads}",
+        "mem": "{params.merge_mem}",
+        "rt": "12:00:00"
+    },
     "call_lg_discover": {
         "cpu": "{params.inv_threads}",
         "mem": "{params.inv_mem}",
