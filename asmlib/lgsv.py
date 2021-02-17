@@ -27,7 +27,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     Scan trimmed alignments for alignment-truncating SV events.
 
     :param df: Dataframe of alignments (trimmed). Output from "align_cut_tig_overlap".
-    :param df_tig_fai: Panadas Series keyed by contig names with values as contig lengths (integer).
+    :param df_tig_fai: Pandas Series keyed by contig names with values as contig lengths (integer).
     :param hap: Haplotype.
     :param ref_fa_name: Reference FASTA file name.
     :param tig_fa_name: Contig FASTA file name.

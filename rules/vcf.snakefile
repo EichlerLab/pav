@@ -118,6 +118,10 @@ rule vcf_write_vcf:
                 if 'REF' not in df.columns:
                     df['REF'] = list(analib.vcf.ref_base(df, config['reference']))
 
+                if svtype == 'inv' and not symbolic_alt:
+                    df_ref_base = df['REF']
+                    df['REF'] = df_ref_base + analib.ref.get_ref_region(df, config['reference']).apply(lambda val: val.upper())
+
                 # ALT
                 if vartype != 'snv':
                     if symbolic_alt:
@@ -128,8 +132,11 @@ rule vcf_write_vcf:
                     else:
 
                         # Check for sequence types that cannot be placed in ALT (may need symbolic ALTs)
-                        df['REF'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'DEL' else row['REF'], axis=1)
-                        df['ALT'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'INS' else row['REF'][0], axis=1)
+                        if svtype != 'inv':
+                            df['REF'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'DEL' else row['REF'], axis=1)
+                            df['ALT'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'INS' else row['REF'][0], axis=1)
+                        else:
+                            df['ALT'] = df_ref_base + df['SEQ']
 
                         del df['SEQ']
                 else:

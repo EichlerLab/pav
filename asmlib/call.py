@@ -114,10 +114,6 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
     :return: A dataframe of variant calls.
     """
 
-    # Set is_inv
-    if is_inv is None:
-        is_inv = np.any(df['SVTYPE'] == 'INV')
-
     # Merge
     df = analib.svmerge.merge_variants(
         bed_list=[h1_file_name, h2_file_name],
@@ -129,7 +125,10 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
 
     df.set_index('ID', inplace=True, drop=False)
 
-    # Check is_inv
+    # Set is_inv
+    if is_inv is None:
+        is_inv = np.any(df['SVTYPE'] == 'INV')
+
     if is_inv and not np.all(df['SVTYPE'] == 'INV'):
         raise RuntimeError('Detected inversions in merge, but not all variants are inversions ({} of {})'.format(
             np.sum(df['SVTYPE'] == 'INV'), df.shape[0]
