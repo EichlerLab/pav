@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import re
 
-import analib
-import asmlib
+import svpoplib
+import pavlib
 
 
 def get_gt(row, hap, map_tree):
@@ -115,7 +115,7 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
     """
 
     # Merge
-    df = analib.svmerge.merge_variants(
+    df = svpoplib.svmerge.merge_variants(
         bed_list=[h1_file_name, h2_file_name],
         sample_names=['h1', 'h2'],
         strategy=config_def,
@@ -168,22 +168,22 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
             df['HAP_OFFSZ'] = df['HAP_OFFSZ'].apply(lambda val: ';'.join(val.split(',')))
 
         # Add h1 and h2 to columns
-        df_h1 = analib.pd.read_csv_chrom(h1_file_name, chrom=chrom, sep='\t', low_memory=False)
+        df_h1 = svpoplib.pd.read_csv_chrom(h1_file_name, chrom=chrom, sep='\t', low_memory=False)
         df_h1.set_index('ID', inplace=True, drop=False)
         df_h1['CLUSTER_MATCH'].fillna('NA', inplace=True)
         df_h1 = df_h1.astype(str)
 
-        df_h2 = analib.pd.read_csv_chrom(h2_file_name, chrom=chrom, sep='\t', low_memory=False)
+        df_h2 = svpoplib.pd.read_csv_chrom(h2_file_name, chrom=chrom, sep='\t', low_memory=False)
         df_h2.set_index('ID', inplace=True, drop=False)
         df_h2['CLUSTER_MATCH'].fillna('NA', inplace=True)
         df_h2 = df_h2.astype(str)
 
-        df['TIG_REGION'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
-        df['QUERY_STRAND'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
-        df['CI'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CI')
-        df['ALIGN_INDEX'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'ALIGN_INDEX')
-        df['CLUSTER_MATCH'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CLUSTER_MATCH')
-        df['CALL_SOURCE'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'CALL_SOURCE')
+        df['TIG_REGION'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
+        df['QUERY_STRAND'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
+        df['CI'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CI')
+        df['ALIGN_INDEX'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'ALIGN_INDEX')
+        df['CLUSTER_MATCH'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CLUSTER_MATCH')
+        df['CALL_SOURCE'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CALL_SOURCE')
 
         # Set inversion columns
         if is_inv:
@@ -192,8 +192,8 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
             del(df['FLAG_ID'])
             del(df['FLAG_TYPE'])
 
-            df['RGN_REF_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_REF_INNER')
-            df['RGN_TIG_INNER'] = asmlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_TIG_INNER')
+            df['RGN_REF_INNER'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_REF_INNER')
+            df['RGN_TIG_INNER'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'RGN_TIG_INNER')
 
         # Load mapped regions
         map_tree_h1 = collections.defaultdict(intervaltree.IntervalTree)
@@ -209,8 +209,8 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
             map_tree_h2[row['#CHROM']][row['POS']:row['END']] = True
 
         # Get genotypes setting no-call for non-mappable regions
-        df['GT_H1'] = df.apply(asmlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
-        df['GT_H2'] = df.apply(asmlib.call.get_gt, hap='h2', map_tree=map_tree_h2, axis=1)
+        df['GT_H1'] = df.apply(pavlib.call.get_gt, hap='h1', map_tree=map_tree_h1, axis=1)
+        df['GT_H2'] = df.apply(pavlib.call.get_gt, hap='h2', map_tree=map_tree_h2, axis=1)
 
         df['GT'] = df.apply(lambda row: '{}|{}'.format(row['GT_H1'], row['GT_H2']), axis=1)
 

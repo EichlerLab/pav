@@ -15,7 +15,7 @@ rule data_ref_contig_table:
         tsv='data/ref/contig_info.tsv.gz'
     run:
 
-        analib.ref.get_ref_info(
+        svpoplib.ref.get_ref_info(
             config['reference']
         ).to_csv(
             output.tsv, sep='\t', index=True, compression='gzip'
@@ -91,7 +91,7 @@ rule align_ref:
     run:
 
         # Copy FASTA to FA/GZ
-        asmlib.seq.copy_fa_to_gz(input.ref_fa, output.ref_fa)
+        pavlib.seq.copy_fa_to_gz(input.ref_fa, output.ref_fa)
 
         # Index
         if os.stat(output.ref_fa).st_size > 0:

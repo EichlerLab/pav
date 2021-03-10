@@ -47,7 +47,7 @@ REF_FAI = REF_FA + '.fai'
 
 # Environment source file for shell commands
 
-env_file = config.get('env_source', 'local/setenv.sh')
+env_file = config.get('env_source', 'setenv.sh')
 
 ENV_FILE = os.path.join(PIPELINE_DIR, env_file)
 
@@ -61,8 +61,8 @@ if not os.path.isfile(ENV_FILE):
 sys.path.append(PIPELINE_DIR)
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep'))
 
-import asmlib
-import analib
+import pavlib
+import svpoplib
 import kanapy
 
 

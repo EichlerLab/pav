@@ -68,12 +68,12 @@ rule call_final_bed:
 
             # Write FASTA
             with Bio.bgzf.BgzfWriter(fa_file_name, 'wb') as out_file:
-                SeqIO.write(analib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
+                SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
 
             del(df['SEQ'])
 
             # Arrange columns
-            df = analib.variant.order_variant_columns(
+            df = svpoplib.variant.order_variant_columns(
                 df,
                 head_cols=[
                     '#CHROM', 'POS', 'END', 'ID',
@@ -108,7 +108,7 @@ rule call_final_bed:
 # Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
 #
 # If merging is not done by chromosome (default), then this rule reads from each haplotype and merges in one step
-# (wildcards.merge_level = merged). If merging is done per chromosome (config['merge_by_chrom'] is defined), then this
+# (wildcards.merge_level = merged). If merging is done per chromosome (config['merge_by_chrom'] is True), then this
 # rule calls itself recursively first by chromosome (wildcards.merge_level = bychrom) then by concatenating the merged
 # chromosomes (wildcards.merge_level = merged). The code will know which step its on based on the wildcards and config.
 rule call_merge_haplotypes:
@@ -120,18 +120,17 @@ rule call_merge_haplotypes:
         bed_chrom=lambda wildcards: [
             'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'.format(
                 asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, chrom=chrom
-            ) for chrom in sorted(analib.ref.get_df_fai(config['reference'] + '.fai').index)
-        ] if config.get('merge_by_chrom', None) is not None else []
+            ) for chrom in sorted(svpoplib.ref.get_df_fai(config['reference'] + '.fai').index)
+        ] if pavlib.util.as_bool(config.get('merge_by_chrom', False)) else []
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     params:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12)),
-        merge_mem=config.get('merge_mem', '2G')
+        merge_threads=int(config.get('merge_threads', 12))
     run:
 
-        if config.get('merge_by_chrom', None) is None:
+        if pavlib.util.as_bool(config.get('merge_by_chrom', False)) is None:
             # Merge in one step
 
             # Get configured merge definition
@@ -144,7 +143,7 @@ rule call_merge_haplotypes:
             sys.stdout.flush()
 
             # Merge
-            df = asmlib.call.merge_haplotypes(
+            df = pavlib.call.merge_haplotypes(
                 input.bed_var_h1, input.bed_var_h2,
                 input.callable_h1,input.callable_h2,
                 config_def,
@@ -178,7 +177,7 @@ rule call_merge_haplotypes:
 
 # call_merge_haplotypes_chrom
 #
-# Merge by chromosome.
+# Merge by chromosome. This rule is used if "merge_by_chrom" is True.
 rule call_merge_haplotypes_chrom:
     input:
         bed_var_h1 = 'temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
@@ -190,8 +189,7 @@ rule call_merge_haplotypes_chrom:
     params:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12)),
-        merge_mem=config.get('merge_mem', '2G')
+        merge_threads=int(config.get('merge_threads', 12))
     run:
 
         var_svtype_list = wildcards.vartype_svtype.split('_')
@@ -209,7 +207,7 @@ rule call_merge_haplotypes_chrom:
         sys.stdout.flush()
 
         # Merge
-        df = asmlib.call.merge_haplotypes(
+        df = pavlib.call.merge_haplotypes(
             input.bed_var_h1, input.bed_var_h2,
             input.callable_h1, input.callable_h2,
             config_def,
@@ -234,9 +232,9 @@ rule call_merge_haplotypes_chrom:
 rule call_mappable_bed:
     input:
         bed_align='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        bed_lg_del='results/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
-        bed_lg_ins='results/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
-        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
+        bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
+        bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
+        bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
     output:
         bed='results/{asm_name}/callable/callable_regions_{hap}_{flank}.bed.gz'
     run:
@@ -249,7 +247,7 @@ rule call_mappable_bed:
             raise RuntimeError('Flank parameter is not an integer: {flank}'.format(**wildcards))
 
         # Merge
-        df = asmlib.util.region_merge(
+        df = pavlib.util.region_merge(
             [
                 input.bed_align,
                 input.bed_lg_del,
@@ -269,10 +267,10 @@ rule call_integrate_sources:
     input:
         bed_cigar_insdel='temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz',
         bed_cigar_snv='temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz',
-        bed_lg_ins='results/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
-        bed_lg_del='results/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
-        bed_lg_inv='results/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
-        bed_inv='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+        bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
+        bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
+        bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
+        bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
         bed_ins=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_ins.bed.gz'),
         bed_del=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_del.bed.gz'),
@@ -327,7 +325,7 @@ rule call_integrate_sources:
             df_inv = df_inv.loc[df_inv['SVLEN'] <= max_inv]
 
         # Apply contig filter to INV
-        df_inv = asmlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
+        df_inv = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
         # Filter overlapping inversion calls
         inv_tree = collections.defaultdict(intervaltree.IntervalTree)
@@ -359,7 +357,7 @@ rule call_integrate_sources:
             ]
 
             # Apply contig filter to large INS
-            df_lg_ins = asmlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
+            df_lg_ins = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
 
         if df_lg_del.shape[0] > 0:
             df_lg_del = df_lg_del.loc[
@@ -370,7 +368,7 @@ rule call_integrate_sources:
             ]
 
             # Apply contig filter to large DEL
-            df_lg_del = asmlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
+            df_lg_del = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
 
             # Add large deletions to filter
             for index, row in df_lg_del.iterrows():
@@ -405,8 +403,8 @@ rule call_integrate_sources:
             ]
 
         # Apply contig filter to small variants
-        df_cigar_insdel = asmlib.call.filter_by_tig_tree(df_cigar_insdel, tig_filter_tree)
-        df_snv = asmlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
+        df_cigar_insdel = pavlib.call.filter_by_tig_tree(df_cigar_insdel, tig_filter_tree)
+        df_snv = pavlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
 
         # Merge insertion/deletion variants
         df_insdel = pd.concat(
@@ -439,7 +437,7 @@ rule call_integrate_sources:
 # Make inversion call BED.
 rule call_inv_bed:
     input:
-        bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+        bed='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
         bed=temp('temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'),
         bed_dropped='results/{asm_name}/bed/dropped/shortinv_sv_inv_{hap}.bed.gz'
@@ -504,7 +502,7 @@ rule call_cigar_merge:
 rule call_cigar:
     input:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        tig_fa_name='results/{asm_name}/align/contigs_{hap}.fa.gz'
+        tig_fa_name='temp/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
         bed_snv=temp('temp/{asm_name}/cigar/batched/snv.bed_{hap}_{batch}.gz')
@@ -518,7 +516,7 @@ rule call_cigar:
         df_align = df_align.loc[df_align['INDEX'] % CALL_CIGAR_BATCH_COUNT == batch]
 
         # Call
-        df_snv, df_insdel = asmlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap)
+        df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap)
 
         # Write
         df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')

@@ -40,7 +40,15 @@ def _call_inv_accept_flagged_region(row, allow_single_cluster=False, match_any=s
     """
     Annotate which flagged regions are "accepted" (will try to call INV).
 
+    If `allow_single_cluster` is `False` and `match_any` is an empty set, then the only signatures accepted are
+    matched SV events or matched indel events.
+
     :param row: Row from merged flagged regions.
+    :param allow_single_cluster: Try to resolve inversions if True for loci with only signatures of clustered SNVs
+        and/or clustered indels. Will try many regions and may increase false-positives.
+    :param match_any: If defined, contains a set of signatures where at least one must match. Can be used to
+        restrict accepted regions to SV-supported signatures only, but inversions with a small uniquely-inverted
+        region will likely be missed.
 
     :return: `True` if the inversion caller should try the region.
     """
@@ -60,36 +68,6 @@ BATCH_COUNT_DEFAULT = 60
 ### Rules ###
 #############
 
-#
-# Inter-inversion variants
-#
-
-# call_inv_interinv
-#
-# Call inter-inversion variants.
-# Implementation on hold.
-# rule call_inv_interinv:
-#     input:
-#         bed_cigar='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz',
-#         tig_fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
-#     output:
-#         bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
-#     run:
-#         pass
-#
-#         # Read SVs
-#         df_inv = pd.read_csv(input.bed_cigar, sep='\t')
-#
-#         # Get alignments
-#         for index, row in df_inv.iterrows():
-#
-#             # Get regions
-#             region_ref = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
-#             region_tig = asmlib.seq.region_from_string(row['RGN_TIG_OUTER'], is_rev=(row['STRAND'] == '-'))
-#
-#             # Get sequence
-#             seq_ref = asmlib.seq.region_seq_fasta(region_ref, REF_FA)
-#             seq_tig = asmlib.seq.region_seq_fasta(region_tig, input.tig_fa)
 
 #
 # Call inversions
@@ -102,7 +80,7 @@ rule call_inv_batch_merge:
     input:
         bed=expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
     output:
-        bed='results/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+        bed=temp('temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz')
     run:
 
         pd.concat(
@@ -121,16 +99,15 @@ rule call_inv_batch:
     input:
         bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
         bed_aln='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        tig_fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
-        fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
+        fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:
-        log='results/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.log'
+        log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
     params:
         k_size=config.get('inv_k_size', 31),
         inv_threads=config.get('inv_threads', 4),
-        inv_mem=config.get('inv_mem', '1.5G'),
         inv_region_limit=config.get('inv_region_limit', None),
         inv_min_expand=config.get('inv_min_expand', None)
     run:
@@ -144,7 +121,7 @@ rule call_inv_batch:
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get SRS (state-run-smooth)
-        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
+        srs_tree = pavlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
 
         # Read and subset table to records in this batch
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
@@ -175,9 +152,9 @@ rule call_inv_batch:
             # Init
             k_util = kanapy.util.kmer.KmerUtil(k_size)
 
-            align_lift = asmlib.align.AlignLift(
+            align_lift = pavlib.align.AlignLift(
                 pd.read_csv(input.bed_aln, sep='\t'),
-                analib.ref.get_df_fai(input.fai)
+                svpoplib.ref.get_df_fai(input.fai)
             )
 
             # Read alignment BED
@@ -196,10 +173,10 @@ rule call_inv_batch:
                 for index, row in df_flag.iterrows():
 
                     # Scan for inversions
-                    region_flag = asmlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
+                    region_flag = pavlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
 
                     try:
-                        inv_call = asmlib.inv.scan_for_inv(
+                        inv_call = pavlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
                             max_region_size=params.inv_region_limit,
                             threads=params.inv_threads, log=log_file, srs_tree=srs_tree,
@@ -214,7 +191,7 @@ rule call_inv_batch:
                     if inv_call is not None:
 
                         # Get seq
-                        seq = asmlib.seq.region_seq_fasta(
+                        seq = pavlib.seq.region_seq_fasta(
                             inv_call.region_tig_outer,
                             input.tig_fa,
                             rev_compl=inv_call.region_tig_outer.is_rev
@@ -276,7 +253,7 @@ rule call_inv_batch:
 
                                 ','.join([str(val) for val in sorted(aln_index_set)]), cluster_match,
 
-                                asmlib.inv.CALL_SOURCE,
+                                pavlib.inv.CALL_SOURCE,
 
                                 seq
                             ],
@@ -351,7 +328,7 @@ rule call_inv_merge_flagged_loci:
     params:
         flank=config.get('inv_sig_merge_flank', 500) , # Merge windows within this many bp
         batch_count=int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT)),  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
-        region_filter=config.get('inv_sig_filter', None)   # Filter flagged regions
+        inv_sig_filter=config.get('inv_sig_filter', 'svindel')   # Filter flagged regions
     run:
         # Parameters
         flank = params.flank
@@ -360,19 +337,19 @@ rule call_inv_merge_flagged_loci:
         allow_single_cluster = False
         match_any = set()
 
-        if params.region_filter is not None:
-            if params.region_filter == 'single_cluster':
+        if params.inv_sig_filter is not None:
+            if params.inv_sig_filter == 'single_cluster':
                 allow_single_cluster = True
 
-            elif params.region_filter == 'svindel':
+            elif params.inv_sig_filter == 'svindel':
                 match_any.add('MATCH_SV')
                 match_any.add('MATCH_INDEL')
 
-            elif params.region_filter == 'sv':
+            elif params.inv_sig_filter == 'sv':
                 match_any.add('MATCH_SV')
 
             else:
-                raise RuntimeError(f'Unrecognized region filter: {params.region_filter} (must be "single_cluster", "svindel", or "sv")')
+                raise RuntimeError(f'Unrecognized region filter: {params.inv_sig_filter} (must be "single_cluster", "svindel", or "sv")')
 
         # Read
         df_indsdel_sv = pd.read_csv(input.bed_insdel_sv, sep='\t')

@@ -6,7 +6,7 @@ import Bio
 import pandas as pd
 import pysam
 
-import asmlib
+import pavlib
 
 
 #
@@ -72,7 +72,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
         cigar_index = 0
 
-        for oplen, op in asmlib.align.cigar_str_to_tuples(row):
+        for oplen, op in pavlib.align.cigar_str_to_tuples(row):
 
             cigar_index += 1
 

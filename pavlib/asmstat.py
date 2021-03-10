@@ -7,7 +7,7 @@ import pandas as pd
 
 from Bio import SeqIO
 
-import analib
+import svpoplib
 
 
 def get_n_stat(len_list, n_stat=0.5, genome_size=None):
@@ -47,7 +47,7 @@ def get_stats(asm_name, hap, fa_file_name, genome_size=None, n_stat_list=[0.5]):
 
     # Get lengths
 
-    with analib.seq.PlainOrGzReader(fa_file_name) as in_file:
+    with svpoplib.seq.PlainOrGzReader(fa_file_name) as in_file:
         len_list = [len(record.seq) for record in SeqIO.parse(in_file, 'fasta')]
 
     # Begin record

@@ -8,7 +8,7 @@ import pandas as pd
 
 import numpy as np
 
-import asmlib
+import pavlib
 import kanapy
 
 
@@ -16,7 +16,7 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
     """
     Make a dotplot of an inversion call.
 
-    :param inv_call: asmlib.inv.InvCall object describing the inversion.
+    :param inv_call: pavlib.inv.InvCall object describing the inversion.
     :param ref_fa: Reference FASTA.
     :param tig_fa: Alignment file name.
     :param seq_tig: Contig alignment sequence or `None`. If `None`, then `aln_file_name` must be set.
@@ -30,7 +30,7 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
     region_tig = inv_call.region_tig_discovery
 
     # Get reference sequence
-    seq_ref = asmlib.seq.region_seq_fasta(region_ref, ref_fa, False)
+    seq_ref = pavlib.seq.region_seq_fasta(region_ref, ref_fa, False)
 
     # Get contig sequence
     if seq_tig is None:
@@ -38,7 +38,7 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
         if tig_fa is None:
             raise RuntimeError('Cannot get contig sequence: tig_fa is None')
 
-        seq_tig = asmlib.seq.region_seq_fasta(region_tig, tig_fa)
+        seq_tig = pavlib.seq.region_seq_fasta(region_tig, tig_fa)
 
     # Create plot config
     plot_config = {

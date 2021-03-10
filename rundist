@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+# Run pipeline distributed.
+# Requires one of:
+#   1) PAV_RUN/config/rundist.sh
+#   2) PAV_INSTALL/local/config/rundist.sh
+#
+# Where the first rundist.sh found is the one used. Control is passed to the script.
+
+# Refuse to exeucute from install directory
+if [[ $(dirname $(readlink -f $0)) == $(readlink -f $(pwd)) ]]; then
+    echo "Attempting to execute run script from PAV install directory, or run script was copied to the run directory. Symlink the run script to the run directory, cd to the run directory, and run from there." >&2
+    exit 1
+fi
+
+# Get directory where the script is located
+SOURCE="${BASH_SOURCE[0]}"
+
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+    DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+
+PAV_SITE_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+
+PAV_SNAKEFILE="${PAV_SITE_DIR}/Snakefile"
+PAV_SITE_CONFIG_LOCAL="${PAV_SITE_DIR}/local/config"
+PAV_SITE_CONFIG_BUILTIN="${PAV_SITE_DIR}/config"
+
+
+# Get jobs
+PAV_JOB_COUNT=$1
+
+shift
+
+
+### Pass control over to a control script ###
+
+# Find local site's control script
+PAV_LOCAL_SCRIPT="config/rundist.sh"
+PAV_SITE_SCRIPT="${PAV_SITE_DIR}/local/config/rundist.sh"
+
+if [[ -f ${PAV_LOCAL_SCRIPT} ]]; then
+    source ${PAV_LOCAL_SCRIPT}
+    exit 0
+fi
+
+if [[ -f ${PAV_SITE_SCRIPT} ]]; then
+    source ${PAV_SITE_SCRIPT}
+    exit 0
+fi
+
+# No control script found
+echo "Missing local control script. \"rundist\" sets up the environment and passes control to a local script (\"config/rundist.sh\" in the analysis directory if found, or \"local/config/rundist.sh\" in the PAV install directory). One of these two control scripts must be setup, and it will be sourced by this script to run PAV. See comments in this \"rundist\" for an example of what the control script would do."
+echo
+echo "Searched local config: ${PAV_LOCAL_SCRIPT}"
+echo "Searched site config: ${PAV_SITE_SCRIPT}"
+exit 1
+
+
+# Example control script to distribute over an SGE cluster with "config/sge.json" distributed with PAV:
+
+# module load miniconda/4.8.3
+# module load samtools/1.10
+# module load minimap2/2.17
+# module load ucsc/202003
+# module load lra/202008
+# module load htslib/1.9
+#
+#snakemake -s ${PAV_SNAKEFILE} -j ${PAV_JOB_COUNT} --nt --ri -k \
+#    --jobname "{rulename}.{jobid}" \
+#    --drmaa " -V -cwd -j y -o ./log -l centos=7 -pe serial {cluster.cpu} -l mfree={cluster.mem} -l disk_free={cluster.disk} -l h_rt={cluster.rt} {cluster.params} -w n -S /bin/bash" \
+#    -w 60 -u ${PAV_SITE_CONFIG_BUILTIN}/sge.json "$@"

@@ -103,7 +103,7 @@ rule tracks_hap_call:
             del(df['SEQ'])
 
         # Read FAI and table columns
-        df_fai = analib.ref.get_df_fai(input.fai)
+        df_fai = svpoplib.ref.get_df_fai(input.fai)
 
         # Filter columns that have track annotations
         field_set = set(
@@ -119,7 +119,7 @@ rule tracks_hap_call:
         track_name = 'VariantTable'
         track_description = '{asm_name} - {vartype}-{svtype} - {hap}'.format(**wildcards)
 
-        analib.tracks.variant.make_bb_track(df, df_fai, output.bed, output.asfile, track_name, track_description, field_table_file_name)
+        svpoplib.tracks.variant.make_bb_track(df, df_fai, output.bed, output.asfile, track_name, track_description, field_table_file_name)
 
 
 #

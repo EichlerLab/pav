@@ -9,8 +9,8 @@ import os
 import pickle
 import subprocess
 
-import asmlib
-import analib
+import pavlib
+import svpoplib
 
 #
 # Constants
@@ -32,8 +32,8 @@ MIN_INV_KMER_RUN = 100  # States must have a continuous run of this many strictl
 MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within this factor (reciprocal) or the event
                         # is likely unbalanced (INS or DEL) and would already be in the callset
 
-DEFAULT_MIN_EXP_COUNT = 3  # The default number of region expansions to try (including the initial expansion) and
-                           # finding only fwd k-mer tates after smoothing before giving up on the region.
+DEFAULT_MIN_EXP_COUNT = 1  # The default number of region expansions to try (including the initial expansion) and
+                           # finding only fwd k-mer states after smoothing before giving up on the region.
 
 DEFAULT_STATE_RUN_SMOOTH = 20  # Default value for --staterunsmooth parameter to density.py if none specified
 
@@ -131,16 +131,16 @@ def get_inv_from_record(row, df_density):
     is_rev = row['QUERY_STRAND'] == '-'
 
     return InvCall(
-        region_ref_outer=asmlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
-        region_ref_inner=asmlib.seq.region_from_string(row['RGN_REF_INNER']),
+        region_ref_outer=pavlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
+        region_ref_inner=pavlib.seq.region_from_string(row['RGN_REF_INNER']),
 
-        region_tig_outer=asmlib.seq.region_from_string(row['TIG_REGION'], is_rev=is_rev),
-        region_tig_inner=asmlib.seq.region_from_string(row['RGN_TIG_INNER'], is_rev=is_rev),
+        region_tig_outer=pavlib.seq.region_from_string(row['TIG_REGION'], is_rev=is_rev),
+        region_tig_inner=pavlib.seq.region_from_string(row['RGN_TIG_INNER'], is_rev=is_rev),
 
-        region_ref_discovery=asmlib.seq.region_from_string(row['RGN_REF_DISC']),
-        region_tig_discovery=asmlib.seq.region_from_string(row['RGN_TIG_DISC'], is_rev=is_rev),
+        region_ref_discovery=pavlib.seq.region_from_string(row['RGN_REF_DISC']),
+        region_tig_discovery=pavlib.seq.region_from_string(row['RGN_TIG_DISC'], is_rev=is_rev),
 
-        region_flag=asmlib.seq.region_from_id(row['FLAG_ID']),
+        region_flag=pavlib.seq.region_from_id(row['FLAG_ID']),
 
         df=df_density
     )
@@ -158,7 +158,7 @@ def scan_for_inv(
     :param region_flag: Flagged region to begin scanning for an inversion.
     :param ref_fa_name: Reference FASTA. Must also have a .fai file.
     :param tig_fa_name: Contig FASTA. Must also have a .fai file.
-    :param align_lift: Alignment lift-over tool (asmlib.align.AlignLift).
+    :param align_lift: Alignment lift-over tool (pavlib.align.AlignLift).
     :param k_util: K-mer utility.
     :param n_tree: Locations of n-base regions in the reference to ignore regions with N's or `None` if no N-filtering
         should be attempted. If a region is expanded into N's, then it is discarded. If defined, this object should be
@@ -198,7 +198,7 @@ def scan_for_inv(
         log
     )
 
-    df_fai = analib.ref.get_df_fai(ref_fa_name + '.fai')
+    df_fai = svpoplib.ref.get_df_fai(ref_fa_name + '.fai')
 
     region_ref = region_flag.copy()
     region_ref.expand(INITIAL_EXPAND, min_pos=0, max_end=df_fai, shift=True)
@@ -243,7 +243,7 @@ def scan_for_inv(
         _write_log('Scanning region: {}'.format(region_ref), log)
 
         ## Get k-mer density from region ##
-        pipeline_dir = os.path.dirname(os.path.dirname(asmlib.inv.__file__))
+        pipeline_dir = os.path.dirname(os.path.dirname(pavlib.inv.__file__))
 
         density_table_args = [
             'python3',
@@ -288,7 +288,7 @@ def scan_for_inv(
             ## Check inversion ##
 
             # Get run-length encoded states (list of (state, count) tuples).
-            state_rl = [record for record in asmlib.density.rl_encoder(df)]
+            state_rl = [record for record in pavlib.density.rl_encoder(df)]
             condensed_states = [record[0] for record in state_rl]  # States only
 
             if len(state_rl) == 1 and state_rl[0][0] in {0, -1} and expansion_count >= min_exp_count:
@@ -372,14 +372,14 @@ def scan_for_inv(
     state_rl_inv = [record for record in state_rl if record[0] == 2]
 
     # Find inverted repeat on left flank (upstream)
-    region_tig_outer = asmlib.seq.Region(
+    region_tig_outer = pavlib.seq.Region(
         region_tig.chrom,
         state_rl[1][2] + region_tig.pos,
         state_rl[-2][3] + region_tig.pos + k_util.k_size,
         is_rev=region_tig.is_rev
     )
 
-    region_tig_inner = asmlib.seq.Region(
+    region_tig_inner = pavlib.seq.Region(
         region_tig.chrom,
         state_rl_inv[0][2] + region_tig.pos,
         state_rl_inv[-1][3] + region_tig.pos + k_util.k_size,
@@ -475,26 +475,26 @@ def annotate_inv_dup_mers(
     """
 
     # Get regions for duplications - ref
-    region_dup_ref_up = asmlib.seq.Region(
+    region_dup_ref_up = pavlib.seq.Region(
         region_ref_outer.chrom,
         region_ref_outer.pos,
         region_ref_inner.pos
     )
 
-    region_dup_ref_dn = asmlib.seq.Region(
+    region_dup_ref_dn = pavlib.seq.Region(
         region_ref_outer.chrom,
         region_ref_inner.end,
         region_ref_outer.end
     )
 
     # Get regions for duplications - tig
-    region_dup_tig_up = asmlib.seq.Region(
+    region_dup_tig_up = pavlib.seq.Region(
         region_tig_outer.chrom,
         region_tig_outer.pos,
         region_tig_inner.pos
     )
 
-    region_dup_tig_dn = asmlib.seq.Region(
+    region_dup_tig_dn = pavlib.seq.Region(
         region_tig_outer.chrom,
         region_tig_inner.end,
         region_tig_outer.end
@@ -502,11 +502,11 @@ def annotate_inv_dup_mers(
 
     # Get reference k-mer sets (canonical k-mers)
     ref_set_up = {
-        k_util.canonical_complement(kmer) for kmer in asmlib.seq.ref_kmers(region_dup_ref_up, ref_fa, k_util).keys()
+        k_util.canonical_complement(kmer) for kmer in pavlib.seq.ref_kmers(region_dup_ref_up, ref_fa, k_util).keys()
     }
 
     ref_set_dn = {
-        k_util.canonical_complement(kmer) for kmer in asmlib.seq.ref_kmers(region_dup_ref_dn, ref_fa, k_util).keys()
+        k_util.canonical_complement(kmer) for kmer in pavlib.seq.ref_kmers(region_dup_ref_dn, ref_fa, k_util).keys()
     }
 
     # Set canonical k-mers in df

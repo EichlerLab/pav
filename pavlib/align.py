@@ -6,7 +6,7 @@ import collections
 import intervaltree
 import numpy as np
 
-import asmlib.seq
+import pavlib.seq
 
 
 _INT_STR_SET = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
@@ -903,7 +903,7 @@ class AlignLift:
             return None
 
         # Return
-        return asmlib.seq.Region(
+        return pavlib.seq.Region(
             sub_pos[0], sub_pos[1], sub_end[1],
             is_rev=False,
             pos_min=sub_pos[3], pos_max=sub_pos[4],
@@ -932,7 +932,7 @@ class AlignLift:
             return None
 
         # Return
-        return asmlib.seq.Region(
+        return pavlib.seq.Region(
             query_pos[0], query_pos[1], query_end[1],
             is_rev=query_pos[2],
             pos_min=query_pos[3], pos_max=query_pos[4],
@@ -1249,7 +1249,7 @@ def count_cigar(row):
     clip_s_r = 0
     clip_h_r = 0
 
-    cigar_list = list(asmlib.align.cigar_str_to_tuples(row))
+    cigar_list = list(pavlib.align.cigar_str_to_tuples(row))
 
     cigar_n = len(cigar_list)
 

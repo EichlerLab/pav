@@ -16,13 +16,6 @@ def _align_map_cpu(wildcards, config):
 
     return 12
 
-def _align_map_mem(wildcards, config):
-
-    if 'map_mem' in config:
-        return config['map_mem']
-
-    return '3G' if config.get('aligner', 'minimap2') != 'lra' else '4G'
-
 
 #
 # Alignment generation and processing
@@ -34,11 +27,11 @@ def _align_map_mem(wildcards, config):
 rule align_cut_tig_overlap:
     input:
         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz',
-        tig_fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     params:
-        chrom_cluster=asmlib.util.as_bool(config.get('chrom_cluster', False)),  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
+        chrom_cluster=pavlib.util.as_bool(config.get('chrom_cluster', False)),  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
         min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000))  # Minimum aligned tig length
     run:
 
@@ -64,7 +57,7 @@ rule align_cut_tig_overlap:
         # Find max cluster match for each chromosome
         if params.chrom_cluster:
             df['CLUSTER'] = df['QUERY_ID'].apply(lambda val: val.split('_')[0])
-            max_cluster = {chrom: asmlib.align.get_max_cluster(df, chrom) for chrom in set(df['#CHROM'])}
+            max_cluster = {chrom: pavlib.align.get_max_cluster(df, chrom) for chrom in set(df['#CHROM'])}
 
             df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER'] == max_cluster[row['#CHROM']], axis=1)
             df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER_MATCH'] if max_cluster[row['#CHROM']] is not None else np.nan, axis=1)
@@ -117,7 +110,7 @@ rule align_cut_tig_overlap:
 
                     else:
 
-                        record_l, record_r = asmlib.align.trim_alignments(
+                        record_l, record_r = pavlib.align.trim_alignments(
                             df.loc[index_l], df.loc[index_r], 'query',
                             rev_l=not df.loc[index_l, 'REV'],
                             rev_r=df.loc[index_r, 'REV']
@@ -197,7 +190,7 @@ rule align_cut_tig_overlap:
 
                     else:
 
-                        record_l, record_r = asmlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
+                        record_l, record_r = pavlib.align.trim_alignments(df.loc[index_l], df.loc[index_r], 'subject')
 
                         if record_l is not None and record_r is not None:
 
@@ -233,9 +226,9 @@ rule align_cut_tig_overlap:
         del(df['SUB_LEN'])
 
         # Check sanity
-        df_tig_fai = analib.ref.get_df_fai(input.tig_fai)
+        df_tig_fai = svpoplib.ref.get_df_fai(input.tig_fai)
 
-        df.apply(asmlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+        df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -247,7 +240,7 @@ rule align_cut_tig_overlap:
 rule align_get_read_bed:
     input:
         sam='temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz',
-        tig_fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz',
         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz'
@@ -278,7 +271,7 @@ rule align_get_read_bed:
                 pass
 
         # Read FAI
-        df_tig_fai = analib.ref.get_df_fai(input.tig_fai)
+        df_tig_fai = svpoplib.ref.get_df_fai(input.tig_fai)
         df_tig_fai.index = df_tig_fai.index.astype(str)
 
         # Get records
@@ -381,7 +374,7 @@ rule align_get_read_bed:
         df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
 
         # Check sanity
-        df.apply(asmlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+        df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
 
         # Write SAM headers
         with gzip.open(input.sam, 'rt') as in_file:
@@ -414,14 +407,13 @@ rule align_get_read_bed:
 rule align_map:
     input:
         ref_fa='data/ref/ref.fa.gz',
-        fa='results/{asm_name}/align/contigs_{hap}.fa.gz' if config.get('aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
+        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz' if config.get('aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
         gli='data/ref/ref.fa.gz.gli' if config.get('aligner', 'minimap2') == 'lra' else [],
         mmi='data/ref/ref.fa.gz.mmi' if config.get('aligner', 'minimap2') == 'lra' else []
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:
-        cpu=lambda wildcards: _align_map_cpu(wildcards, config),
-        mem=lambda wildcards: _align_map_mem(wildcards, config)
+        cpu=lambda wildcards: _align_map_cpu(wildcards, config)
     run:
 
         # Get aligner
@@ -464,7 +456,7 @@ rule align_map:
 # Uncompress contig for aligners that cannot read gzipped FASTAs.
 rule align_uncompress_tig:
     input:
-        fa='results/{asm_name}/align/contigs_{hap}.fa.gz'
+        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         fa='temp/{asm_name}/align/contigs_{hap}.fa'
     run:
@@ -484,12 +476,12 @@ rule align_get_tig_fa:
     input:
         fa=align_input_fasta
     output:
-        fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
-        fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
+        fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai')
     run:
 
         # Copy FASTA to FA/GZ
-        asmlib.seq.copy_fa_to_gz(input.fa, output.fa)
+        pavlib.seq.copy_fa_to_gz(input.fa, output.fa)
 
         # Index
         if os.stat(output.fa).st_size > 0:

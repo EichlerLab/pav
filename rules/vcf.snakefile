@@ -116,11 +116,11 @@ rule vcf_write_vcf:
 
                 # REF
                 if 'REF' not in df.columns:
-                    df['REF'] = list(analib.vcf.ref_base(df, config['reference']))
+                    df['REF'] = list(svpoplib.vcf.ref_base(df, config['reference']))
 
                 if svtype == 'inv' and not symbolic_alt:
                     df_ref_base = df['REF']
-                    df['REF'] = df_ref_base + analib.ref.get_ref_region(df, config['reference']).apply(lambda val: val.upper())
+                    df['REF'] = df_ref_base + svpoplib.ref.get_ref_region(df, config['reference']).apply(lambda val: val.upper())
 
                 # ALT
                 if vartype != 'snv':
@@ -199,13 +199,13 @@ rule vcf_write_vcf:
         df_ref = pd.read_csv(input.ref_tsv, sep='\t')
 
         with Bio.bgzf.open(output.vcf, 'wt') as out_file:
-            for line in analib.vcf.header_list(
+            for line in svpoplib.vcf.header_list(
                 df_ref,
                 info_header_list,
                 format_header_list,
                 alt_header_list,
                 filter_header_list,
-                variant_source='PAV {}'.format(asmlib.constants.get_version_string()),
+                variant_source='PAV {}'.format(pavlib.constants.get_version_string()),
                 ref_file_name=os.path.basename(config.get('reference'))
             ):
                 out_file.write(line)

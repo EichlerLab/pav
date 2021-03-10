@@ -8,11 +8,11 @@ Call alignment-truncating events (large SVs).
 rule call_merge_lg:
     input:
         bed=expand(
-            'temp/{{asm_name}}/lg_sv/sv_{{svtype}}_{{hap}}_{batch}.bed.gz',
+            'temp/{{asm_name}}/lg_sv/batch/sv_{{svtype}}_{{hap}}_{batch}.bed.gz',
             batch=range(config.get('lg_batch_count', 10))
         )
     output:
-        bed='results/{asm_name}/lg_sv/sv_{svtype}_{hap}.bed.gz'
+        bed=temp('temp/{asm_name}/lg_sv/sv_{svtype}_{hap}.bed.gz')
     run:
 
         pd.concat(
@@ -30,28 +30,27 @@ rule call_lg_discover:
     input:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
         tsv_group='temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz',
-        fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
-        fai='results/{asm_name}/align/contigs_{hap}.fa.gz.fai',
+        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
+        fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai',
         bed_n='data/ref/n_gap.bed.gz'
     output:
-        bed_ins=temp('temp/{asm_name}/lg_sv/sv_ins_{hap}_{batch}.bed.gz'),
-        bed_del=temp('temp/{asm_name}/lg_sv/sv_del_{hap}_{batch}.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/lg_sv/sv_inv_{hap}_{batch}.bed.gz')
+        bed_ins=temp('temp/{asm_name}/lg_sv/batch/sv_ins_{hap}_{batch}.bed.gz'),
+        bed_del=temp('temp/{asm_name}/lg_sv/batch/sv_del_{hap}_{batch}.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/lg_sv/batch/sv_inv_{hap}_{batch}.bed.gz')
     log:
-        log='results/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
+        log='log/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
     params:
         k_size=int(config.get('inv_k_size', 31)),
-        inv_threads=int(config.get('inv_threads_lg', config.get('inv_threads', 12))),
-        inv_mem=str(config.get('inv_mem', '4G')),
+        inv_threads_lg=int(config.get('inv_threads_lg', 12)),
         inv_region_limit=config.get('inv_region_limit', None)
     run:
 
         # Get SRS (state-run-smooth)
-        srs_tree = asmlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
+        srs_tree = pavlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
 
         # Read
         df = pd.read_csv(input.bed, sep='\t')
-        df_tig_fai = analib.ref.get_df_fai(input.fai)
+        df_tig_fai = svpoplib.ref.get_df_fai(input.fai)
 
         # Subset to alignment records in this batch
         df_group = pd.read_csv(input.tsv_group, sep='\t')
@@ -71,17 +70,17 @@ rule call_lg_discover:
             n_tree[row['#CHROM']][row['POS']:row['END']] = True
 
         # Make density table output directory
-        density_out_dir = 'results/{asm_name}/lg_sv/density_table'.format(**wildcards)
+        density_out_dir = 'results/{asm_name}/inv_caller/density_table_lg'.format(**wildcards)
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get large events
         with open(log.log, 'w') as log_file:
-            df_ins, df_del, df_inv = asmlib.lgsv.scan_for_events(
+            df_ins, df_del, df_inv = pavlib.lgsv.scan_for_events(
                 df, df_tig_fai, wildcards.hap, REF_FA, input.fa,
                 k_size=params.k_size,
                 n_tree=n_tree,
                 srs_tree=srs_tree,
-                threads=params.inv_threads,
+                threads=params.inv_threads_lg,
                 log=log_file,
                 density_out_dir=density_out_dir,
                 max_region_size=params.inv_region_limit

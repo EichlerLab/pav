@@ -8,8 +8,8 @@ import os
 import pandas as pd
 import sys
 
-import asmlib.seq
-import asmlib.inv
+import pavlib.seq
+import pavlib.inv
 import kanapy.util.kmer
 
 # Default parameters
@@ -59,7 +59,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     df['QRY_LEN'] = df['END'] - df['POS']
 
     # Get liftover tool and k-mer util
-    align_lift = asmlib.align.AlignLift(df, df_tig_fai)
+    align_lift = pavlib.align.AlignLift(df, df_tig_fai)
     k_util = kanapy.util.kmer.KmerUtil(k_size)
 
     # with RefTigManager(ref_fa_name, tig_fa_name) as fa_pair:
@@ -126,8 +126,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             log.write('DEL: {}\n'.format(sv_id))
                             log.flush()
 
-                            seq = asmlib.seq.region_seq_fasta(
-                                asmlib.seq.Region(chrom, row1['END'], row2['POS']),
+                            seq = pavlib.seq.region_seq_fasta(
+                                pavlib.seq.Region(chrom, row1['END'], row2['POS']),
                                 ref_fa_name
                             )
 
@@ -161,9 +161,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                         elif dist_ref < 50:
                             # Call INS
 
-                            tig_region = asmlib.seq.Region(tig_id, query_pos, query_end, is_rev=is_rev)
+                            tig_region = pavlib.seq.Region(tig_id, query_pos, query_end, is_rev=is_rev)
 
-                            seq = asmlib.seq.region_seq_fasta(
+                            seq = pavlib.seq.region_seq_fasta(
                                 tig_region,
                                 tig_fa_name,
                                 rev_compl=is_rev
@@ -202,10 +202,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                         else:
 
-                            region_flag = asmlib.seq.Region(chrom, row1['END'], row2['POS'], is_rev=row1['REV'])
+                            region_flag = pavlib.seq.Region(chrom, row1['END'], row2['POS'], is_rev=row1['REV'])
 
                             # Try INV
-                            inv_call = asmlib.inv.scan_for_inv(
+                            inv_call = pavlib.inv.scan_for_inv(
                                 region_flag,
                                 ref_fa_name, tig_fa_name,
                                 align_lift, k_util,
@@ -221,7 +221,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 log.write('INV (2-tig): {}\n'.format(inv_call))
                                 log.flush()
 
-                                seq = asmlib.seq.region_seq_fasta(
+                                seq = pavlib.seq.region_seq_fasta(
                                     inv_call.region_tig_outer,
                                     tig_fa_name,
                                     rev_compl=is_rev
@@ -256,7 +256,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                         '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                         row1['CLUSTER_MATCH'],
 
-                                        asmlib.inv.CALL_SOURCE,
+                                        pavlib.inv.CALL_SOURCE,
 
                                         seq
                                     ],
@@ -301,10 +301,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                     if row3['REV'] == row1['REV']:  # Already known: row1['REV'] != row2['REV']
 
                         # Find inversion in 3-part alignment with middle in opposite orientation as flanks
-                        region_flag = asmlib.seq.Region(chrom, row1['END'], row3['POS'], is_rev=row1['REV'])
+                        region_flag = pavlib.seq.Region(chrom, row1['END'], row3['POS'], is_rev=row1['REV'])
 
                         # Try INV
-                        inv_call = asmlib.inv.scan_for_inv(
+                        inv_call = pavlib.inv.scan_for_inv(
                             region_flag,
                             ref_fa_name, tig_fa_name,
                             align_lift, k_util,
@@ -318,10 +318,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                         # Recover inversion if alignment supports and density fails.
                         if inv_call is None and subindex2 == subindex1 + 1 and subindex3 == subindex1 + 2:
-                            region_ref = asmlib.seq.Region(chrom, row2['POS'], row2['END'])
-                            region_tig = asmlib.seq.Region(row2['QUERY_ID'], row2['QUERY_TIG_POS'], row2['QUERY_TIG_END'])
+                            region_ref = pavlib.seq.Region(chrom, row2['POS'], row2['END'])
+                            region_tig = pavlib.seq.Region(row2['QUERY_ID'], row2['QUERY_TIG_POS'], row2['QUERY_TIG_END'])
 
-                            inv_call = asmlib.inv.InvCall(
+                            inv_call = pavlib.inv.InvCall(
                                 region_ref, region_ref,
                                 region_tig, region_tig,
                                 region_ref, region_tig,
@@ -338,7 +338,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             log.write('INV (3-tig): {}\n'.format(inv_call))
                             log.flush()
 
-                            seq = asmlib.seq.region_seq_fasta(
+                            seq = pavlib.seq.region_seq_fasta(
                                 inv_call.region_tig_outer,
                                 tig_fa_name,
                                 rev_compl=is_rev
@@ -373,7 +373,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     '{},{},{}'.format(row1['INDEX'], row2['INDEX'], row3['INDEX']),
                                     row1['CLUSTER_MATCH'],
 
-                                    asmlib.inv.CALL_SOURCE,
+                                    pavlib.inv.CALL_SOURCE,
 
                                     seq
                                 ],

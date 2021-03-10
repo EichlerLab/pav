@@ -16,7 +16,7 @@ plotted with rules in this file. These may be useful for reporting results or tr
 # are in reference orientation (pointing up) or inverted orientation (pointing down).
 rule figures_inv_dot_density:
     input:
-        tig_fa='results/{asm_name}/align/contigs_{hap}.fa.gz',
+        tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         bed_inv='results/{asm_name}/{flag_source}/sv_inv_{hap}.bed.gz',
         bed_density='results/{asm_name}/{flag_source}/density_table/density_{inv_id}_{hap}.tsv.gz'
     output:
@@ -40,14 +40,14 @@ rule figures_inv_dot_density:
         df_density = pd.read_csv(input.bed_density, sep='\t')
 
         # Get inversion call
-        inv_call = asmlib.inv.get_inv_from_record(inv_row, df_density)
+        inv_call = pavlib.inv.get_inv_from_record(inv_row, df_density)
 
         # Make plots
-        fig_dot = asmlib.plot.dotplot_inv_call(
+        fig_dot = pavlib.plot.dotplot_inv_call(
             inv_call, REF_FA, seq_tig=inv_row['SEQ']
         )
 
-        fig_density = asmlib.plot.kmer_density_plot(
+        fig_density = pavlib.plot.kmer_density_plot(
             inv_call, hap=wildcards.hap, flank_whiskers=True
         )
 

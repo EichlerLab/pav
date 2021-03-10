@@ -19,7 +19,7 @@ PIPELINE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(PIPELINE_DIR)
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep'))
 
-import asmlib
+import pavlib
 import analib
 import kanapy
 
@@ -488,14 +488,14 @@ if __name__ == '__main__':
 
     ### Get regions and utilities ###
 
-    region_ref = asmlib.seq.region_from_string(args.refregion)
-    region_tig = asmlib.seq.region_from_string(args.tigregion)
+    region_ref = pavlib.seq.region_from_string(args.refregion)
+    region_tig = pavlib.seq.region_from_string(args.tigregion)
 
     k_util = kanapy.util.kmer.KmerUtil(args.k)
 
 
     ### Get reference k-mer counts ###
-    ref_kmer_count = asmlib.seq.ref_kmers(region_ref, args.ref, k_util)
+    ref_kmer_count = pavlib.seq.ref_kmers(region_ref, args.ref, k_util)
 
     if ref_kmer_count is None or len(ref_kmer_count) == 0:
         raise RuntimeError(f'No reference k-mers for region {region_ref}')
@@ -520,7 +520,7 @@ if __name__ == '__main__':
 
     ## Get contig k-mers as list ##
 
-    seq_tig = asmlib.seq.region_seq_fasta(region_tig, args.tig)
+    seq_tig = pavlib.seq.region_seq_fasta(region_tig, args.tig)
 
     tig_mer_stream = list(kanapy.util.kmer.stream(seq_tig, k_util, index=True))
 
