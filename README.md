@@ -222,8 +222,9 @@ These parameters are tunable:
 * ro_min [0.5; float]: Minimim reciprocal overlap and reciprocal size overlap.
 * offset_max [200; float]: Maximum offset.
 * merge_threads [12; int]: Number of threads for each merging step.
-* merge_by_chrom [False; bool]: If True, do merging by chromosome, then concatenate results. This causes PAV to spaw
-  more smaller jobs, which may significantly improve parallel performance when distributed over a cluster.
+* merge_by_chrom [True; bool]: If True, do merging by chromosome, then concatenate results. This causes PAV to spaw
+  more smaller jobs, which may significantly improve parallel performance when distributed over a cluster. This
+  parameter should not impact results.
 
 
 ### Inversions

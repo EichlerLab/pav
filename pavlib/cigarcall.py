@@ -134,7 +134,11 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
                 # pos_tig_insdel to fwd contig if alignment is reversed
                 if is_rev:
-                    pos_tig_insdel = seq_tig_len - pos_tig_insdel - 1
+                    end_tig_insdel = seq_tig_len - pos_tig_insdel
+                    pos_tig_insdel = end_tig_insdel - oplen
+
+                else:
+                    end_tig_insdel = pos_tig_insdel + oplen
 
                 # Add variant
                 df_insdel_list.append(pd.Series(
@@ -142,7 +146,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         seq_ref_name, pos_ref, pos_ref + 1,
                         f'{seq_ref_name}-{pos_ref + 1}-INS-{oplen}', 'INS', oplen,
                         hap,
-                        f'{seq_tig_name}:{pos_tig_insdel + 1}-{pos_tig_insdel + oplen}', strand,
+                        f'{seq_tig_name}:{pos_tig_insdel + 1}-{end_tig_insdel}', strand,
                         0,
                         align_index, cluster_match,
                         CALL_SOURCE,
@@ -175,7 +179,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
                 # pos_tig_insdel to fwd contig if alignment is reversed
                 if is_rev:
-                    pos_tig_insdel = seq_tig_len - pos_tig_insdel - 1
+                    pos_tig_insdel = seq_tig_len - pos_tig_insdel
 
                 # Add variant
                 df_insdel_list.append(pd.Series(

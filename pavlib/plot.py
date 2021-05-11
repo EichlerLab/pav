@@ -174,6 +174,7 @@ def kmer_density_plot(inv_call, hap=None, width=7, height=4, dpi=300, flank_whis
 
 def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300, flank_whiskers=True):
     """
+    Base k-mer density plot using a k-mer density DataFrame.
 
     :param df: Inversion call DataFrame.
     :param region_tig: Contig region plot is generated over.
@@ -182,7 +183,8 @@ def kmer_density_plot_base(df, region_tig, width=7, height=4, dpi=300, flank_whi
     :param dpi: Figure DPI.
     :param flank_whiskers: If `True`, show whiskers above or below points indicating if they match the upstream or
         downstream flanking inverted duplication.
-    :return:
+
+    :return: Plot figure object.
     """
     
     # Make figure

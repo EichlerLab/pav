@@ -5,9 +5,12 @@ Routines for handling alignments.
 import collections
 import intervaltree
 import numpy as np
+import pandas as pd
+import pysam
 
 import pavlib.seq
 
+import svpoplib.ref
 
 _INT_STR_SET = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 _CIGAR_OP_SET = {'M', 'I', 'D', 'N', 'S', 'H', 'P', '=', 'X'}
@@ -26,7 +29,225 @@ TC_CLIPS_BP = 9
 TC_CLIPH_BP = 10
 
 
-def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
+def trim_alignments(df, min_trim_tig_len, tig_fai):
+    """
+    Do alignment trimming from prepared alignment BED file. This BED contains information about reference and
+    contig coordinates mapped, CIGAR string and flags.
+
+    :param df: Alignment dataframe.
+    :param min_trim_tig_len: Minimum alignment record length. Alignment records smaller will be discarded.
+    :param tig_fai: FAI file from the contig FASTA that was mapped. Used for an alignment sanity check after trimming.
+
+    :return: Trimmed alignmentns as an alignment DataFrame. Same format as `df` with columns added describing the
+        number of reference and contig bases that were trimmed. Dropped records (mapped inside another or too shart) are
+        removed.
+    """
+
+    # Add fields for the number of bases that are removed from each end
+    df['CUT_REF_L'] = 0
+    df['CUT_REF_R'] = 0
+    df['CUT_TIG_L'] = 0
+    df['CUT_TIG_R'] = 0
+
+    # Sort by contig alignment length
+    df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+    df['SUB_LEN'] = df['END'] - df['POS']
+
+    df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+
+    df.reset_index(inplace=True, drop=True)
+
+    # Remove short alignments
+    for index in df.index:
+        if df.loc[index, 'QUERY_TIG_END'] - df.loc[index, 'QUERY_TIG_POS'] < min_trim_tig_len:
+            df.loc[index, 'INDEX'] = -1
+
+    # Resolve overlapping contig regions aligned (one contig region aligned more than once)
+    iter_index_l = 0
+    index_max = df.shape[0]
+
+    while iter_index_l < index_max:
+        iter_index_r = iter_index_l + 1
+
+        while iter_index_r < index_max and df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID']:
+
+            # Skip if one record was already removed
+            if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                iter_index_r += 1
+                continue
+
+            # Get indices ordered by contig placement
+            if df.loc[iter_index_l, 'QUERY_TIG_POS'] <= df.loc[iter_index_r, 'QUERY_TIG_POS']:
+                index_l = iter_index_l
+                index_r = iter_index_r
+            else:
+                index_l = iter_index_r
+                index_r = iter_index_l
+
+            # Determine if contigs are reverse-oriented with respect to the reference
+            rev_orient = (
+                df.loc[index_l, '#CHROM'] == df.loc[index_r, '#CHROM']
+            ) & (
+                df.loc[index_l, 'REV'] == df.loc[index_r, 'REV']
+            ) & (
+                df.loc[index_l, 'POS'] > df.loc[index_r, 'POS']
+            )
+
+            if rev_orient:
+                index_tmp = index_l
+                index_l = index_r
+                index_r = index_tmp
+
+                del(index_tmp)
+
+                rev_l = df.loc[index_l, 'REV']
+                rev_r = not df.loc[index_l, 'REV']
+
+            else:
+                rev_l = not df.loc[index_l, 'REV']
+                rev_r = df.loc[index_l, 'REV']
+
+            # Check for overlaps
+            if df.loc[index_r, 'QUERY_TIG_POS'] < df.loc[index_l, 'QUERY_TIG_END']:
+                # Found overlapping records
+                # print('Tig Overlap: {}-{} ({}:{}-{},{} vs {}:{}-{},{}) [iter {}, {}]'.format(
+                #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+                #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_TIG_POS'], df.loc[index_l, 'QUERY_TIG_END'], ('-' if df.loc[index_l, 'REV'] else '+'),
+                #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_TIG_POS'], df.loc[index_r, 'QUERY_TIG_END'], ('-' if df.loc[index_r, 'REV'] else '+'),
+                #     iter_index_l, iter_index_r
+                # ))
+
+                # Check for record fully contained within another
+                if df.loc[index_r, 'QUERY_TIG_END'] <= df.loc[index_l, 'QUERY_TIG_END']:
+                    # print('\t* Fully contained')
+
+                    df.loc[index_r, 'INDEX'] = -1
+
+                else:
+
+                    # Trim record
+                    record_l, record_r = trim_alignment_record(
+                        df.loc[index_l], df.loc[index_r], 'query',
+                        rev_l=rev_l,
+                        rev_r=rev_r
+                    )
+
+                    if record_l is not None and record_r is not None:
+
+                        # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                        if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                            df.loc[index_l] = record_l
+                        else:
+                            df.loc[index_l, 'INDEX'] = -1
+
+                        if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                            df.loc[index_r] = record_r
+                        else:
+                            df.loc[index_r, 'INDEX'] = -1
+
+                    # print('\t* Trimmed')
+
+            # Next r record
+            iter_index_r += 1
+
+        # Next l record
+        iter_index_l += 1
+
+    # Remove discarded records and re-sort
+
+    df = df.loc[df['INDEX'] >= 0]
+
+    df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+
+    df.sort_values(['#CHROM', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+
+    df.reset_index(inplace=True, drop=True)
+
+    # Resolve overlapping contig alignments relative to the reference
+    iter_index_l = 0
+    index_max = df.shape[0]
+
+    while iter_index_l < index_max:
+        iter_index_r = iter_index_l + 1
+
+        while (
+                iter_index_r < index_max and
+                df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
+        ):
+
+            # Skip if one record was already removed
+            if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                iter_index_r += 1
+                continue
+
+            # Get indices ordered by contig placement
+            if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
+                index_l = iter_index_l
+                index_r = iter_index_r
+            else:
+                index_l = iter_index_r
+                index_r = iter_index_l
+
+            # Check for overlaps
+            if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
+                # Found overlapping records
+                # print('Ref Overlap: {}-{} ({}:{}-{},{} vs {}:{}-{},{}) [iter {}, {}]'.format(
+                #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
+                #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_TIG_POS'], df.loc[index_l, 'QUERY_TIG_END'], ('-' if df.loc[index_l, 'REV'] else '+'),
+                #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_TIG_POS'], df.loc[index_r, 'QUERY_TIG_END'], ('-' if df.loc[index_r, 'REV'] else '+'),
+                #     iter_index_l, iter_index_r
+                # ))
+
+                # Check for record fully contained within another
+                if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
+                    # print('\t* Fully contained')
+
+                    df.loc[index_r, 'INDEX'] = -1
+
+                else:
+
+                    record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'subject')
+
+                    if record_l is not None and record_r is not None:
+
+                        # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                        if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                            df.loc[index_l] = record_l
+                        else:
+                            df.loc[index_l, 'INDEX'] = -1
+
+                        if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                            df.loc[index_r] = record_r
+                        else:
+                            df.loc[index_r, 'INDEX'] = -1
+
+            # Next r record
+            iter_index_r += 1
+
+        # Next l record
+        iter_index_l += 1
+
+    # Clean and re-sort
+    df = df.loc[df['INDEX'] >= 0]
+
+    df = df.loc[(df['END'] - df['POS']) > 0]  # Should never occur, but don't allow 0-length records
+    df = df.loc[(df['QUERY_END'] - df['QUERY_POS']) > 0]
+
+    df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
+
+    del(df['QUERY_LEN'])
+    del(df['SUB_LEN'])
+
+    # Check sanity
+    df_tig_fai = svpoplib.ref.get_df_fai(tig_fai)
+
+    df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+
+    # Return trimmed alignments
+    return df
+
+
+def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     """
     Trim ends of overlapping alignments until ends no longer overlap. In repeat-mediated events, aligners (e.g.
     minimap2) will align the same parts of a contig to both reference copies (e.g. large DEL) or two parts of a contig
@@ -75,14 +296,17 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     # Get number of bases to trim. Assumes records overlap and are oriented in
     if match_coord == 'query':
 
-        if record_l['QUERY_TIG_POS'] > record_r['QUERY_TIG_POS']:
-            raise RuntimeError('Contigs are incorrectly ordered in query space: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
-                record_l['QUERY_ID'], record_l['#CHROM'], record_l['POS'],
-                record_r['QUERY_ID'], record_r['#CHROM'], record_r['POS'],
-                match_coord
-            ))
+        if record_l['QUERY_TIG_POS'] < record_r['QUERY_TIG_POS']:
+            diff_bp = record_l['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']
 
-        diff_bp = record_l['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']
+        else:
+            #raise RuntimeError('Contigs are incorrectly ordered in query space: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
+            #    record_l['QUERY_ID'], record_l['#CHROM'], record_l['POS'],
+            #    record_r['QUERY_ID'], record_r['#CHROM'], record_r['POS'],
+            #    match_coord
+            #))
+
+            diff_bp = record_r['QUERY_TIG_END'] - record_l['QUERY_TIG_POS']
 
         if diff_bp <= 0:
             raise RuntimeError('Cannot trim to negative distance {}: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
@@ -142,13 +366,13 @@ def trim_alignments(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     trim_l = 0
     trim_r = 0
 
-    if residual_bp > 0 and cut_l[TC_OP_CODE] == 'X':  # Left mismatch
-        trim_l += np.min([residual_bp, cut_l[TC_OP_LEN] - 1])
-        residual_bp -= trim_l
-
     if residual_bp > 0 and cut_r[TC_OP_CODE] == 'X':  # Right mismatch
         trim_r += np.min([residual_bp, cut_r[TC_OP_LEN] - 1])
         residual_bp -= trim_r
+
+    if residual_bp > 0 and cut_l[TC_OP_CODE] == 'X':  # Left mismatch
+        trim_l += np.min([residual_bp, cut_l[TC_OP_LEN] - 1])
+        residual_bp -= trim_l
 
     if residual_bp > 0 and cut_l[TC_OP_CODE] == '=':  # Left match
         trim_l += np.min([residual_bp, cut_l[TC_OP_LEN] - 1])
@@ -1336,3 +1560,140 @@ def count_cigar(row):
         index += 1
 
     return ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r
+
+
+def get_align_bed(align_file, df_tig_fai, hap, chrom_cluster=False):
+    """
+    Read alignment file as a BED file that PAV can process.
+
+    :param align_file: SAM, CRAM, BAM, anything `pysam.AlignmentFile` can read.
+    :param df_tig_fai: Pandas Series with contig names as keys and contig lengths as values. Index should be cast as
+        type str if contig names are numeric.
+    :param hap: Haplotype assinment for this alignment file (h1 or h2).
+    :param chrom_cluster: If contigs were grouped by chromosome before aligning (PGAS with Strand-seq clustering does
+        this), then assign `CLUSTER_MATCH` to alignment records if the clusters can be assigned to chromosomes and
+        this record's cluster matches the aligned chromosome. PAV assumes cluster names are everything before the
+        first underscore ("_") in the contig name. If `False`, `CLUSTER_MATCH` is set to `np.nan`. If a cluster cannot
+        be assigned to a chromosome, `CLUSTER_MATCH` is `np.nan` for those records.
+
+    :return: BED file of alignment records.
+    """
+
+    # Get records
+    clip_l = 0
+    clip_r = 0
+
+    record_list = list()
+
+    align_index = 0
+
+    with pysam.AlignmentFile(align_file, 'rb') as in_file:
+        for record in in_file:
+
+            # Skipped unmapped reads
+            if record.is_unmapped:
+                continue
+
+            # Get length for computing real tig positions for rev-complemented records
+            tig_len = df_tig_fai[record.query_name]
+
+            # Read tags
+            tags = dict(record.get_tags())
+
+            # Get clipping
+            cigar_tuples = record.cigartuples
+
+            l_index = 0 if cigar_tuples[0][0] != 5 else 1
+            r_index = -1 if cigar_tuples[-1][0] != 5 else -2
+
+            clip_l = cigar_tuples[l_index][1] if cigar_tuples[l_index][0] == 4 else 0
+            clip_r = cigar_tuples[r_index][1] if cigar_tuples[r_index][0] == 4 else 0
+
+            # Disallow alignment match (M) in CIGAR (requires =X for base match/mismatch)
+            if 'M' in record.cigarstring:
+                raise RuntimeError((
+                    'Found alignment match CIGAR operation (M) for record {} (Start = {}:{}): '
+                    'Alignment requires CIGAR base-level match/mismatch (=X)'
+                ).format(record.query_name, record.reference_name, record.reference_start))
+
+            # Save record
+            record_list.append(pd.Series(
+                [
+                    record.reference_name,
+                    record.reference_start,
+                    record.reference_end,
+
+                    align_index,
+
+                    record.query_name,
+                    record.query_alignment_start,
+                    record.query_alignment_end,
+
+                    tig_len - record.query_alignment_end if record.is_reverse else record.query_alignment_start,
+                    tig_len - record.query_alignment_start if record.is_reverse else record.query_alignment_end,
+
+                    tags['RG'] if 'RG' in tags else 'NA',
+                    tags['AO'] if 'AO' in tags else 'NA',
+
+                    record.mapping_quality,
+
+                    record.is_reverse,
+                    '0x{:04x}'.format(record.flag),
+
+                    hap,
+                    record.cigarstring
+                ],
+                index=[
+                    '#CHROM', 'POS', 'END',
+                    'INDEX',
+                    'QUERY_ID', 'QUERY_POS', 'QUERY_END',
+                    'QUERY_TIG_POS', 'QUERY_TIG_END',
+                    'RG', 'AO',
+                    'MAPQ',
+                    'REV', 'FLAGS', 'HAP',
+                    'CIGAR'
+                ]
+            ))
+
+            # Increment align_index
+            align_index += 1
+
+    # Merge records
+    if len(record_list) > 0:
+        df = pd.concat(record_list, axis=1).T
+    else:
+        df = pd.DataFrame(
+            [],
+            columns=[
+                '#CHROM', 'POS', 'END',
+                'INDEX',
+                'QUERY_ID', 'QUERY_POS', 'QUERY_END',
+                'QUERY_TIG_POS', 'QUERY_TIG_END',
+                'RG', 'AO',
+                'MAPQ',
+                'REV', 'FLAGS', 'HAP',
+                'CIGAR'
+            ]
+        )
+
+    df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
+
+    # Check sanity
+    df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+
+    # Find max cluster match for each chromosome
+    if chrom_cluster:
+        df['SUB_LEN'] = df['END'] - df['POS']
+
+        df['CLUSTER'] = df['QUERY_ID'].apply(lambda val: val.split('_')[0])
+        max_cluster = {chrom: pavlib.align.get_max_cluster(df, chrom) for chrom in set(df['#CHROM'])}
+
+        df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER'] == max_cluster[row['#CHROM']], axis=1)
+        df['CLUSTER_MATCH'] = df.apply(lambda row: row['CLUSTER_MATCH'] if max_cluster[row['#CHROM']] is not None else np.nan, axis=1)
+
+        del(df['SUB_LEN'])
+    else:
+        df['CLUSTER_MATCH'] = np.nan
+
+    # Return BED
+    return df

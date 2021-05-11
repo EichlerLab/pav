@@ -121,7 +121,7 @@ rule call_merge_haplotypes:
             'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'.format(
                 asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, chrom=chrom
             ) for chrom in sorted(svpoplib.ref.get_df_fai(config['reference'] + '.fai').index)
-        ] if pavlib.util.as_bool(config.get('merge_by_chrom', False)) else []
+        ] if pavlib.util.as_bool(config.get('merge_by_chrom', True)) else []
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     params:
@@ -130,7 +130,7 @@ rule call_merge_haplotypes:
         merge_threads=int(config.get('merge_threads', 12))
     run:
 
-        if pavlib.util.as_bool(config.get('merge_by_chrom', False)) is None:
+        if pavlib.util.as_bool(config.get('merge_by_chrom', True)):
             # Merge in one step
 
             # Get configured merge definition
@@ -180,10 +180,10 @@ rule call_merge_haplotypes:
 # Merge by chromosome. This rule is used if "merge_by_chrom" is True.
 rule call_merge_haplotypes_chrom:
     input:
-        bed_var_h1 = 'temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
-        bed_var_h2 = 'temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
-        callable_h1 = 'results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
-        callable_h2 = 'results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
+        bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
+        bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
+        callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
+        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
     output:
         bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'
     params:
