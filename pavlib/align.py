@@ -1329,7 +1329,7 @@ def check_record(row, df_tig_fai):
         ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r = count_cigar(row)
 
     except Exception as ex:
-        raise RuntimeError('CIGAR parsing error: {} (INDEX={})'.format(ex, row['INDEX']))
+        raise RuntimeError('CIGAR parsing error: {} (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(ex, row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']))
 
     tig_len = df_tig_fai[row['QUERY_ID']]
 
@@ -1337,24 +1337,24 @@ def check_record(row, df_tig_fai):
     if row['POS'] + ref_bp != row['END']:
 
         raise RuntimeError(
-            'END mismatch: POS + len != END ({} != {}) (INDEX={})'.format(
-                row['POS'] + ref_bp, row['END'], row['INDEX']
+            'END mismatch: POS + len != END ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                row['POS'] + ref_bp, row['END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
             )
         )
 
     # Query POS and END  agree with length
     if row['QUERY_POS'] + tig_bp != row['QUERY_END']:
         raise RuntimeError(
-            'QUERY_END mismatch: {} != {} (INDEX={})'.format(
-                row['QUERY_POS'] + tig_bp, row['QUERY_END'], row['INDEX']
+            'QUERY_END mismatch: {} != {} (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                row['QUERY_POS'] + tig_bp, row['QUERY_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
             )
         )
 
     # Query contig (non-rev-compl if alignment was reversed) POS and END agree with length
     if row['QUERY_TIG_POS'] + tig_bp != row['QUERY_TIG_END']:
         raise RuntimeError(
-            'QUERY_TIG_END mismatch: QUERY_TIG_POS + tig_bp != QUERY_TIG_END ({} != {}) (INDEX={})'.format(
-                row['QUERY_TIG_POS'] + tig_bp, row['QUERY_TIG_END'], row['INDEX']
+            'QUERY_TIG_END mismatch: QUERY_TIG_POS + tig_bp != QUERY_TIG_END ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                row['QUERY_TIG_POS'] + tig_bp, row['QUERY_TIG_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
             )
         )
 
@@ -1362,64 +1362,64 @@ def check_record(row, df_tig_fai):
     if row['REV']:
         if row['QUERY_TIG_POS'] != tig_len - row['QUERY_END']:
             raise RuntimeError(
-                'Rev and QUERY_END does not translate to QUERY_TIG_POS: QUERY_TIG_POS != tig_len - QUERY_END ({} != {}) (INDEX={})'.format(
-                    row['QUERY_TIG_POS'], tig_len - row['QUERY_END'], row['INDEX']
+                'Rev and QUERY_END does not translate to QUERY_TIG_POS: QUERY_TIG_POS != tig_len - QUERY_END ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                    row['QUERY_TIG_POS'], tig_len - row['QUERY_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
                 )
             )
 
         if row['QUERY_TIG_END'] != tig_len - row['QUERY_POS']:
             raise RuntimeError(
-                'Rev and QUERY_POS does not translate to QUERY_TIG_END: QUERY_TIG_END != tig_len - QUERY_POS ({} != {}) (INDEX={})'.format(
-                    row['QUERY_TIG_END'], tig_len - row['QUERY_POS'], row['INDEX']
+                'Rev and QUERY_POS does not translate to QUERY_TIG_END: QUERY_TIG_END != tig_len - QUERY_POS ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                    row['QUERY_TIG_END'], tig_len - row['QUERY_POS'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
                 )
             )
     else:
         if row['QUERY_TIG_POS'] != row['QUERY_POS']:
             raise RuntimeError(
-                'Fwd and QUERY_POS does not match QUERY_TIG_POS: QUERY_TIG_POS != QUERY_POS ({} != {}) (INDEX={})'.format(
-                    row['QUERY_TIG_POS'], row['QUERY_POS'], row['INDEX']
+                'Fwd and QUERY_POS does not match QUERY_TIG_POS: QUERY_TIG_POS != QUERY_POS ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                    row['QUERY_TIG_POS'], row['QUERY_POS'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
                 )
             )
 
         if row['QUERY_TIG_END'] != row['QUERY_END']:
             raise RuntimeError(
-                'Fwd and QUERY_END does not match QUERY_TIG_END: QUERY_TIG_END != QUERY_END ({} != {}) (INDEX={})'.format(
-                    row['QUERY_TIG_END'], row['QUERY_END'], row['INDEX']
+                'Fwd and QUERY_END does not match QUERY_TIG_END: QUERY_TIG_END != QUERY_END ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                    row['QUERY_TIG_END'], row['QUERY_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
                 )
             )
 
     # Query and reference positions are in the right order
     if row['QUERY_POS'] >= row['QUERY_END']:
-        raise RuntimeError('QUERY_POS >= QUERY_END ({} >= {}) (INDEX={})'.format(
-            row['QUERY_POS'], row['QUERY_END'], row['INDEX']
+        raise RuntimeError('QUERY_POS >= QUERY_END ({} >= {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+            row['QUERY_POS'], row['QUERY_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
         ))
 
     if row['QUERY_TIG_POS'] >= row['QUERY_TIG_END']:
-        raise RuntimeError('QUERY_TIG_POS >= QUERY_TIG_END ({} >= {}) (INDEX={})'.format(
-            row['QUERY_TIG_POS'], row['QUERY_TIG_END'], row['INDEX']
+        raise RuntimeError('QUERY_TIG_POS >= QUERY_TIG_END ({} >= {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+            row['QUERY_TIG_POS'], row['QUERY_TIG_END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
         ))
 
     if row['POS'] >= row['END']:
-        raise RuntimeError('POS >= END ({} >= {}) (INDEX={})'.format(
-            row['POS'], row['END'], row['INDEX']
+        raise RuntimeError('POS >= END ({} >= {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+            row['POS'], row['END'], row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
         ))
 
     # Contig ends are not longer than contig length
     if row['QUERY_TIG_END'] > tig_len:
-        raise RuntimeError('QUERY_TIG_END > tig_len ({} > {}) (INDEX={})'.format(
-            row['QUERY_TIG_END'], tig_len, row['INDEX']
+        raise RuntimeError('QUERY_TIG_END > tig_len ({} > {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+            row['QUERY_TIG_END'], tig_len, row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
         ))
 
     if row['QUERY_END'] > tig_len:
-        raise RuntimeError('QUERY_END > tig_len ({} > {}) (INDEX={})'.format(
-            row['QUERY_END'], tig_len, row['INDEX']
+        raise RuntimeError('QUERY_END > tig_len ({} > {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+            row['QUERY_END'], tig_len, row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
         ))
 
     # Clipping agrees with contig starts
     if row['QUERY_POS'] != clip_h_l + clip_s_l:
         raise RuntimeError(
-            'QUERY_POS != clip_h_l and clip_s_l ({} != {}) (INDEX={})'.format(
-                row['QUERY_POS'], clip_h_l + clip_s_l, row['INDEX']
+            'QUERY_POS != clip_h_l + clip_s_l ({} != {}) (INDEX={}, QUERY={}, LOC={}:{}-{})'.format(
+                row['QUERY_POS'], clip_h_l + clip_s_l, row['INDEX'], row['QUERY_ID'], row['#CHROM'], row['POS'], row['END']
             )
         )
 
@@ -1590,8 +1590,11 @@ def get_align_bed(align_file, df_tig_fai, hap, chrom_cluster=False):
     with pysam.AlignmentFile(align_file, 'rb') as in_file:
         for record in in_file:
 
+            # Increment align_index
+            align_index += 1
+
             # Skipped unmapped reads
-            if record.is_unmapped:
+            if record.is_unmapped or record.mapping_quality <= 0:
                 continue
 
             # Get length for computing real tig positions for rev-complemented records
@@ -1654,9 +1657,6 @@ def get_align_bed(align_file, df_tig_fai, hap, chrom_cluster=False):
                     'CIGAR'
                 ]
             ))
-
-            # Increment align_index
-            align_index += 1
 
     # Merge records
     if len(record_list) > 0:

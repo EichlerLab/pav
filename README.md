@@ -1,5 +1,7 @@
 # Phased Assembly Variant Caller (PAV)
 
+WARNING: This version has a bug in alignments that reduces sensitivity. Please wait for an update before building.
+
 PAV is a tool for discovering variation using assembled genomes aligned to a reference. It is designed explicitly for
 phased assemblies, however, it can be used for squashed assemblies by providing an empty FASTA for the second haplotype.
 

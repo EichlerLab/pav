@@ -2,8 +2,8 @@
 
 # Run pipeline distributed.
 # Requires one of:
-#   1) RUN_DIR/config/rundist.sh
-#   2) INSTALL_DIR/local/config/rundist.sh
+#   1) RUN_DIR/config/runlocal.sh
+#   2) INSTALL_DIR/local/config/runlocal.sh
 #
 # Where the first runlocal.sh found is the one used. Control is passed to the script.
 
@@ -38,8 +38,8 @@ shift
 ### Pass control over to a control script ###
 
 # Find local site's control script
-LOCAL_SCRIPT="config/rundist.sh"
-SITE_SCRIPT="${SITE_DIR}/local/config/rundist.sh"
+LOCAL_SCRIPT="config/runlocal.sh"
+SITE_SCRIPT="${SITE_DIR}/local/config/runlocal.sh"
 
 if [[ -f ${LOCAL_SCRIPT} ]]; then
     source ${LOCAL_SCRIPT}
@@ -55,12 +55,11 @@ fi
 snakemake -s ${SNAKEFILE} -j ${JOB_COUNT} --jobname "{rulename}.{jobid}" "$@"
 
 # No control script found
-echo "Missing local control script. \"rundist\" sets up the environment and passes control to a local script (\"config/rundist.sh\" in the analysis directory if found, or \"local/config/rundist.sh\" in the PAV install directory). One of these two control scripts must be setup, and it will be sourced by this script to run PAV. See comments in this \"rundist\" for an example of what the control script would do."
+echo "Missing local control script. \"runlocal\" sets up the environment and passes control to a local script (\"config/runlocal.sh\" in the analysis directory if found, or \"local/config/runlocal.sh\" in the PAV install directory). One of these two control scripts must be setup, and it will be sourced by this script to run PAV. See comments in this \"runlocal\" for an example of what the control script would do."
 echo
 echo "Searched local config: ${LOCAL_SCRIPT}"
 echo "Searched site config: ${SITE_SCRIPT}"
 exit 1
-
 
 
 # Example control script to distribute over an SGE cluster with "config/sge.json" distributed with PAV:
@@ -72,7 +71,8 @@ exit 1
 # module load lra/202008
 # module load htslib/1.9
 #
-#snakemake -s ${SVPOP_SNAKEFILE} -j ${SVPOP_JOB_COUNT} --nt --ri -k \
+#snakemake -s ${SNAKEFILE} -j ${JOB_COUNT} --nt --ri -k \
 #    --jobname "{rulename}.{jobid}" \
 #    --drmaa " -V -cwd -j y -o ./log -l centos=7 -pe serial {cluster.cpu} -l mfree={cluster.mem} -l disk_free={cluster.disk} -l h_rt={cluster.rt} {cluster.params} -w n -S /bin/bash" \
-#    -w 60 -u ${SVPOP_SITE_CONFIG_BUILTIN}/sge.json "$@"
+#    -w 60 -u ${SITE_CONFIG_BUILTIN}/sge.json "$@"
+
