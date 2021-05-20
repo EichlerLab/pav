@@ -49,7 +49,7 @@ REF_FAI = REF_FA + '.fai'
 
 env_file = config.get('env_source', 'setenv.sh')
 
-ENV_FILE = os.path.join(PIPELINE_DIR, env_file)
+ENV_FILE = os.path.join(PIPELINE_DIR, 'config', env_file)
 
 if not os.path.isfile(ENV_FILE):
     ENV_FILE = None
