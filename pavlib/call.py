@@ -98,6 +98,7 @@ def filter_by_tig_tree(df, tig_filter_tree):
 
     return df.loc[[val not in rm_index_set for val in df.index]]
 
+
 def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, config_def, threads=1, chrom=None, is_inv=None):
     """
     Merge haplotypes for one variant type.
@@ -242,3 +243,59 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
 
     # Return merged BED
     return df
+
+
+def left_shift_offset(pos_ref, pos_tig, seq, seq_tig, seq_ref):
+    """
+    Left shift SV/indel variant if it can be moved to the left while preserving the same event. Note that the SV/indel
+    sequence may rotate as a result of the shift.
+
+    If there is perfect homology between the reference and contig upstream of the SV/indel, and if the tail end of the
+    SV/indel sequence matches the upstream region, then shift the variant until it reaches a mismatch. This process
+    does not allow shifting through indels or SNVs.
+
+    Note that the contig position and sequence is in reference orientation as it would be found in a SAM/BAM with
+    no hard-clipping (full sequence, reverse-complemented if necessary to place it in the same orientation with the
+    reference).
+
+    WARNING: This function assumes upper-case for `seq`, `seq_ref`, and `seq_tig` and will not function correctly
+    if this is not the case. If any sequence is None, 0 is returned.
+
+    :param pos_ref: Reference position (0-based).
+    :param pos_tig: Contig position (0-based) in reference orientation (may have been reverse-complemented by an
+        alignment).
+    :param seq: SV/indel sequence as an upper-case string.
+    :param seq_ref: Reference sequence as an upper-case string.
+    :param seq_tig: Contig sequence as an upper-case string and in reference orientation (may have been reverse-
+        complemented by the alignment).
+
+    :return: Number of bases to shift to achieve a left-align over perfect homology between the SV/indel and the
+        upstream anchor. If any of the sequneces are None, 0 is returned.
+    """
+
+    if seq is None or seq_ref is None or seq_tig is None:
+        return 0
+
+    svlen = len(seq)
+
+    pos_ref_org = pos_ref
+
+    while pos_ref > 0 and pos_tig > 0:  # Do not shift off the edge of a contig.
+
+        # Do not left-shift through other events (indels or SNVs) or ambiguous bases.
+        if seq_ref[pos_ref] != seq_tig[pos_tig] or seq_ref[pos_ref] not in {'A', 'C', 'G', 'T'}:
+            break
+
+        # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
+        if seq[-(((pos_ref_org - pos_ref) + 1) % svlen)] != ref[pos_ref]:
+            # Circular index through seq in reverse from last base to the first, then back to the first
+            # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
+            # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
+            # repeat array, shift through multiple perfect copies (% oplen loops through seq).
+            break
+
+        pos_ref -= 1
+        pos_tig -= 1
+
+    # Return shifted amount
+    return pos_ref_org - pos_ref

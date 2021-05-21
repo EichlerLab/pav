@@ -20,7 +20,7 @@ sys.path.append(PIPELINE_DIR)
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep'))
 
 import pavlib
-import analib
+import svpoplib
 import kanapy
 
 

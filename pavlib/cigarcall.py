@@ -131,7 +131,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
                 # Get sequence
                 seq = seq_tig[pos_tig:(pos_tig + oplen)]
-
+                
                 # pos_tig_insdel to fwd contig if alignment is reversed
                 if is_rev:
                     end_tig_insdel = seq_tig_len - pos_tig_insdel
