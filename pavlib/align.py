@@ -936,6 +936,45 @@ def cigar_str_to_tuples(record):
         pos = len_pos + 1
 
 
+def match_bp(record, right_end):
+    """
+    Get the number of matching bases at the end of an alignment. Used by variant callers to left-align SVs through
+    alignment-truncating events.
+
+    :param record: Alignment record (from alignment BED) with CIGAR string.
+    :param right_end: `True` if matching alignments from the right end of `record`, or `False` to match from
+        the left end.
+
+    :return: Minimum of the number of matched bases at the end of two alignment records.
+    """
+
+    cigar = list(cigar_str_to_tuples(record))
+
+    if right_end:
+        cigar = cigar[::-1]
+
+    # Get match base count (CIGAR op "=") on a
+    match_count = 0
+
+    for cigar_len, cigar_op in cigar:
+        if cigar_op in {4, 5}:  # Skip clipped bases: S, H
+            continue
+
+        if cigar_op == 7:  # Matched bases: =
+            match_count += cigar_len
+
+        elif cigar_op == 0:
+            raise RuntimeError(
+                'Detected "M" opcodes in CIGAR string for record INDEX={}: Sequence match/mismatch opcodes are required ("=", "X")'.format(
+                    record['INDEX'] if 'INDEX' in record.index else '<UNKNOWN>'
+                )
+            )
+        else:
+            break  # No more bases to traverse
+
+    return match_count
+
+
 def get_max_cluster(df, chrom, min_prop=0.85, min_aln_len=1e6):
     """
     For a chromosome, get the name of the cluster with the most aligned bases. When contigs are assigned to a chromosome cluster

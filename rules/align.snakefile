@@ -41,6 +41,9 @@ rule align_cut_tig_overlap:
             input.tig_fai  # Path to alignment FASTA FAI
         )
 
+        # Add batch ID for CIGAR calling (calls in batches)
+        df['CALL_BATCH'] = df['INDEX'].apply(lambda val: val % pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)
+
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 

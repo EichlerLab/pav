@@ -12,11 +12,16 @@ import pavlib.seq
 import pavlib.inv
 import kanapy.util.kmer
 
+import Bio.Seq
+
 # Default parameters
 MAX_TIG_DIST_PROP = 1  # Max allowed tig gap as a factor of the minimum alignment length of two records
 MAX_REF_DIST_PROP = 3  # Max allowed ref gap as a factor of the minimum alignment length of two records
 
 CALL_SOURCE = 'ALNTRUNC'  # Call source annotation for alignment-truncating events
+
+CALL_SOURCE_INV_DENSITY = 'ALNTRUNC-DEN'
+CALL_SOURCE_INV_NO_DENSITY = 'ALNTRUNC-NODEN'
 
 
 def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tree=None,
@@ -76,6 +81,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     tig_map_count = collections.Counter(df[['#CHROM', 'QUERY_ID']].apply(tuple, axis=1))
     tig_map_count = [(chrom, tig_id) for (chrom, tig_id), count in tig_map_count.items() if count > 1]
 
+    # Cache reference sequence (upper-case for homology searches)
+    seq_cache_ref = SeqCache(ref_fa_name, uppercase=True)
+    seq_cache_tig = SeqCache(tig_fa_name, uppercase=True)
+
     for chrom, tig_id in tig_map_count:
 
         # Get a list of df indices with alignments for this contig
@@ -119,27 +128,64 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                     if dist_tig >= 50 or dist_ref >= 50:
 
                         if dist_tig < 50:
-                            # Call DEL
 
-                            sv_id = '{}-{}-DEL-{}'.format(chrom, row1['END'], dist_ref)
+                            # Call DEL
+                            svlen = dist_ref
+
+                            pos_ref = row1['END']
+                            end_ref = row2['POS']
+                            pos_tig = query_pos
+                            end_tig = pos_tig + 1
+
+                            ref_region = pavlib.seq.Region(chrom, pos_ref, end_ref)
+
+                            # Get reference and tig sequences (left shift and homology search)
+                            seq_ref = seq_cache_ref.get(chrom, False)
+                            seq_tig = seq_cache_tig.get(tig_id, is_rev)
+
+                            # Get SV sequence
+                            seq = pavlib.seq.region_seq_fasta(ref_region, ref_fa_name)
+
+                            # Left-shift through matching bases and get position
+                            left_shift = np.min([
+                                pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                                pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
+                            ])
+
+                            if left_shift > 0:
+                                pos_ref -= left_shift
+                                end_ref -= left_shift
+                                pos_tig -= left_shift
+                                end_tig -= left_shift
+
+                                ref_region = pavlib.seq.Region(chrom, pos_ref, end_ref)
+                                seq = pavlib.seq.region_seq_fasta(ref_region, ref_fa_name)
+
+                            # Get ID and log
+                            sv_id = '{}-{}-DEL-{}'.format(chrom, pos_ref, svlen)
 
                             log.write('DEL: {}\n'.format(sv_id))
                             log.flush()
 
-                            seq = pavlib.seq.region_seq_fasta(
-                                pavlib.seq.Region(chrom, row1['END'], row2['POS']),
-                                ref_fa_name
-                            )
+                            # Find breakpoint homology
+                            seq_upper = seq.upper()
+
+                            hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
+                            hom_ref_r = pavlib.call.right_homology(end_ref, seq_ref, seq_upper)
+
+                            hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
+                            hom_tig_r = pavlib.call.right_homology(pos_tig, seq_tig, seq_upper)
 
                             # Append
                             del_list.append(pd.Series(
                                 [
-                                    chrom, row1['END'], row2['POS'],
-                                    sv_id, 'DEL', dist_ref,
+                                    chrom, pos_ref, end_ref,
+                                    sv_id, 'DEL', svlen,
                                     hap,
-                                    f'{tig_id}:{query_pos + 1}-{query_pos + 1}', '-' if row1['REV'] else '+',
+                                    f'{tig_id}:{pos_tig + 1}-{end_tig}', '-' if row1['REV'] else '+',
                                     dist_tig,
                                     '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                    left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                     CALL_SOURCE,
                                     seq
                                 ],
@@ -150,6 +196,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     'TIG_REGION', 'QUERY_STRAND',
                                     'CI',
                                     'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                     'CALL_SOURCE',
                                     'SEQ'
                                 ]
@@ -159,29 +206,73 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             break
 
                         elif dist_ref < 50:
+
                             # Call INS
+                            pos_ref = row1['END']
+                            end_ref = pos_ref + 1
+                            pos_tig = query_pos
+                            end_tig = query_end
 
-                            tig_region = pavlib.seq.Region(tig_id, query_pos, query_end, is_rev=is_rev)
+                            svlen = dist_tig
 
+                            tig_region = pavlib.seq.Region(tig_id, pos_tig, end_tig, is_rev=is_rev)
+
+                            # Get reference and tig sequences (left shift and homology search)
+                            seq_ref = seq_cache_ref.get(chrom, False)
+                            seq_tig = seq_cache_tig.get(tig_id, is_rev)
+
+                            # SV sequence
                             seq = pavlib.seq.region_seq_fasta(
                                 tig_region,
                                 tig_fa_name,
                                 rev_compl=is_rev
                             )
 
-                            sv_id = '{}-{}-INS-{}'.format(chrom, row1['END'], dist_tig)
+                            # Left-shift through matching bases and get position
+                            left_shift = np.min([
+                                pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                                pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
+                            ])
+
+                            if left_shift > 0:
+                                pos_ref -= left_shift
+                                end_ref -= left_shift
+                                pos_tig -= left_shift
+                                end_tig -= left_shift
+
+                                tig_region = pavlib.seq.Region(tig_id, pos_tig, end_tig, is_rev=is_rev)
+
+                                seq = pavlib.seq.region_seq_fasta(
+                                    tig_region,
+                                    tig_fa_name,
+                                    rev_compl=is_rev
+                                )
+
+                            # Get ID and log
+                            sv_id = '{}-{}-INS-{}'.format(chrom, pos_ref, svlen)
 
                             log.write('INS: {}\n'.format(sv_id))
                             log.flush()
 
+                            # Find breakpoint homology
+                            seq_upper = seq.upper()
+
+                            hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
+                            hom_ref_r = pavlib.call.right_homology(pos_ref, seq_ref, seq_upper)
+
+                            hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
+                            hom_tig_r = pavlib.call.right_homology(end_tig, seq_tig, seq_upper)
+
+                            # APPEND
                             ins_list.append(pd.Series(
                                 [
-                                    chrom, row1['END'], row1['END'] + 1,
-                                    sv_id, 'INS', dist_tig,
+                                    chrom, pos_ref, end_ref,
+                                    sv_id, 'INS', svlen,
                                     hap,
-                                    tig_region.to_base1_string(), '-' if row1['REV'] else '+',
+                                    tig_region.to_base1_string(), '-' if is_rev else '+',
                                     dist_ref,
                                     '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                    left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                     CALL_SOURCE,
                                     seq
                                 ],
@@ -192,6 +283,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     'TIG_REGION', 'QUERY_STRAND',
                                     'CI',
                                     'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                     'CALL_SOURCE',
                                     'SEQ'
                                 ]
@@ -256,7 +348,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                         '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                         row1['CLUSTER_MATCH'],
 
-                                        pavlib.inv.CALL_SOURCE,
+                                        CALL_SOURCE_INV_DENSITY,
 
                                         seq
                                     ],
@@ -329,10 +421,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 None
                             )
 
-                            inv_method = 'ALNTRUNC-NODEN'
+                            call_source = CALL_SOURCE_INV_NO_DENSITY
 
                         else:
-                            inv_method = 'ALNTRUNC'
+                            call_source = CALL_SOURCE_INV_DENSITY
 
                         if inv_call is not None:
                             log.write('INV (3-tig): {}\n'.format(inv_call))
@@ -368,12 +460,12 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     inv_call.region_tig_discovery.to_base1_string(),
 
                                     inv_call.region_flag.region_id(),
-                                    inv_method,
+                                    'ALNTRUNC',
 
                                     '{},{},{}'.format(row1['INDEX'], row2['INDEX'], row3['INDEX']),
                                     row1['CLUSTER_MATCH'],
 
-                                    pavlib.inv.CALL_SOURCE,
+                                    call_source,
 
                                     seq
                                 ],
@@ -459,19 +551,53 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     return ((df_ins, df_del, df_inv))
 
 
-# class RefTigManager:
-#     """
-#     Manage a pair of open FASTA files, reference and tig.
-#     """
-#
-#     def __init__(self, ref_fa_name, tig_fa_name):
-#
-#         self.ref_fa = pysam.FastaFile(ref_fa_name)
-#         self.tig_fa = pysam.FastaFile(tig_fa_name)
-#
-#     def __enter__(self):
-#         return self.ref_fa, self.tig_fa
-#
-#     def __exit__(self, type, value, traceback):
-#         self.ref_fa.close()
-#         self.tig_fa.close()
+class SeqCache:
+    """
+    Keep a cache of a sequence string in upper-case. Stores the last instance of the sequence and the ID. When a
+    new ID is requested, the old sequnece is discarded and the new one is loaded.
+    """
+
+    def __init__(self, fa_filename, uppercase=True):
+        """
+        Create a cache object to read from indexed FASTA file `fa_filename`.
+
+        :param fa_filename: Indexed FASTA file name.
+        :param uppercase: `True` if sequences should be made upper-case, otherwise, preserve case.
+        """
+
+        self.fa_filename = fa_filename
+        self.uppercase = uppercase
+
+        self.id = None
+        self.seq = None
+        self.is_rev = None
+
+    def get(self, sequence_id, is_rev):
+        """
+        Get a sequence. Returns the cached version if ID matches the current ID, otherwise, the correct sequence is
+        retrieved, cached, and returned.
+
+        :param sequence_id: Sequence ID string or Region.
+        :param is_rev: `True` if the sequence is reverse-complemeted. Retrieving the same sequence ID as the cached
+            sequence with `is_rev` mismatch will reload the sequence in the requested orientation.
+
+        :return: Sequence.
+        """
+
+        if self.id != sequence_id or self.is_rev != is_rev:
+            new_seq = pavlib.seq.region_seq_fasta(
+                sequence_id, self.fa_filename
+            )
+
+            if self.uppercase:
+                new_seq = new_seq.upper()
+
+            if is_rev:
+                new_seq = str(Bio.Seq.Seq(new_seq).reverse_complement())
+
+            self.seq = new_seq
+
+            self.id = sequence_id
+            self.is_rev = is_rev
+
+        return self.seq

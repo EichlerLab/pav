@@ -3,6 +3,7 @@ Routines for aligned contigs.
 """
 
 import Bio.SeqIO
+import Bio.Seq
 import collections
 import gzip
 import numpy as np
@@ -301,7 +302,7 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
     """
     Get sequence from an indexed FASTA file. FASTA must have ".fai" index.
 
-    :param region: Region object.
+    :param region: Region object to extract a region, or a string with the recrord ID to extract a whole record.
     :param fa_file_name: FASTA file name.
     :param rev_compl: Reverse-complement sequence is `True`. If `None`, reverse-complement if `region.is_rev`.
 
@@ -309,16 +310,28 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
     """
 
     with pysam.FastaFile(fa_file_name) as fa_file:
-        sequence = fa_file.fetch(region.chrom, region.pos, region.end)
+
+        if region.__class__ == str:
+            is_region = False
+        elif region.__class__ == Region:
+            is_region = True
+        else:
+            raise RuntimeError('Unrecognized region type: {}: Expected Region (pavlib.seq) or str'.format(str(region.__class__.__name__)))
+
+        if is_region:
+            sequence = fa_file.fetch(region.chrom, region.pos, region.end)
+        else:
+            sequence = fa_file.fetch(region, None, None)
 
         if rev_compl is None:
-            if region.is_rev:
+            if is_region and region.is_rev:
                 return str(Bio.Seq.Seq(sequence).reverse_complement())
         else:
             if rev_compl:
                 return str(Bio.Seq.Seq(sequence).reverse_complement())
 
         return sequence
+
 
 def copy_fa_to_gz(in_file_name, out_file_name):
 

@@ -7,8 +7,6 @@ Call variants from aligned contigs.
 # Definitions
 #
 
-CALL_CIGAR_BATCH_COUNT = 10
-
 
 #
 # Finalize variant calls
@@ -469,8 +467,8 @@ rule call_inv_bed:
 # Merge discovery sets from each batch.
 rule call_cigar_merge:
     input:
-        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/insdel_{{hap}}_{batch}.bed.gz', batch=range(CALL_CIGAR_BATCH_COUNT)),
-        bed_snv=expand('temp/{{asm_name}}/cigar/batched/snv.bed_{{hap}}_{batch}.gz', batch=range(CALL_CIGAR_BATCH_COUNT))
+        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/insdel_{{hap}}_{batch}.bed.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)),
+        bed_snv=expand('temp/{{asm_name}}/cigar/batched/snv.bed_{{hap}}_{batch}.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT))
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'),
         bed_snv=temp('temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz')
@@ -513,7 +511,7 @@ rule call_cigar:
         # Read
         df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str})
 
-        df_align = df_align.loc[df_align['INDEX'] % CALL_CIGAR_BATCH_COUNT == batch]
+        df_align = df_align.loc[df_align['CALL_BATCH'] == batch]
 
         # Call
         df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap)

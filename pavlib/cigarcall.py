@@ -16,6 +16,8 @@ import pavlib
 # Tag variants called with this source
 CALL_SOURCE = 'CIGAR'
 
+CALL_CIGAR_BATCH_COUNT = 10
+
 
 def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
     """

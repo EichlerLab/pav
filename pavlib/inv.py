@@ -37,7 +37,7 @@ DEFAULT_MIN_EXP_COUNT = 1  # The default number of region expansions to try (inc
 
 DEFAULT_STATE_RUN_SMOOTH = 20  # Default value for --staterunsmooth parameter to density.py if none specified
 
-CALL_SOURCE = 'INVDENSITY'
+CALL_SOURCE = 'FLAG-DEN'
 
 # Matrix converting k-mer location to UP/DN match. Assign
 # NA to missing or k-mers in both.

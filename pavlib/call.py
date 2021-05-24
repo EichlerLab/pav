@@ -99,6 +99,111 @@ def filter_by_tig_tree(df, tig_filter_tree):
     return df.loc[[val not in rm_index_set for val in df.index]]
 
 
+def left_homology(pos_tig, seq_tig, seq_sv):
+    """
+    Determine the number of perfect-homology bp upstream of an SV/indel using the SV/indel sequence (seq_sv), a contig
+    or reference sequence (seq_tig) and the position of the first base upstream of the SV/indel (pos_tig) in 0-based
+    coordinates. Both the contig and SV/indel sequence must be in the same orientation (reverse-complement if needed).
+    Generally, the SV/indel sequence is in reference orientation and the contig sequence is the reference or an
+    aligned contig in reference orientation (reverse-complemented if needed to get to the + strand).
+
+    This function traverses from `pos_tig` to upstream bases in `seq_tig` using bases from the end of `seq_sv` until
+    a mismatch between `seq_sv` and `seq_tig` is found. Search will wrap through `seq_sv` if homology is longer than
+    the SV/indel.
+
+    WARNING: This function assumes upper-case for the sequences. Differing case will break the homology search. If any
+    sequence is None, 0 is returned.
+
+    :param pos_tig: Contig/reference position (0-based) in reference orientation (may have been reverse-complemented by an
+        alignment) where the homology search begins.
+    :param seq_tig: Contig sequence as an upper-case string and in reference orientation (may have been reverse-
+        complemented by the alignment).
+    :param seq_sv: SV/indel sequence as an upper-case string.
+
+    :return: Number of perfect-homology bases between `seq_sv` and `seq_tig` immediately upstream of `pos_tig`. If any
+        of the sequneces are None, 0 is returned.
+    """
+
+    if seq_sv is None or seq_tig is None:
+        return 0
+
+    svlen = len(seq_sv)
+
+    pos_org = pos_tig
+
+    while pos_tig >= 0:  # Do not shift off the edge of a contig.
+
+        # Do not match ambiguous bases
+        if seq_tig[pos_tig] not in {'A', 'C', 'G', 'T'}:
+            break
+
+        # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
+        if seq_sv[-((pos_tig + 1) % svlen)] != seq_tig[pos_tig]:
+            # Circular index through seq in reverse from last base to the first, then back to the first
+            # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
+            # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
+            # repeat array, shift through multiple perfect copies (% oplen loops through seq).
+            break
+
+        pos_tig -= 1
+
+    # Return shifted amount
+    return pos_org - pos_tig
+
+
+def right_homology(pos_tig, seq_tig, seq_sv):
+    """
+    Determine the number of perfect-homology bp downstream of an SV/indel using the SV/indel sequence (seq_sv), a contig
+    or reference sequence (seq_tig) and the position of the first base downstream of the SV/indel (pos_tig) in 0-based
+    coordinates. Both the contig and SV/indel sequence must be in the same orientation (reverse-complement if needed).
+    Generally, the SV/indel sequence is in reference orientation and the contig sequence is the reference or an
+    aligned contig in reference orientation (reverse-complemented if needed to get to the + strand).
+
+    This function traverses from `pos_tig` to downstream bases in `seq_tig` using bases from the beginning of `seq_sv` until
+    a mismatch between `seq_sv` and `seq_tig` is found. Search will wrap through `seq_sv` if homology is longer than
+    the SV/indel.
+
+    WARNING: This function assumes upper-case for the sequences. Differing case will break the homology search. If any
+    sequence is None, 0 is returned.
+
+    :param pos_tig: Contig/reference position (0-based) in reference orientation (may have been reverse-complemented by an
+        alignment) where the homology search begins.
+    :param seq_tig: Contig sequence as an upper-case string and in reference orientation (may have been reverse-
+        complemented by the alignment).
+    :param seq_sv: SV/indel sequence as an upper-case string.
+
+    :return: Number of perfect-homology bases between `seq_sv` and `seq_tig` immediately downstream of `pos_tig`. If any
+        of the sequences are None, 0 is returned.
+    """
+
+    if seq_sv is None or seq_tig is None:
+        return 0
+
+    svlen = len(seq_sv)
+    tig_len = len(seq_tig)
+
+    pos_org = pos_tig
+
+    while pos_tig < tig_len:  # Do not shift off the edge of a contig.
+
+        # Do not match ambiguous bases
+        if seq_tig[pos_tig] not in {'A', 'C', 'G', 'T'}:
+            break
+
+        # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
+        if seq_sv[pos_tig % svlen] != seq_tig[pos_tig]:
+            # Circular index through seq in reverse from last base to the first, then back to the first
+            # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
+            # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
+            # repeat array, shift through multiple perfect copies (% oplen loops through seq).
+            break
+
+        pos_tig += 1
+
+    # Return shifted amount
+    return pos_tig - pos_org
+
+
 def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, config_def, threads=1, chrom=None, is_inv=None):
     """
     Merge haplotypes for one variant type.
@@ -243,59 +348,3 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
 
     # Return merged BED
     return df
-
-
-def left_shift_offset(pos_ref, pos_tig, seq, seq_tig, seq_ref):
-    """
-    Left shift SV/indel variant if it can be moved to the left while preserving the same event. Note that the SV/indel
-    sequence may rotate as a result of the shift.
-
-    If there is perfect homology between the reference and contig upstream of the SV/indel, and if the tail end of the
-    SV/indel sequence matches the upstream region, then shift the variant until it reaches a mismatch. This process
-    does not allow shifting through indels or SNVs.
-
-    Note that the contig position and sequence is in reference orientation as it would be found in a SAM/BAM with
-    no hard-clipping (full sequence, reverse-complemented if necessary to place it in the same orientation with the
-    reference).
-
-    WARNING: This function assumes upper-case for `seq`, `seq_ref`, and `seq_tig` and will not function correctly
-    if this is not the case. If any sequence is None, 0 is returned.
-
-    :param pos_ref: Reference position (0-based).
-    :param pos_tig: Contig position (0-based) in reference orientation (may have been reverse-complemented by an
-        alignment).
-    :param seq: SV/indel sequence as an upper-case string.
-    :param seq_ref: Reference sequence as an upper-case string.
-    :param seq_tig: Contig sequence as an upper-case string and in reference orientation (may have been reverse-
-        complemented by the alignment).
-
-    :return: Number of bases to shift to achieve a left-align over perfect homology between the SV/indel and the
-        upstream anchor. If any of the sequneces are None, 0 is returned.
-    """
-
-    if seq is None or seq_ref is None or seq_tig is None:
-        return 0
-
-    svlen = len(seq)
-
-    pos_ref_org = pos_ref
-
-    while pos_ref > 0 and pos_tig > 0:  # Do not shift off the edge of a contig.
-
-        # Do not left-shift through other events (indels or SNVs) or ambiguous bases.
-        if seq_ref[pos_ref] != seq_tig[pos_tig] or seq_ref[pos_ref] not in {'A', 'C', 'G', 'T'}:
-            break
-
-        # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
-        if seq[-(((pos_ref_org - pos_ref) + 1) % svlen)] != ref[pos_ref]:
-            # Circular index through seq in reverse from last base to the first, then back to the first
-            # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
-            # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
-            # repeat array, shift through multiple perfect copies (% oplen loops through seq).
-            break
-
-        pos_ref -= 1
-        pos_tig -= 1
-
-    # Return shifted amount
-    return pos_ref_org - pos_ref
