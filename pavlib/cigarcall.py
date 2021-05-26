@@ -332,6 +332,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 'TIG_REGION', 'QUERY_STRAND',
                 'CI',
                 'ALIGN_INDEX', 'CLUSTER_MATCH',
+                'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                 'CALL_SOURCE',
                 'SEQ'
             ]
