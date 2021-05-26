@@ -3,6 +3,7 @@ Call variants by CIGAR string.
 """
 
 import Bio
+import numpy as np
 import pandas as pd
 import pysam
 
@@ -55,12 +56,12 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
         if seq_ref_name is None or row['#CHROM'] != seq_ref_name:
             with pysam.FastaFile(ref_fa_name) as ref_fa:
                 seq_ref_name = row['#CHROM']
-                seq_ref = ref_fa.fetch(str(seq_ref_name)).upper()
+                seq_ref = ref_fa.fetch(str(seq_ref_name))
 
         if seq_tig_name is None or row['QUERY_ID'] != seq_tig_name or is_rev != seq_tig_rev:
             with pysam.FastaFile(tig_fa_name) as tig_fa:
                 seq_tig_name = row['QUERY_ID']
-                seq_tig = tig_fa.fetch(str(seq_tig_name)).upper()
+                seq_tig = tig_fa.fetch(str(seq_tig_name))
                 seq_tig_len = len(seq_tig)
 
                 if is_rev:
@@ -68,13 +69,20 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
                 seq_tig_rev = is_rev
 
+        seq_ref_upper = seq_ref.upper()
+        seq_tig_upper = seq_tig.upper()
+
         # Process CIGAR
         pos_ref = row['POS']
         pos_tig = 0
 
         cigar_index = 0
 
+        last_op = None
+        last_oplen = 0
+
         for oplen, op in pavlib.align.cigar_str_to_tuples(row):
+            # NOTE: break/continue in this look will not advance last_op and last_oplen (end of loop)
 
             cigar_index += 1
 
@@ -129,28 +137,56 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
             elif op == 'I':
                 # Call INS
 
-                pos_tig_insdel = pos_tig
-
                 # Get sequence
                 seq = seq_tig[pos_tig:(pos_tig + oplen)]
-                
+                seq_upper = seq.upper()
+
+                # Left shift
+                if last_op == '=':
+                    left_shift = np.min([
+                        last_oplen,
+                        pavlib.call.left_homology(pos_ref - 1, seq_ref_upper, seq_upper)  # SV/breakpoint upstream homology
+                    ])
+                else:
+                    left_shift = 0
+
+                sv_pos_ref = pos_ref - left_shift
+                sv_end_ref = sv_pos_ref + 1
+                sv_pos_tig = pos_tig - left_shift
+                sv_end_tig = sv_pos_tig + oplen
+
+                if left_shift != 0:
+                    seq = seq_tig[sv_pos_tig:(sv_pos_tig + oplen)]
+
+                # Get positions in the original SV space
                 # pos_tig_insdel to fwd contig if alignment is reversed
                 if is_rev:
-                    end_tig_insdel = seq_tig_len - pos_tig_insdel
+                    end_tig_insdel = seq_tig_len - sv_pos_tig
                     pos_tig_insdel = end_tig_insdel - oplen
 
                 else:
+                    pos_tig_insdel = sv_pos_tig
                     end_tig_insdel = pos_tig_insdel + oplen
+
+                # Find breakpoint homology
+                seq_upper = seq.upper()
+
+                hom_ref_l = pavlib.call.left_homology(sv_pos_ref - 1, seq_ref_upper, seq_upper)
+                hom_ref_r = pavlib.call.right_homology(sv_pos_ref, seq_ref_upper, seq_upper)
+
+                hom_tig_l = pavlib.call.left_homology(sv_pos_tig - 1, seq_tig_upper, seq_upper)
+                hom_tig_r = pavlib.call.right_homology(sv_end_tig, seq_tig_upper, seq_upper)
 
                 # Add variant
                 df_insdel_list.append(pd.Series(
                     [
-                        seq_ref_name, pos_ref, pos_ref + 1,
-                        f'{seq_ref_name}-{pos_ref + 1}-INS-{oplen}', 'INS', oplen,
+                        seq_ref_name, sv_pos_ref, sv_end_ref,
+                        f'{seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}', 'INS', oplen,
                         hap,
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{end_tig_insdel}', strand,
                         0,
                         align_index, cluster_match,
+                        left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                         CALL_SOURCE,
                         seq
                     ],
@@ -161,6 +197,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'TIG_REGION', 'QUERY_STRAND',
                         'CI',
                         'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                         'CALL_SOURCE',
                         'SEQ'
                     ]
@@ -174,14 +211,38 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
             elif op == 'D':
                 # Call DEL
 
-                pos_tig_insdel = pos_tig
-
                 # Get sequence
                 seq = seq_ref[pos_ref:(pos_ref + oplen)]
+                seq_upper = seq.upper()
 
-                # pos_tig_insdel to fwd contig if alignment is reversed
+                # Left shift
+                if last_op == '=':
+                    left_shift = np.min([
+                        last_oplen,
+                        pavlib.call.left_homology(pos_ref - 1, seq_ref_upper, seq_upper)  # SV/breakpoint upstream homology
+                    ])
+                else:
+                    left_shift = 0
+
+                sv_pos_ref = pos_ref - left_shift
+                sv_end_ref = sv_pos_ref + oplen
+                sv_pos_tig = pos_tig - left_shift
+                sv_end_tig = sv_pos_tig + 1
+
+                # Contig position in original coordinates (translate if - strand)
+                pos_tig_insdel = sv_pos_tig
+
                 if is_rev:
-                    pos_tig_insdel = seq_tig_len - pos_tig_insdel
+                    pos_tig_insdel = seq_tig_len - sv_pos_tig
+
+                # Find breakpoint homology
+                seq_upper = seq.upper()
+
+                hom_ref_l = pavlib.call.left_homology(sv_pos_ref - 1, seq_ref_upper, seq_upper)
+                hom_ref_r = pavlib.call.right_homology(sv_end_ref, seq_ref_upper, seq_upper)
+
+                hom_tig_l = pavlib.call.left_homology(sv_pos_tig - 1, seq_tig_upper, seq_upper)
+                hom_tig_r = pavlib.call.right_homology(sv_pos_tig, seq_tig_upper, seq_upper)
 
                 # Add variant
                 df_insdel_list.append(pd.Series(
@@ -192,6 +253,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{pos_tig_insdel + 1}', strand,
                         0,
                         align_index, cluster_match,
+                        left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                         CALL_SOURCE,
                         seq
                     ],
@@ -202,6 +264,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'TIG_REGION', 'QUERY_STRAND',
                         'CI',
                         'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                         'CALL_SOURCE',
                         'SEQ'
                     ]
@@ -230,10 +293,14 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 else:
                     raise RuntimeError((
                         'Illegal operation code in CIGAR string at operation {}: '
-                        'opcode={}, subject={}:{}, query={}:{}, align-index={}'
+                        'opcode={}, subject={}:{} , query={}:{}, align-index={}'
                     ).format(
                         cigar_index, op, seq_ref_name, pos_ref, seq_tig_name, pos_tig, row['INDEX']
                     ))
+
+            # Save last op
+            last_op = op
+            last_oplen = oplen
 
     # Merge tables
     if len(df_snv_list) > 0:

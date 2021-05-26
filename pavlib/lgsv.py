@@ -512,6 +512,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             'TIG_REGION', 'QUERY_STRAND',
             'CI',
             'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
             'SEQ'
         ])
@@ -526,6 +527,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             'TIG_REGION', 'QUERY_STRAND',
             'CI',
             'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
             'SEQ'
         ])

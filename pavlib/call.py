@@ -66,6 +66,7 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
         lambda val_list: delim.join(df_dict[val[0]].loc[val[1], col_name] for val in val_list)
     )
 
+
 def filter_by_tig_tree(df, tig_filter_tree):
     """
     Filter records from a callset DataFrame by matching "TIG_REGION" with regions in an IntervalTree.
@@ -129,26 +130,27 @@ def left_homology(pos_tig, seq_tig, seq_sv):
 
     svlen = len(seq_sv)
 
-    pos_org = pos_tig
+    hom_len = 0
 
-    while pos_tig >= 0:  # Do not shift off the edge of a contig.
+    while hom_len <= pos_tig:  # Do not shift off the edge of a contig.
+        seq_tig_base = seq_tig[pos_tig - hom_len]
 
         # Do not match ambiguous bases
-        if seq_tig[pos_tig] not in {'A', 'C', 'G', 'T'}:
+        if seq_tig_base not in {'A', 'C', 'G', 'T'}:
             break
 
         # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
-        if seq_sv[-((pos_tig + 1) % svlen)] != seq_tig[pos_tig]:
+        if seq_sv[-((hom_len + 1) % svlen)] != seq_tig_base:
             # Circular index through seq in reverse from last base to the first, then back to the first
             # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
             # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
             # repeat array, shift through multiple perfect copies (% oplen loops through seq).
             break
 
-        pos_tig -= 1
+        hom_len += 1
 
     # Return shifted amount
-    return pos_org - pos_tig
+    return hom_len
 
 
 def right_homology(pos_tig, seq_tig, seq_sv):
@@ -182,26 +184,28 @@ def right_homology(pos_tig, seq_tig, seq_sv):
     svlen = len(seq_sv)
     tig_len = len(seq_tig)
 
-    pos_org = pos_tig
+    hom_len = 0
+    pos_tig_limit = tig_len - pos_tig
 
-    while pos_tig < tig_len:  # Do not shift off the edge of a contig.
+    while hom_len < pos_tig_limit:  # Do not shift off the edge of a contig.
+        seq_tig_base = seq_tig[pos_tig + hom_len]
 
         # Do not match ambiguous bases
-        if seq_tig[pos_tig] not in {'A', 'C', 'G', 'T'}:
+        if seq_tig_base not in {'A', 'C', 'G', 'T'}:
             break
 
         # Match the SV sequence (dowstream SV sequence with upstream reference/contig)
-        if seq_sv[pos_tig % svlen] != seq_tig[pos_tig]:
+        if seq_sv[hom_len % svlen] != seq_tig_base:
             # Circular index through seq in reverse from last base to the first, then back to the first
             # if it wraps around. If the downstream end of the SV/indel matches the reference upstream of
             # the SV/indel, shift left. For tandem repeats where the SV was placed in the middle of a
             # repeat array, shift through multiple perfect copies (% oplen loops through seq).
             break
 
-        pos_tig += 1
+        hom_len += 1
 
     # Return shifted amount
-    return pos_tig - pos_org
+    return hom_len
 
 
 def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, config_def, threads=1, chrom=None, is_inv=None):
