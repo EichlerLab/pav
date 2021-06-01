@@ -1,8 +1,5 @@
 **/*.pyc
 **/__pycache__/
 
-dep/kanapy
-dep/analib
-
 local
 config

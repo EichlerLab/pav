@@ -1,0 +1,6 @@
+[submodule "dep/svpop"]
+	path = dep/svpop
+	url = https://github.com/EichlerLab/svpop.git
+[submodule "dep/kanapy"]
+	path = dep/kanapy
+	url = https://github.com/paudano/kanapy.git
