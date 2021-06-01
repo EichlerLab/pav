@@ -43,6 +43,8 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
     seq_tig_len = None   # Current tig length
     seq_tig_rev = None   # Aligned contig was reverse-complemented
 
+    id_set = set()  # Track variant IDs and refuse to left-shift into an ID that has already been called (prevents duplicate variant IDs after left-shift).
+
     # Parse alignment records
     for index, row in df_align.iterrows():
 
@@ -107,10 +109,12 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         pos_tig_snv = seq_tig_len - pos_tig_snv - 1
 
                     # Add variant
+                    var_id = f'{seq_ref_name}-{pos_ref_snv + 1}-SNV-{base_ref}-{base_tig}'
+
                     df_snv_list.append(pd.Series(
                         [
                             seq_ref_name, pos_ref_snv, pos_ref_snv + 1,
-                            f'{seq_ref_name}-{pos_ref_snv + 1}-SNV-{base_ref}-{base_tig}', 'SNV', 1,
+                            var_id, 'SNV', 1,
                             base_ref, base_tig,
                             hap,
                             f'{seq_tig_name}:{pos_tig_snv + 1}-{pos_tig_snv + 1}', strand,
@@ -129,6 +133,8 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                             'CALL_SOURCE'
                         ]
                     ))
+
+                    id_set.add(var_id)
 
                 # Advance
                 pos_ref += oplen
@@ -155,6 +161,18 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 sv_pos_tig = pos_tig - left_shift
                 sv_end_tig = sv_pos_tig + oplen
 
+                while f'{seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}' in id_set and left_shift >= 0:
+                    if left_shift > 0:
+                        left_shift -= 1
+
+                        sv_pos_ref = pos_ref - left_shift
+                        sv_end_ref = sv_pos_ref + 1
+                        sv_pos_tig = pos_tig - left_shift
+                        sv_end_tig = sv_pos_tig + oplen
+
+                    else:
+                        raise RuntimeError(f'Cannot resolve duplicate ID in CIGAR calls: {seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}')
+
                 if left_shift != 0:
                     seq = seq_tig[sv_pos_tig:(sv_pos_tig + oplen)]
 
@@ -178,10 +196,12 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 hom_tig_r = pavlib.call.right_homology(sv_end_tig, seq_tig_upper, seq_upper)
 
                 # Add variant
+                var_id = f'{seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}'
+
                 df_insdel_list.append(pd.Series(
                     [
                         seq_ref_name, sv_pos_ref, sv_end_ref,
-                        f'{seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}', 'INS', oplen,
+                        var_id, 'INS', oplen,
                         hap,
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{end_tig_insdel}', strand,
                         0,
@@ -202,6 +222,8 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'SEQ'
                     ]
                 ))
+
+                id_set.add(var_id)
 
                 # Advance
                 pos_tig += oplen
@@ -229,6 +251,18 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 sv_pos_tig = pos_tig - left_shift
                 sv_end_tig = sv_pos_tig + 1
 
+                while f'{seq_ref_name}-{pos_ref + 1}-DEL-{oplen}' in id_set and left_shift >= 0:
+                    if left_shift > 0:
+                        left_shift -= 1
+
+                        sv_pos_ref = pos_ref - left_shift
+                        sv_end_ref = sv_pos_ref + oplen
+                        sv_pos_tig = pos_tig - left_shift
+                        sv_end_tig = sv_pos_tig + 1
+
+                    else:
+                        raise RuntimeError(f'Cannot resolve duplicate ID in CIGAR calls: {seq_ref_name}-{pos_ref + 1}-DEL-{oplen}')
+
                 # Contig position in original coordinates (translate if - strand)
                 pos_tig_insdel = sv_pos_tig
 
@@ -245,10 +279,12 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 hom_tig_r = pavlib.call.right_homology(sv_pos_tig, seq_tig_upper, seq_upper)
 
                 # Add variant
+                var_id = f'{seq_ref_name}-{pos_ref + 1}-DEL-{oplen}'
+
                 df_insdel_list.append(pd.Series(
                     [
                         seq_ref_name, pos_ref, pos_ref + oplen,
-                        f'{seq_ref_name}-{pos_ref + 1}-DEL-{oplen}', 'DEL', oplen,
+                        var_id, 'DEL', oplen,
                         hap,
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{pos_tig_insdel + 1}', strand,
                         0,
@@ -269,6 +305,8 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'SEQ'
                     ]
                 ))
+
+                id_set.add(var_id)
 
                 # Advance
                 pos_ref += oplen

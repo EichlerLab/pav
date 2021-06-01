@@ -819,7 +819,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
 
     trace_list = list()
 
-    while index < index_end and (diff_cumulative <= diff_bp or cigar_list[index][1] not in {'=', 'X'}):
+    while index < index_end and (diff_cumulative <= diff_bp or cigar_list[index][1] not in {'=', 'X'} or len(trace_list) == 0):
         cigar_count += 1
         cigar_len, cigar_op = cigar_list[index]
 
