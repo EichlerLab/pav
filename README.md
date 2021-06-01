@@ -10,10 +10,17 @@ Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117.
 
 ## Installing PAV
 
-### Dependencies
+### Pull PAV code
 
 Choose a clean directory to install PAV ("install directory"). This will be a clean directory, and analyses will run in
 separate locations.
+
+Pull git and submodules:
+`git clone --recursive https://github.com/EichlerLab/pav.git`
+
+There is nothing to compile, the submodule libraries are pure Python.
+
+### Dependencies 
 
 PAV requires Python 3 with the following Python libraries installed:
 1. BioPython
@@ -24,25 +31,15 @@ PAV requires Python 3 with the following Python libraries installed:
 1. pysam
 1. scipy
 
-PAV will also need the contig aligner. This defaults to minimap2, and PAV also supports LRA (Chaisson lab, USC, not
-yet unpublished).
+Command line tools needed:
+1. minimap2 (optional)
+1. lra (optional)
+1. samtools
+1. bedToBigBed (optional, from UCSC browser tools)
 
-Finally, Samtools should be accessible. PAV can create browser tracks of variant calls, and if this feature is used,
+Optional tools: PAV will also need the contig aligner. This defaults to minimap2, and PAV also supports LRA
+(Chaisson lab, USC, not yet unpublished). PAV can create browser tracks of variant calls, and if this feature is used,
 UCSC browser tools are needed (bedToBigBed).
-
-### Additional libraries
-
-There are two additional libraries PAV needs installed or linked into the `dep` directory.
-
-    mkdir dep
-    git clone https://github.com/EichlerLab/svpop
-    ln -s svpop/svpoplib
-    git clone git@github.com:paudano/kanapy.git
-
-Note: This version of PAV requires SV-Pop 2.0. If you find "analib" instead of "svpoplib", you have SV-Pop version 1.
-
-The SV-Pop libraries contain code for handling variant calls including merging (haplotype callsets to diploid callset).
-Kanapy is a small k-mer library used by the inversion caller.
 
 
 ## Configuring PAV
