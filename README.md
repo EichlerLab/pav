@@ -1,5 +1,7 @@
 # Phased Assembly Variant Caller (PAV)
 
+Version 1.1.0
+
 PAV is a tool for discovering variation using assembled genomes aligned to a reference. It is designed explicitly for
 phased assemblies, however, it can be used for squashed assemblies by providing an empty FASTA for the second haplotype.
 
@@ -124,7 +126,9 @@ To run a single sample, request any output file from Snakemake.
 
 For example:
 
-    snakemake -s ${PAV}/Snakefile results/HG00733_CCS_SS_PG_PRR/bed/sv_ins.bed.gz
+    snakemake -s ${PAV}/Snakefile pav_HG00733_CCS_SS_PG_PRR.vcf.gz
+
+Where "HG00733_CCS_SS_PG_PRR" is the name of the sample or assembly to be run.
 
 ## Interpreting output
 
