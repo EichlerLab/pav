@@ -8,9 +8,6 @@ PAV was developed for the Human Genome Structural Variation Consortium (HGSVC)
 Peter Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation,”
 Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117.
 
-Human Genome Structural Variation Consortium et al., “Fully Phased Human Genome Assembly without Parental Data Using Single-Cell Strand Sequencing and Long Reads,”
-Nature Biotechnology, December 7, 2020, https://doi.org/10.1038/s41587-020-0719-5.
-
 ## Installing PAV
 
 ### Dependencies
