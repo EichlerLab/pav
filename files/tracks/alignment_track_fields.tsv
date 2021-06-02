@@ -4,17 +4,17 @@ POS	uint	chromStart	Start position	Start position
 END	uint	chromEnd	End position	End position
 ID	string	name	Variant ID	Variant ID
 SCORE	uint	score	Score	Score
-STRAND	char[1]	strand	+ or - for strand	Strand
+STRAND	char[1]	strand	#NAME?	Strand
 POS_THICK	uint	thickStart	Coding region start	Coding region start
 END_THICK	uint	thickEnd	Coding region end	Coding region end
-COL	uint	reserved	Blue (insertion), red (deletion), green (inversion)	Blue (insertion), red (deletion), green (inversion)
+COL	uint	reserved	"Blue (insertion), red (deletion), green (inversion)"	"Blue (insertion), red (deletion), green (inversion)"
 INDEX	uint	recordIndex	Record index	Unique index (per haplotype) for each alignment record
 QUERY_ID	lstring	queryId	Query ID	Query (contig) ID
 QUERY_POS	uint	queryPos	Query align POS	Query start position in alignment
 QUERY_END	uint	queryEnd	Query align END	Query end position in alignment
 QUERY_TIG_POS	uint	queryTigPos	Query tig POS	Query start position in original contig (not reverse complemented if alignment was)
 QUERY_TIG_END	uint	queryTigEnd	Query tig END	Query end position in original contig (not reverse complemented if alignment was)
-AO	string	chainOrder	Global chain order	Global chain order (PAV alignments)
+AO	string	chainOrder	Global chain order	Global chain order (LRA alignments)
 RG	string	readGroup	Read group	Read group
 MAPQ	uint	mapQual	MAPQ	Maping quality
 REV	string	isRev	Rev	Alignment was reversed if True
@@ -26,3 +26,4 @@ CUT_TIG_L	uint	cutTigL	Align trim (tig L)	Number of contig bases cut on the left
 CUT_TIG_R	uint	cutTigR	Align trim (tig R)	Number of contig bases cut on the right side
 CLUSTER	lstring	clust	Cluster	Contig cluster ID
 CLUSTER_MATCH	string	clustMatch	Cluster match	Contig cluster matches chromosome
+CALL_BATCH	uint	callBatch	CIGAR call batch	Alignments with the same batch ID are processed through CIGAR variant calling in the same batch. Links to logs for the batch.

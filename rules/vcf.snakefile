@@ -133,8 +133,16 @@ rule vcf_write_vcf:
 
                         # Check for sequence types that cannot be placed in ALT (may need symbolic ALTs)
                         if svtype != 'inv':
-                            df['REF'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'DEL' else row['REF'], axis=1)
-                            df['ALT'] = df.apply(lambda row: row['REF'] + row['SEQ'] if row['SVTYPE'] == 'INS' else row['REF'][0], axis=1)
+                            df['REF'] = df.apply(lambda row:
+                                ((row['REF'] + row['SEQ']) if row['POS'] > 0 else (row['SEQ'] + row['REF'])) if row['SVTYPE'] == 'DEL' else row['REF'],
+                                axis=1
+                            )
+
+                            df['ALT'] = df.apply(lambda row:
+                                ((row['REF'] + row['SEQ']) if row['POS'] > 0 else (row['SEQ'] + row['REF'])) if row['SVTYPE'] == 'INS' else row['REF'][0],
+                                axis=1
+                            )
+
                         else:
                             df['ALT'] = df_ref_base + df['SEQ']
 
