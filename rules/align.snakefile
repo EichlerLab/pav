@@ -86,6 +86,8 @@ rule align_get_read_bed:
             with open(output.align_head, 'w') as out_file:
                 pass
 
+            return
+
         # Read FAI
         df_tig_fai = svpoplib.ref.get_df_fai(input.tig_fai)
         df_tig_fai.index = df_tig_fai.index.astype(str)
@@ -149,24 +151,26 @@ rule align_map:
             with open(output.sam, 'w') as out_file:
                 pass
 
-        # Align
-        if aligner == 'minimap2':
-            shell(
-                """minimap2 """
-                    """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
-                    """--secondary=no -a -t {params.cpu} --eqx -Y """
-                    """-O 5,56 -E 4,1 -B 5 """
-                    """{input.ref_fa} {input.fa} | """
+        else:
+
+            # Align
+            if aligner == 'minimap2':
+                shell(
+                    """minimap2 """
+                        """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
+                        """--secondary=no -a -t {params.cpu} --eqx -Y """
+                        """-O 5,56 -E 4,1 -B 5 """
+                        """{input.ref_fa} {input.fa} | """
+                        """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
+                        """gzip > {output.sam}"""
+                )
+
+            if aligner == 'lra':
+                shell(
+                    """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {params.cpu} | """
                     """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
                     """gzip > {output.sam}"""
-            )
-
-        if aligner == 'lra':
-            shell(
-                """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {params.cpu} | """
-                """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
-                """gzip > {output.sam}"""
-            )
+                )
 
 # align_uncompress_tig
 #

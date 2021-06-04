@@ -5,7 +5,7 @@ Program constants
 # Version constants
 VERSION_MAJOR = 1
 VERSION_MINOR = 1
-VERSION_DEV = 1
+VERSION_DEV = 2
 
 
 def get_version_string():

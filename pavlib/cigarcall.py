@@ -109,7 +109,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         pos_tig_snv = seq_tig_len - pos_tig_snv - 1
 
                     # Add variant
-                    var_id = f'{seq_ref_name}-{pos_ref_snv + 1}-SNV-{base_ref}-{base_tig}'
+                    var_id = f'{seq_ref_name}-{pos_ref_snv + 1}-SNV-{base_ref.upper()}-{base_tig.upper()}'
 
                     df_snv_list.append(pd.Series(
                         [

@@ -18,9 +18,8 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
 
     :param inv_call: pavlib.inv.InvCall object describing the inversion.
     :param ref_fa: Reference FASTA.
-    :param tig_fa: Alignment file name.
-    :param seq_tig: Contig alignment sequence or `None`. If `None`, then `aln_file_name` must be set.
-
+    :param tig_fa: Contig FASTA file name.
+    :param seq_tig: Contig alignment sequence or `None`. If `None`, then `tig_fa` must be set.
 
     :return: A plot object. Before it is discarded, this object should be closed with `matplotlib.pyplot.close()` to
         free memory.
