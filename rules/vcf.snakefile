@@ -58,7 +58,7 @@ rule vcf_write_vcf:
 
                 df['VARTYPE'] = vartype.upper()
 
-                # Read sequence
+                # Read sequence from FASTA
                 if vartype in ('sv', 'indel'):
 
                     df.set_index('ID', inplace=True)
@@ -114,6 +114,10 @@ rule vcf_write_vcf:
                 if svtype == 'inv':
                     df['INFO'] = df.apply(lambda row: row['INFO'] + ';INNER_REF={RGN_REF_INNER};INNER_TIG={RGN_TIG_INNER}'.format(**row), axis=1)
 
+                # INFO: Add breakpoint homology
+                if svtype in {'ins', 'del'}:
+                    df['INFO'] = df.apply(lambda row: row['INFO'] + ';HOM_REF={HOM_REF};HOM_TIG={HOM_TIG}'.format(**row), axis=1)
+
                 # REF
                 if 'REF' not in df.columns:
                     df['REF'] = list(svpoplib.vcf.ref_base(df, config['reference']))
@@ -147,14 +151,20 @@ rule vcf_write_vcf:
                             df['ALT'] = df_ref_base + df['SEQ']
 
                         del df['SEQ']
+
+                        df['ALT'] = df['ALT'].apply(lambda val: val.upper())
+
                 else:
                     # Fix position for SNVs (0-based BED to 1-based VCF)
                     df['POS'] += 1
+
+                    df['ALT'] = df['ALT'].apply(lambda val: val.upper())
 
                 # Save columns needed for VCF
                 df = df[['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'INFO', 'GT']]
 
                 df_list.append(df)
+
 
         # Merge
         df = pd.concat(df_list, axis=0)
@@ -170,6 +180,8 @@ rule vcf_write_vcf:
         info_header_list.append(('QUERY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows TIG_REGION)'))
         info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (order follows TIG_REGION)'))
         info_header_list.append(('INNER_TIG', '.', 'String', 'Inversion inner breakpoint in contig coordinates (order follows TIG_REGION)'))
+        info_header_list.append(('HOM_REF', '.', 'String', 'Perfect breakpoint homology (SV sequence vs reference). Format \'X,Y\' where X homology upstream, and Y is homology downstream. Homology vs reference is often better for DEL.'))
+        info_header_list.append(('HOM_TIG', '.', 'String', 'Perfect breakpoint homology (SV sequence vs contig). Format \'X,Y\' where X homology upstream, and Y is homology downstream. Homology vs contig is often better for INS.'))
 
         if symbolic_alt:
             info_header_list.append(('SEQ', '.', 'String', 'SV or indel sequence'))

@@ -1602,7 +1602,7 @@ def check_record_err_string(df, df_tig_fai):
     return df.apply(_check_record_err_string_check_row, axis=1)
 
 
-def count_cigar(row):
+def count_cigar(row, allow_m=False):
     """
     Count bases affected by CIGAR operations in an alignment record (row is a Pandas Series from an ailgnment BED).
 
@@ -1615,6 +1615,8 @@ def count_cigar(row):
     * clip_s_r: Soft-clipped bases on the right (downstream) side.
 
     :param row: Row with CIGAR records as a CIGAR string.
+    :param allow_m: If True, allow "M" CIGAR operations. PAV does not allow M operations, this option exists for other
+        tools using the PAV library.
 
     :return: A tuple of (ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r).
     """
@@ -1708,6 +1710,21 @@ def count_cigar(row):
                 raise RuntimeError('Duplicate H records (right) at operation {}'.format(index))
 
             clip_h_r = cigar_len
+
+        elif cigar_op == 'M':
+
+            if not allow_m:
+                raise RuntimeError('CIGAR op "M" is not allowed')
+
+            if clip_s_r > 0 or clip_h_r > 0:
+                raise RuntimeError(
+                    'Found clipped bases before last non-clipped CIGAR operation at operation {} ({}{})'.format(
+                        index, cigar_len, cigar_op
+                    )
+                )
+
+            ref_bp += cigar_len
+            tig_bp += cigar_len
 
         else:
             raise RuntimeError('Bad CIGAR op: ' + cigar_op)

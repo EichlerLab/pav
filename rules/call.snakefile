@@ -508,6 +508,8 @@ rule call_cigar:
 
         batch = int(wildcards.batch)
 
+        os.makedirs(os.path.dirname(output.bed_insdel), exist_ok=True)  # Random crashes with "FileNotFoundError", Snakemake not creating output directory?
+
         # Read
         df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str})
 

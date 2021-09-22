@@ -7,7 +7,7 @@
 #
 # Where the first script found is the one used. Control is passed to the script.
 
-# Refuse to exeucute from install directory
+# Refuse to execute from install directory
 if [[ $(dirname $(readlink -f $0)) == $(readlink -f $(pwd)) ]]; then
     echo "Attempting to execute run script from install directory, or run script was copied to the run directory. Symlink the run script to the run directory, cd to the run directory, and run from there." >&2
     exit 1
