@@ -1,5 +1,4 @@
 <h1 align="center"><img width="300px" src="img/logo/PAVLogo_Full.png"/></h1>
-<h1 align="center">PAV</h1>
 <p align="center">Phased Assembly Variant Caller</p>
 
 ***
@@ -10,7 +9,7 @@ phased assemblies, however, it can be used for squashed assemblies by providing 
 
 PAV was developed for the Human Genome Structural Variation Consortium (HGSVC)
 
-Peter Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation,”
+Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation,”
 Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117.
 
 ## Installing PAV
@@ -36,21 +35,27 @@ PAV requires Python 3 with the following Python libraries installed:
 1. pysam
 1. scipy
 
+Note: We have had problems with pysam 0.16 crashing, which first appears at the `align_get_read_bed` step. We have
+had success with pysam 0.15.2.
+
 Command line tools needed:
-1. minimap2 (optional)
-1. lra (optional)
+1. minimap2 (default aligner)
+1. lra (optional alternate aligner)
 1. samtools
 1. bedToBigBed (optional, from UCSC browser tools)
 
-Optional tools: PAV will also need the contig aligner. This defaults to minimap2, and PAV also supports LRA
-(Chaisson lab, USC, not yet unpublished). PAV can create browser tracks of variant calls, and if this feature is used,
-UCSC browser tools are needed (bedToBigBed).
+Optional tools: The aligner defaults to minimap2, but PAV also supports LRA (Jingwen Ren and Mark Chaisson, USC, not yet
+unpublished). PAV only requires the aligner you use, both do not need to be installed.
+
+PAV can create browser tracks for variant calls, and if this feature is used, the UCSC browser tools are needed
+(bedToBigBed). Pre-compiled binaries can be obtained from http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/
 
 
 ## Configuring PAV
 
-Once PAV is installed, move to a clean directory ("analysis directory") where PAV will be run. The following
-configuration steps will be done in this analysis directory.
+Once PAV is installed, move to a clean directory ("analysis directory") where PAV will be run. Do not try to run PAV
+from the install directory (where `Snakefile` is found). The following configuration steps will be done in the
+new analysis directory. This way, PAV can be deployed once and run on any number of projects without duplicating code.
 
 
 ### Base config: config.json
@@ -64,10 +69,11 @@ Example:
       "reference": "/path/to/hg38.no_alt.fa.gz"
     }
 
-Note: The HGSVC reference can be found in ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/HGSVC2/technical/reference/20200513_hg38_NoALT/
+Note: The HGSVC reference can be found in
+ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/HGSVC2/technical/reference/20200513_hg38_NoALT/
 
-A no-ALT version of a reference is essential for PAV. A reference containing alternate loci, decoys, or patches may
-produce unexpected results and will likely lead to a loss of sensitivity.
+A no-ALT version of a reference is essential for long read assemblies. A reference containing alternate loci, decoys, or
+patches may produce unexpected results and will likely lead to a loss of sensitivity.
 
 ### Assembly Input
 
@@ -119,11 +125,55 @@ The configuration option "assembly_table" (`config.json`) may be used to set the
 
 ## Running PAV
 
+There are two ways to run PAV.
+
+1. Run scripts: Execute through `rundist` and `runlocal`. This requries a little more configuration, but allows PAV to be quickly
+executed for a number of projects. This is the recommended way to run PAV.
+1. Snakemake direct: Execute by calling snakemake directly.
+
+Both methods are outlined below.
+
+### Run scripts
+
+To execute Snakemake, go to the run directory and link `rundist` and `runlocal` from the PAV install directory
+
+Example:
+
+    ln -s /path/to/PAV/1.0.0/rundist ./
+    ln -s /path/to/PAV/1.0.0/runlocal ./
+
+`rundist` will be used to distribute over a cluster, and `runlocal` will be used to run the pipeline in the current
+session. Configuring `rundist` will require some knowledge for distributing over a cluster.
+
+Both scripts setup some control variables and pass control over to a user-defined script. `rundist` will search for
+`config/rundist.sh`, and `runlocal` will search for `config/runlocal.sh`. It first searches the run directory, then
+it searches the PAV install directory. Once found, it calls that script to carry out calling Snakemake. Generally,
+you would add your run scripts to the PAV install directory so it could be run for any number of projects. Some runs
+may need custom resources not typical for other projects, and for those, you can override the script in the PAV
+install directory with one in the run directory.
+
+Examples for what your `config/rundist.sh` and `config/runlocal.sh` might look like are in comments at the bottom of
+`rundist` and `runlocal`.
+
+After the symbolic link is created and your `config/rundist.sh` and/or `config/runlocal.sh` are in place, PAV is run:
+
+    ./rundist 20 pav_HG00733_CCS_SS_PG_PRR.vcf.gz
+
+or
+
+    ./runlocal 20 pav_HG00733_CCS_SS_PG_PRR.vcf.gz
+
+The first number (20 in the example) is the number of concurrent jobs. Everything else is passed to Snakemake as a
+target, and there may be multiple targets. If there are no targets, the default rule is run, which reads
+`assemblies.tsv` and generates the VCF for all. If you are using wildcards in `config.json` instead of `assemblies.tsv`,
+the targets are required.
+
+### Snakemake direct
+
 Examples in this section will assume shell variable `PAV` is set to the PAV install directory (directory with
 `Snakemake` in it).
 
-PAV currently writes variant calls as formatted BED files, but a VCF writer is expected to be implemented soon. If
-PAV was configured to read from `assemblies.tsv`, then the default rule will run all assemblies.
+If PAV was configured to read from `assemblies.tsv`, then the default rule will run all assemblies.
 
 To run a single sample, request any output file from Snakemake.
 
@@ -134,6 +184,8 @@ For example:
 Where "HG00733_CCS_SS_PG_PRR" is the name of the sample or assembly to be run.
 
 ## Interpreting output
+
+Most projects will read from the VCF in the root of the run directory, but PAV outputs some other useful information.
 
 The output directory (`results/{asm_name}`) has several subdirectories:
 
@@ -367,15 +419,16 @@ for the second parameter will give diminishing returns.
 
 ## Cite PAV
 
-Peter Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation,”
-Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117.
+Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation,”
+Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117 (PMID: 33632895).
 
-PMID: 33632895
-
+Audano et al., "PAV: An assembly-based approach for discovering structural variants, indels, and point mutations
+in long-read phased genomes," ASHG Annual Meeting, October 20 (10:45 - 11:00 AM), PrgmNr 1160
 
 ## Contact
 
 Please open a case on the Github page for problems.
 
 You may also contact Peter Audano directly (e-mail omitted to reduce SPAM). PAV was developed in the lab of
-Dr. Evan Eichler at the University of Washington, and Peter is currently at The Jackson Laboratory (Beck Lab).
+Dr. Evan Eichler at the University of Washington and is currently maintained in the lab of Dr. Christine beck at The
+Jackson Laboratory.
