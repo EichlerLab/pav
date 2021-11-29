@@ -18,6 +18,9 @@ import Bio.Seq
 MAX_TIG_DIST_PROP = 1  # Max allowed tig gap as a factor of the minimum alignment length of two records
 MAX_REF_DIST_PROP = 3  # Max allowed ref gap as a factor of the minimum alignment length of two records
 
+DIST_PROP_LEN_MAPQ = (20000, 40)  # If a flanking alignment is at least as long as the first element and MAPQ is at
+# least the second element, ignore MAX_TIG_DIST_PROP and MAX_REF_DIST_PROP and accept the alignments.
+
 CALL_SOURCE = 'ALNTRUNC'  # Call source annotation for alignment-truncating events
 
 CALL_SOURCE_INV_DENSITY = 'ALNTRUNC-DEN'
@@ -108,22 +111,26 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                 if row2['REV'] == is_rev:
                     # Scan for INS/DEL
 
-                    query_pos = row2['QUERY_TIG_END'] if is_rev else row1['QUERY_TIG_END']
-                    query_end = row1['QUERY_TIG_POS'] if is_rev else row2['QUERY_TIG_POS']
+                    query_pos = row1['QUERY_TIG_POS'] if is_rev else row1['QUERY_TIG_END']
+                    query_end = row2['QUERY_TIG_END'] if is_rev else row2['QUERY_TIG_POS']
 
                     dist_tig = query_end - query_pos
                     dist_ref = row2['POS'] - row1['END']
 
                     min_aln_len = np.min([row1['QRY_LEN'], row2['QRY_LEN']])
+                    min_mapq = np.min([row1['MAPQ'], row2['MAPQ']])
 
-                    # Stop if there is large gap between the aligned bases (tig or ref)
-                    if (
-                            np.abs(dist_tig) / min_aln_len > max_tig_dist_prop
-                    ) or (
-                            np.abs(dist_ref) / min_aln_len > max_ref_dist_prop
-                    ):
-                        subindex2 += 1
-                        continue
+                    # Stop at large gap between the aligned bases where flanking alignments are not well supported
+                    if min_aln_len < DIST_PROP_LEN_MAPQ[0] or min_mapq < DIST_PROP_LEN_MAPQ[1]:
+
+                        # Rescue if alignments are sufficently large
+                        if (
+                                np.abs(dist_tig) / min_aln_len > max_tig_dist_prop
+                        ) or (
+                                np.abs(dist_ref) / min_aln_len > max_ref_dist_prop
+                        ):
+                            subindex2 += 1
+                            continue
 
                     if dist_tig >= 50 or dist_ref >= 50:
 
