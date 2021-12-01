@@ -29,7 +29,7 @@ TC_CLIPS_BP = 9
 TC_CLIPH_BP = 10
 
 
-def trim_alignments(df, min_trim_tig_len, tig_fai):
+def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
     """
     Do alignment trimming from prepared alignment BED file. This BED contains information about reference and
     contig coordinates mapped, CIGAR string and flags.
@@ -37,6 +37,12 @@ def trim_alignments(df, min_trim_tig_len, tig_fai):
     :param df: Alignment dataframe.
     :param min_trim_tig_len: Minimum alignment record length. Alignment records smaller will be discarded.
     :param tig_fai: FAI file from the contig FASTA that was mapped. Used for an alignment sanity check after trimming.
+    :param match_tig: When trimming in reference space (removing redundantly mapped reference bases), only trim
+        alignment records if the contig (query ID) matches. This allows multiple contigs to map to the same location,
+        which may produce a redundant set of variant calls from mis-aligned contigs (e.g. incorrectly mapped paralogs).
+        This mode is useful for generating a maximal callset where multiple contigs may cover the same region (e.g.
+        alleles in squashed assembly or mixed haplotypes (e.g. subclonal events). Additional QC should be applied to
+        callsets using this option.
 
     :return: Trimmed alignments as an alignment DataFrame. Same format as `df` with columns added describing the
         number of reference and contig bases that were trimmed. Dropped records (mapped inside another or too shart) are
@@ -70,7 +76,7 @@ def trim_alignments(df, min_trim_tig_len, tig_fai):
 
     df.reset_index(inplace=True, drop=True)
 
-    # Do trim in contig space
+    # Do trim in contig space #
     iter_index_l = 0
     index_max = df.shape[0]
 
@@ -275,6 +281,11 @@ def trim_alignments(df, min_trim_tig_len, tig_fai):
 
             # Skip if one record was already removed
             if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                iter_index_r += 1
+                continue
+
+            # Skip if match_tig and query names differ
+            if match_tig and df.loc[iter_index_l, 'QUERY_ID'] != df.loc[iter_index_r, 'QUERY_ID']:
                 iter_index_r += 1
                 continue
 

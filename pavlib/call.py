@@ -67,6 +67,40 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
     )
 
 
+def filter_by_ref_tree(df, filter_tree, match_tig=False):
+    """
+    Filter DataFrame by a dict (keyed by chromosome) of interval trees.
+
+    :param df: DataFrame to filter.
+    :param filter_tree: Dict of trees.
+    :param match_tig: Match TIG_REGION contig name to the value in the filter tree for intersected intervals (filter
+        tree values should be contig names for the interval). When set, only filters variants inside regions with a
+        matching contig. This causes PAV to treat each contig as a separate haplotype.
+
+    :return: Filtered DataFrame.
+    """
+
+    if match_tig:
+        df = df.loc[
+            df.apply(
+                lambda row: not np.any(
+                    [row['TIG_REGION'].split(':', 1)[0] == region.data for region in filter_tree[row['#CHROM']][row['POS']:row['END']]]
+                ),
+                axis=1
+            )
+        ]
+
+    else:
+        df = df.loc[
+            df.apply(
+                lambda row: len(filter_tree[row['#CHROM']][row['POS']:row['END']]) == 0,
+                axis=1
+            )
+        ]
+
+    return df
+
+
 def filter_by_tig_tree(df, tig_filter_tree):
     """
     Filter records from a callset DataFrame by matching "TIG_REGION" with regions in an IntervalTree.

@@ -31,14 +31,16 @@ rule align_cut_tig_overlap:
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     params:
-        min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000))  # Minimum aligned tig length
+        min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000)),  # Minimum aligned tig length
+        redundant_callset=pavlib.util.as_bool(config.get('redundant_callset', False))
     run:
 
         # Trim alignments
         df = pavlib.align.trim_alignments(
             pd.read_csv(input.bed, sep='\t'),  # Untrimmed alignment BED
             params.min_trim_tig_len,  # Minimum contig length
-            input.tig_fai  # Path to alignment FASTA FAI
+            input.tig_fai,  # Path to alignment FASTA FAI
+            match_tig=params.redundant_callset  # Redundant callset, trim reference space only for records with matching IDs
         )
 
         # Add batch ID for CIGAR calling (calls in batches)

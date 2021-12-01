@@ -276,7 +276,8 @@ rule call_integrate_sources:
         bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz')
     params:
         min_inv=config.get('min_inv', 300),
-        max_inv=config.get('max_inv', 2000000)
+        max_inv=config.get('max_inv', 2000000),
+        redundant_callset=pavlib.util.as_bool(config.get('redundant_callset', False))
     run:
 
         # Set parameters
@@ -340,30 +341,20 @@ rule call_integrate_sources:
         filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
         for index, row in df_inv.iterrows():
-            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
 
         # Read large variants and filter by inversions
         df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False)
         df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False)
 
         if df_lg_ins.shape[0] > 0:
-            df_lg_ins = df_lg_ins.loc[
-                df_lg_ins.apply(
-                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                    axis=1
-                )
-            ]
+            df_lg_ins = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
 
             # Apply contig filter to large INS
             df_lg_ins = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
 
         if df_lg_del.shape[0] > 0:
-            df_lg_del = df_lg_del.loc[
-                df_lg_del.apply(
-                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                    axis=1
-                )
-            ]
+            df_lg_del = pavlib.call.filter_by_ref_tree(df_lg_del, filter_tree, match_tig=params.redundant_callset)
 
             # Apply contig filter to large DEL
             df_lg_del = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
@@ -385,20 +376,10 @@ rule call_integrate_sources:
 
         # Filter CIGAR calls
         if df_cigar_insdel.shape[0] > 0:
-            df_cigar_insdel = df_cigar_insdel.loc[
-                df_cigar_insdel.apply(
-                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                    axis=1
-                )
-            ]
+            df_cigar_insdel = pavlib.call.filter_by_ref_tree(df_cigar_insdel, filter_tree, match_tig=params.redundant_callset)
 
         if df_snv.shape[0] > 0:
-            df_snv = df_snv.loc[
-                df_snv.apply(
-                    lambda row: len(filter_tree[row['#CHROM'][row['POS']:row['END']]]) == 0,
-                    axis=1
-                )
-            ]
+            df_snv = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset)
 
         # Apply contig filter to small variants
         df_cigar_insdel = pavlib.call.filter_by_tig_tree(df_cigar_insdel, tig_filter_tree)
