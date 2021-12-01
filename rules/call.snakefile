@@ -125,7 +125,8 @@ rule call_merge_haplotypes:
     params:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12))
+        merge_threads=int(config.get('merge_threads', 12)),
+        merge_align=config.get('merge_align', None)
     run:
 
         if pavlib.util.as_bool(config.get('merge_by_chrom', True)):
@@ -136,6 +137,20 @@ rule call_merge_haplotypes:
                 config_def = 'nrid'
             else:
                 config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
+
+                # Get alignment merging parameters
+                if params.merge_align is not None:
+
+                    if params.merge_align.lower() == 'true':
+                        align_params = ':match=0.8,2,-1,-1,-0.25'
+
+                    elif params.merge_align.lower() == 'false':
+                        align_params = ''
+
+                    else:
+                        align_params = f';match={params.merge_align}'
+
+                    config_def += align_params
 
             print('Merging with def: ' + config_def)
             sys.stdout.flush()
@@ -181,13 +196,14 @@ rule call_merge_haplotypes_chrom:
         bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
         bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
         callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
-        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
+        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
         bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'
     params:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12))
+        merge_threads=int(config.get('merge_threads', 12)),
+        merge_align=config.get('merge_align', 'false')
     run:
 
         var_svtype_list = wildcards.vartype_svtype.split('_')
@@ -200,6 +216,20 @@ rule call_merge_haplotypes_chrom:
             config_def = 'nrid'
         else:
             config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
+
+            # Get alignment merging parameters
+            if params.merge_align is not None:
+
+                if params.merge_align.lower() == 'true':
+                    align_params = ':match=0.8,2,-1,-1,-0.25'
+
+                elif params.merge_align.lower() == 'false':
+                    align_params = ''
+
+                else:
+                    align_params = f';match={params.merge_align}'
+
+                config_def += align_params
 
         print('Merging with def: ' + config_def)
         sys.stdout.flush()

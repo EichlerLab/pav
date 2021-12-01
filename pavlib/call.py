@@ -63,7 +63,8 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
          )),
          axis=1
     ).apply(
-        lambda val_list: delim.join(df_dict[val[0]].loc[val[1], col_name] for val in val_list)
+        # Get from original table, correct back to original ID (take off everything after ".')
+        lambda val_list: delim.join(df_dict[val[0]].loc[val[1].rsplit('.', 1)[0], col_name] for val in val_list)
     )
 
 
@@ -267,7 +268,9 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
         subset_chrom=chrom
     )
 
+    #df.set_index(df['ID'].apply(lambda val: val.rsplit('.', 1)[0]), inplace=True, drop=False)
     df.set_index('ID', inplace=True, drop=False)
+    df.index.name = 'INDEX'
 
     # Set is_inv
     if is_inv is None:
