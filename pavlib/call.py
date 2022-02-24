@@ -63,8 +63,9 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
          )),
          axis=1
     ).apply(
-        # Get from original table, correct back to original ID (take off everything after ".')
-        lambda val_list: delim.join(df_dict[val[0]].loc[val[1].rsplit('.', 1)[0], col_name] for val in val_list)
+        lambda val_list: delim.join(df_dict[val[0]].loc[val[1], col_name] for val in val_list)
+        ## Get from original table, correct back to original ID (take off everything after ".')
+        #lambda val_list: delim.join(df_dict[val[0]].loc[val[1].rsplit('.', 1)[0], col_name] for val in val_list)
     )
 
 

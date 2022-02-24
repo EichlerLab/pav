@@ -134,7 +134,7 @@ rule call_merge_haplotypes:
 
             # Get configured merge definition
             if wildcards.vartype_svtype == 'snv_snv':
-                config_def = 'nrid'
+                config_def = 'nr:refalt'
             else:
                 config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
 
@@ -203,7 +203,7 @@ rule call_merge_haplotypes_chrom:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
         merge_threads=int(config.get('merge_threads', 12)),
-        merge_align=config.get('merge_align', 'false')
+        merge_align=config.get('merge_align', 'true')
     run:
 
         var_svtype_list = wildcards.vartype_svtype.split('_')
@@ -213,7 +213,7 @@ rule call_merge_haplotypes_chrom:
 
         # Get configured merge definition
         if wildcards.vartype_svtype == 'snv_snv':
-            config_def = 'nrid'
+            config_def = 'nr:refalt'
         else:
             config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
 
@@ -221,13 +221,13 @@ rule call_merge_haplotypes_chrom:
             if params.merge_align is not None:
 
                 if params.merge_align.lower() == 'true':
-                    align_params = ':match=0.8,2,-1,-1,-0.25'
+                    align_params = ':match=0.8,2,-1,-4,-0.25,500000,9'
 
                 elif params.merge_align.lower() == 'false':
                     align_params = ''
 
                 else:
-                    align_params = f';match={params.merge_align}'
+                    align_params = f':match={params.merge_align}'
 
                 config_def += align_params
 
@@ -303,23 +303,24 @@ rule call_integrate_sources:
         bed_ins=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_ins.bed.gz'),
         bed_del=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_del.bed.gz'),
         bed_inv=temp('temp/{asm_name}/bed/integrated/{hap}/sv_inv.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz')
+        bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz'),
+        bed_inv_dropped='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz'
     params:
-        min_inv=config.get('min_inv', 300),
-        max_inv=config.get('max_inv', 2000000),
+        inv_min=config.get('inv_min', 300),
+        inv_max=config.get('inv_max', 2000000),
         redundant_callset=pavlib.util.as_bool(config.get('redundant_callset', False))
     run:
 
         # Set parameters
-        if params.min_inv is not None and params.min_inv != 'unlimited':
-            min_inv = int(params.min_inv)
+        if params.inv_min is not None and params.inv_min != 'unlimited':
+            inv_min = int(params.inv_min)
         else:
-            min_inv = None
+            inv_min = None
 
-        if params.max_inv is not None and params.max_inv != 'unlimited':
-            max_inv = int(params.max_inv)
+        if params.inv_max is not None and params.inv_max != 'unlimited':
+            inv_max = int(params.inv_max)
         else:
-            max_inv = None
+            inv_max = None
 
         # Read tig filter (if present)
         tig_filter_tree = None
@@ -344,14 +345,23 @@ rule call_integrate_sources:
             ],
             axis=0
         ).sort_values(
-            ['#CHROM', 'POS']
+            ['#CHROM', 'POS', 'END', 'ID']
         ).reset_index(drop=True)
 
-        if min_inv is not None:
-            df_inv = df_inv.loc[df_inv['SVLEN'] >= min_inv]
+        df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
 
-        if max_inv is not None:
-            df_inv = df_inv.loc[df_inv['SVLEN'] <= max_inv]
+        # Filter INV by size
+        inv_dropped_list = list()
+
+        if inv_min is not None:
+            inv_dropped_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min])
+            inv_dropped_list[-1]['REASON'] = 'Less than min size'
+            df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min]
+
+        if inv_max is not None:
+            inv_dropped_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max])
+            inv_dropped_list[-1]['REASON'] = 'Greater than max size'
+            df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max]
 
         # Apply contig filter to INV
         df_inv = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
@@ -359,13 +369,23 @@ rule call_integrate_sources:
         # Filter overlapping inversion calls
         inv_tree = collections.defaultdict(intervaltree.IntervalTree)
         inv_index_set = set()
+        inv_dropped_index_set = set()
 
         for index, row in df_inv.sort_values(['SVLEN', 'POS']).iterrows():
             if len(inv_tree[row['#CHROM']][row['POS']:row['END']]) == 0:
                 inv_index_set.add(index)
                 inv_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+            else:
+                inv_dropped_index_set.add(index)
+
+        if inv_dropped_index_set:
+            inv_dropped_list.append(df_inv.loc[inv_dropped_index_set].sort_values(['#CHROM', 'POS']))
+            inv_dropped_list[-1]['REASON'] = 'Overlaps another inversion'
 
         df_inv = df_inv.loc[inv_index_set].sort_values(['#CHROM', 'POS'])
+
+        # Write dropped inversions
+        pd.concat(inv_dropped_list).to_csv(output.bed_inv_dropped, sep='\t', index=False, compression='gzip')
 
         # Initialize filter with inversions
         filter_tree = collections.defaultdict(intervaltree.IntervalTree)
@@ -391,7 +411,7 @@ rule call_integrate_sources:
 
             # Add large deletions to filter
             for index, row in df_lg_del.iterrows():
-                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
 
         # Read CIGAR calls
         df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False)
@@ -441,34 +461,6 @@ rule call_integrate_sources:
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
         df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
 
-# call_inv_bed
-#
-# Make inversion call BED.
-rule call_inv_bed:
-    input:
-        bed='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
-    output:
-        bed=temp('temp/{asm_name}/bed/pre_merge/sv_inv_{hap}.bed.gz'),
-        bed_dropped='results/{asm_name}/bed/dropped/shortinv_sv_inv_{hap}.bed.gz'
-    params:
-        min_svlen=config.get('inv_min_svlen', 300)
-    run:
-
-        # Read inversions
-        df = pd.read_csv(input.bed, sep='\t')
-
-        # Filter
-        df_drop = df.loc[df['SVLEN'] < params.min_svlen]
-        df_drop.to_csv(output.bed_dropped, sep='\t', index=False, compression='gzip')
-
-        df = df.loc[[index for index in df.index if index not in df_drop.index]]
-
-        df.drop_duplicates('ID', inplace=True)
-
-        # Write BED
-        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
-
-
 #
 # Call from CIGAR
 #
@@ -485,20 +477,29 @@ rule call_cigar_merge:
         bed_snv=temp('temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz')
     run:
 
-        # Read, merge, sort, write
-        pd.concat(
+        # INS/DEL
+        df_insdel = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed_insdel],
             axis=0
-        ).sort_values(
-            ['#CHROM', 'POS']
+        )
+
+        df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+
+        df_insdel.sort_values(
+            ['#CHROM', 'POS', 'END', 'ID']
         ).to_csv(
             output.bed_insdel, sep='\t', index=False, compression='gzip'
         )
 
-        pd.concat(
+        # SNV
+        df_snv = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed_snv],
             axis=0
-        ).sort_values(
+        )
+
+        df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
+
+        df_snv.sort_values(
             ['#CHROM', 'POS']
         ).to_csv(
             output.bed_snv, sep='\t', index=False, compression='gzip'

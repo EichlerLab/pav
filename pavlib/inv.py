@@ -557,6 +557,7 @@ def annotate_inv_dup_mers(
 
     return df
 
+
 def get_srs_tree(srs_tuple_list):
 
     # Use default value for all lengths by default

@@ -11,6 +11,7 @@ import sys
 import pavlib.seq
 import pavlib.inv
 import kanapy.util.kmer
+import svpoplib
 
 import Bio.Seq
 
@@ -510,7 +511,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
     # Concat records
     if len(ins_list) > 0:
-        df_ins = pd.concat(ins_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
+        df_ins = pd.concat(ins_list, axis=1).T
+        df_ins['ID'] = svpoplib.variant.version_id(df_ins['ID'])
+        df_ins.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
+
     else:
         df_ins = pd.DataFrame([], columns=[
             '#CHROM', 'POS', 'END',
@@ -525,7 +529,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         ])
 
     if len(del_list) > 0:
-        df_del = pd.concat(del_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
+        df_del = pd.concat(del_list, axis=1).T
+        df_del['ID'] = svpoplib.variant.version_id(df_del['ID'])
+        df_del.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
+
     else:
         df_del = pd.DataFrame([], columns=[
             '#CHROM', 'POS', 'END',
@@ -540,7 +547,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         ])
 
     if len(inv_list) > 0:
-        df_inv = pd.concat(inv_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END'])
+        df_inv = pd.concat(inv_list, axis=1).T
+        df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+        df_inv.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
+
     else:
         df_inv = pd.DataFrame([], columns=[
             '#CHROM', 'POS', 'END',
@@ -557,7 +567,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         ])
 
     # Return records
-    return ((df_ins, df_del, df_inv))
+    return df_ins, df_del, df_inv
 
 
 class SeqCache:

@@ -134,16 +134,17 @@ rule align_map:
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:
-        cpu=lambda wildcards: _align_map_cpu(wildcards, config)
+        cpu=lambda wildcards: _align_map_cpu(wildcards, config),
+        aligner=config.get('aligner', 'minimap2')
     run:
 
         # Get aligner
         if 'aligner' in config:
 
-            if config['aligner'] not in {'minimap2', 'lra'}:
-                raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(config['aligner']))
+            if params.aligner not in {'minimap2', 'lra'}:
+                raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(params.aligner))
 
-            aligner = config['aligner']
+            aligner = params.aligner
 
         else:
             aligner = 'minimap2'
@@ -197,14 +198,26 @@ rule align_uncompress_tig:
 # Get FASTA files.
 rule align_get_tig_fa:
     input:
-        fa=align_input_fasta
+        fa=align_input_list
     output:
         fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
         fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai')
     run:
 
-        # Copy FASTA to FA/GZ
-        pavlib.seq.copy_fa_to_gz(input.fa, output.fa)
+        # Get input files
+        input_list = input.fa if 'fa' in input.keys() else []
+
+        input_tuples = pavlib.seq.expand_input(input_list)
+
+        # Report input sources
+        if input_tuples is not None:
+            for file_name, file_format in input_tuples:
+                print(f'Input: {wildcards.asm_name} {wildcards.hap}: {file_name} ({file_format})')
+        else:
+            print(f'No input sources: {wildcards.asm_name} {wildcards.hap}')
+
+        # Merge/write FASTA (or empty files if there is no input)
+        pavlib.seq.input_tuples_to_fasta(input_tuples, output.fa)
 
         # Index
         if os.stat(output.fa).st_size > 0:
@@ -226,7 +239,7 @@ rule align_get_tig_fa:
 rule align_get_cram_postcut:
     input:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        fa=align_input_fasta,
+        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
 
@@ -244,7 +257,7 @@ rule align_get_cram_postcut:
 rule align_get_cram_precut:
     input:
         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz',
-        fa=align_input_fasta,
+        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:

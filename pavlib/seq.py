@@ -13,6 +13,7 @@ import pysam
 import re
 import shutil
 
+import svpoplib
 import kanapy
 
 
@@ -285,6 +286,15 @@ def region_from_id(region_id):
 
 
 def ref_kmers(region, fa_file_name, k_util):
+    """
+    Get a counter keyed by k-mers.
+
+    :param region: Region to extract sequence from.
+    :param fa_file_name: FASTA file to extract sequence from.
+    :param k_util: K-mer utility for k-merizing sequence.
+
+    :return: A collections.Counter object key k-mer keys and counts.
+    """
 
     ref_seq = region_seq_fasta(region, fa_file_name, False)
 
@@ -333,61 +343,234 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
         return sequence
 
 
-def copy_fa_to_gz(in_file_name, out_file_name):
+def expand_input(file_name_list):
+    """
+    Expand input to a list of tuples:
+    * [0]: File name.
+    * [1]: File type ("fasta", "fastq", or "gfa")
 
-    # Write empty files in FASTA is empty
-    if os.stat(in_file_name).st_size == 0:
+    File type does not change if the file is gzipped, the downstream input function will resolve that.
+
+    This function traverses FOFN files (file of file names) recursively until FASTA, FASTQ, or GFA files are found.
+
+    :param file_name_list: List of input file names.
+    """
+
+    # Check arguments
+    if file_name_list is None:
+        raise RuntimeError('Cannot create input FASTA: Input name list is None')
+
+    # Check files
+    if issubclass(file_name_list.__class__, str):
+        file_name_list = [file_name_list]
+
+    elif issubclass(file_name_list.__class__, tuple):
+        file_name_list = list(file_name_list)
+
+    elif issubclass(file_name_list.__class__, set):
+        file_name_list = sorted(file_name_list)
+
+    elif not issubclass(file_name_list.__class__, list):
+        raise RuntimeError(f'Unrecognized type for input file name list: {file_name_list.__class__}')
+
+
+    # Generate a list of files traversing into FOFN files
+    file_name_tuples = list()
+    fofn_set = list()  # Set of visited FOFN files (prevent recursive traversal)
+
+    while len(file_name_list) > 0:
+
+        # Next file name
+        file_name = file_name_list[0].strip()
+        file_name_list = file_name_list[1:]
+
+        if not file_name:
+            continue
+
+        # Get file extension
+        file_name_lower = file_name.lower()
+
+        if file_name_lower.endswith('.gz'):  # Strip GZ, the downstream input functions will detect file type
+            file_name_lower = file_name_lower.rsplit('.', 1)[0]
+
+        if '.' not in file_name_lower:
+            raise RuntimeError(f'No recognizable extension in file name: {file_name}')
+
+        file_name_ext = file_name_lower.rsplit('.', 1)[1]
+
+        # Expand FOFN files
+        if file_name_ext == 'fofn':
+
+            # Check for recursive FOFN traversal
+            file_name_real = os.path.realpat(file_name)
+
+            if file_name_real in fofn_set:
+                raise RuntimeWarning(f'Detected recursive FOFN traversal, ignoring redundant entry: {file_name}')
+                continue
+
+            fofn_set.add(file_name_real)
+
+            # Append FOFN entries to the input file list
+            with svpoplib.seq.PlainOrGzReader(file_name) as in_file:
+                for line in in_file:
+                    line = line.strip()
+
+                    if line:
+                        file_name_list.append(line.lower())
+
+        # FASTA files
+        if file_name_ext in {'fasta', 'fa', 'fn'}:
+            file_name_tuples.append((file_name, 'fasta'))
+
+        elif file_name_ext in {'fastq', 'fq'}:
+            file_name_tuples.append((file_name, 'fastq'))
+
+        elif file_name_ext == 'gfa':
+            file_name_tuples.append((file_name, 'gfa'))
+
+        else:
+            raise RuntimeError(f'Unrecognized file extension {file_name_ext}: {file_name}')
+
+        # Return tuples
+        return file_name_tuples
+
+
+def input_tuples_to_fasta(file_name_tuples, out_file_name):
+    """
+    Convert a list of input files to a single FASTA entry. Input files may be FASTA, FASTQ, or GFA.
+
+    :param file_name_tuples: List of tuples for each input entry ([0]: File name, [1]: File format). The file format
+        must be "fasta", "fastq", or "gfa" (case sensitive).
+    :param out_file_name: Output file. If `file_name_tuples` or contains only empty files, the output file is also
+        empty (0 bytes) indicating to PAV that data for this haplotype are missing.
+    """
+
+    # Check input files, fail early
+    has_data = False
+
+    if file_name_tuples is None:
+        file_name_tuples = []
+
+    for index in range(len(file_name_tuples)):
+        file_name, file_format = file_name_tuples[index]
+
+        if file_format not in {'fasta', 'fastq', 'gfa'}:
+            raise RuntimeError(f'Unrecognized file format "{file_format}": {file_name}')
+
+        if not os.path.isfile(file_name):
+            raise RuntimeError(f'Input file does not exist or is not a regular file: {file_name}')
+
+        if os.stat(file_name).st_size > 0:
+            has_data = True
+        else:
+            file_name_tuples[index][1] = 'empty'  # Mark file as empty
+
+    # Stop if there are no records. An empty file to signal downstream steps that there is no data for this haplotype.
+    if not has_data:
         with open(out_file_name, 'w') as out_file:
             pass
 
         return
 
-    # Determine if file is BGZF compressed
-    is_bgzf = False
+    # Record iterator
+    def input_record_iter():
 
-    try:
-        with Bio.bgzf.open(in_file_name, 'r') as in_file_test:
-            is_bgzf = True
+        record_id_set = set()
 
-    except ValueError:
-        pass
+        for file_name, file_format in file_name_tuples:
 
-    # Copy or compress
-    if is_bgzf:
+            if file_format in {'fasta', 'fastq'}:
+                for record in svpoplib.seq.fa_to_record_iter(file_name, input_format=file_format):
 
-        # Copy file if already compressed
-        shutil.copyfile(in_file_name, out_file_name)
+                    if record.id in record_id_set:
+                        raise RuntimeError(f'Duplicate record ID in input: {record_id}')
 
-    else:
-        # Compress to BGZF
+                    record_id_set.add(record.id)
 
-        is_gz = False
+                    yield record
 
-        try:
-            with gzip.open(in_file_name, 'r') as in_file_test:
+            elif file_format == 'gfa':
+                for record in svpoplib.seq.gfa_to_record_iter(file_name):
 
-                line = next(in_file_test)
+                    if record.id in record_id_set:
+                        raise RuntimeError(f'Duplicate record ID in input: {record_id}')
 
-                is_gz = True
+                    record_id_set.add(record.id)
 
-        except OSError:
-            pass
+                    yield record
 
-        if is_gz:
-            # Re-compress to BGZF
+            elif file_format not in {'skip', 'empty'}:
+                raise RuntimeError(f'Program bug: Unrecognized file type "{file_format}" after checking input.')
 
-            with gzip.open(in_file_name, 'rb') as in_file:
-                with Bio.bgzf.open(out_file_name, 'wb') as out_file:
-                    for line in in_file:
-                        out_file.write(line)
+    # Traverse entries
+    with Bio.bgzf.open(out_file_name, 'wb') as out_file:
+        Bio.SeqIO.write(input_record_iter(), out_file, 'fasta')
 
-        else:
-            # Compress plain text
+    return
 
-            with open(in_file_name, 'r') as in_file:
-                with Bio.bgzf.open(out_file_name, 'wb') as out_file:
-                    for line in in_file:
-                        out_file.write(line)
+
+# def copy_fa_to_gz(in_file_name, out_file_name):
+#     """
+#     Copy FASTA file to gzipped FASTA if the file is not already gzipped. If the input file is empty, then write an
+#     empty file.
+#
+#     :param in_file_name: Input FASTA file.
+#     :param out_file_name: Output gzipped FASTA file.
+#     """
+#
+#     # Write empty files in FASTA is empty
+#     if os.stat(in_file_name).st_size == 0:
+#         with open(out_file_name, 'w') as out_file:
+#             pass
+#
+#         return
+#
+#     # Determine if file is BGZF compressed
+#     is_bgzf = False
+#
+#     try:
+#         with Bio.bgzf.open(in_file_name, 'r') as in_file_test:
+#             is_bgzf = True
+#
+#     except ValueError:
+#         pass
+#
+#     # Copy or compress
+#     if is_bgzf:
+#
+#         # Copy file if already compressed
+#         shutil.copyfile(in_file_name, out_file_name)
+#
+#     else:
+#         # Compress to BGZF
+#
+#         is_gz = False
+#
+#         try:
+#             with gzip.open(in_file_name, 'r') as in_file_test:
+#
+#                 line = next(in_file_test)
+#
+#                 is_gz = True
+#
+#         except OSError:
+#             pass
+#
+#         if is_gz:
+#             # Re-compress to BGZF
+#
+#             with gzip.open(in_file_name, 'rb') as in_file:
+#                 with Bio.bgzf.open(out_file_name, 'wb') as out_file:
+#                     for line in in_file:
+#                         out_file.write(line)
+#
+#         else:
+#             # Compress plain text
+#
+#             with open(in_file_name, 'r') as in_file:
+#                 with Bio.bgzf.open(out_file_name, 'wb') as out_file:
+#                     for line in in_file:
+#                         out_file.write(line)
 
 # Some pysam implementations do not d o well with repeated calls against an open pysam.FastaFile, so use
 # region_seq_fasta() for all calls.

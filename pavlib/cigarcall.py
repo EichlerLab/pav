@@ -8,6 +8,7 @@ import pandas as pd
 import pysam
 
 import pavlib
+import svpoplib
 
 
 #
@@ -42,8 +43,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
     seq_tig_name = None  # Current tig name
     seq_tig_len = None   # Current tig length
     seq_tig_rev = None   # Aligned contig was reverse-complemented
-
-    id_set = set()  # Track variant IDs and refuse to left-shift into an ID that has already been called (prevents duplicate variant IDs after left-shift).
 
     # Parse alignment records
     for index, row in df_align.iterrows():
@@ -134,8 +133,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         ]
                     ))
 
-                    id_set.add(var_id)
-
                 # Advance
                 pos_ref += oplen
                 pos_tig += oplen
@@ -160,18 +157,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 sv_end_ref = sv_pos_ref + 1
                 sv_pos_tig = pos_tig - left_shift
                 sv_end_tig = sv_pos_tig + oplen
-
-                while f'{seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}' in id_set and left_shift >= 0:
-                    if left_shift > 0:
-                        left_shift -= 1
-
-                        sv_pos_ref = pos_ref - left_shift
-                        sv_end_ref = sv_pos_ref + 1
-                        sv_pos_tig = pos_tig - left_shift
-                        sv_end_tig = sv_pos_tig + oplen
-
-                    else:
-                        raise RuntimeError(f'Cannot resolve duplicate ID in CIGAR calls: {seq_ref_name}-{sv_pos_ref + 1}-INS-{oplen}')
 
                 if left_shift != 0:
                     seq = seq_tig[sv_pos_tig:(sv_pos_tig + oplen)]
@@ -223,8 +208,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                     ]
                 ))
 
-                id_set.add(var_id)
-
                 # Advance
                 pos_tig += oplen
 
@@ -250,18 +233,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 sv_end_ref = sv_pos_ref + oplen
                 sv_pos_tig = pos_tig - left_shift
                 sv_end_tig = sv_pos_tig + 1
-
-                while f'{seq_ref_name}-{pos_ref + 1}-DEL-{oplen}' in id_set and left_shift >= 0:
-                    if left_shift > 0:
-                        left_shift -= 1
-
-                        sv_pos_ref = pos_ref - left_shift
-                        sv_end_ref = sv_pos_ref + oplen
-                        sv_pos_tig = pos_tig - left_shift
-                        sv_end_tig = sv_pos_tig + 1
-
-                    else:
-                        raise RuntimeError(f'Cannot resolve duplicate ID in CIGAR calls: {seq_ref_name}-{pos_ref + 1}-DEL-{oplen}')
 
                 # Contig position in original coordinates (translate if - strand)
                 pos_tig_insdel = sv_pos_tig
@@ -306,8 +277,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                     ]
                 ))
 
-                id_set.add(var_id)
-
                 # Advance
                 pos_ref += oplen
 
@@ -342,7 +311,10 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
     # Merge tables
     if len(df_snv_list) > 0:
-        df_snv = pd.concat(df_snv_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+        df_snv = pd.concat(df_snv_list, axis=1).T
+        df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
+        df_snv.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
+
     else:
         df_snv = pd.DataFrame(
             [],
@@ -359,7 +331,10 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
         )
 
     if len(df_insdel_list) > 0:
-        df_insdel = pd.concat(df_insdel_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+        df_insdel = pd.concat(df_insdel_list, axis=1).T
+        df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+        df_insdel.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
+
     else:
         df_insdel = pd.DataFrame(
             [],

@@ -13,8 +13,8 @@ VARTYPE_TO_SVTYPE_TUPLE = {
 }
 
 ALIGN_COLOR = {
-    'h1': '160,00,144',
-    'h2': '64,00,160'
+    'h1': '160,00,144', # Pink
+    'h2': '64,00,160'   # Purple
 }
 
 def _track_get_input_bed(wildcards):

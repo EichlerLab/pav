@@ -83,11 +83,15 @@ rule call_inv_batch_merge:
         bed=temp('temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz')
     run:
 
-        pd.concat(
+        df = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
             axis=0
-        ).sort_values(
-            ['#CHROM', 'POS']
+        )
+
+        df['ID'] = svpoplib.variant.version_id(df['ID'])
+
+        df.sort_values(
+            ['#CHROM', 'POS', 'END', 'ID']
         ).to_csv(
             output.bed, sep='\t', index=False, compression='gzip'
         )
