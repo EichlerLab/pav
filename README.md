@@ -127,7 +127,7 @@ The configuration option "assembly_table" (`config.json`) may be used to set the
 
 There are two ways to run PAV.
 
-1. Run scripts: Execute through `rundist` and `runlocal`. This requries a little more configuration, but allows PAV to be quickly
+1. Run scripts: Execute through `rundist` and `runlocal`. This requires a little more configuration, but allows PAV to be quickly
 executed for a number of projects. This is the recommended way to run PAV.
 1. Snakemake direct: Execute by calling snakemake directly.
 
@@ -135,7 +135,7 @@ Both methods are outlined below.
 
 ### Run scripts
 
-To execute Snakemake, go to the run directory and link `rundist` and `runlocal` from the PAV install directory
+To execute via run scripts, go to the run directory and link `rundist` and `runlocal` from the PAV install directory
 
 Example:
 
