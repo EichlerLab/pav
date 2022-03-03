@@ -126,7 +126,7 @@ rule call_merge_haplotypes:
         ro_min=float(config.get('ro_min', 0.5)),
         offset_max=int(config.get('offset_max', 200)),
         merge_threads=int(config.get('merge_threads', 12)),
-        merge_align=config.get('merge_align', None)
+        merge_match=config.get('merge_match', 'true')
     run:
 
         if pavlib.util.as_bool(config.get('merge_by_chrom', True)):
@@ -139,16 +139,16 @@ rule call_merge_haplotypes:
                 config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
 
                 # Get alignment merging parameters
-                if params.merge_align is not None:
+                if params.merge_match is not None:
 
-                    if params.merge_align.lower() == 'true':
+                    if params.merge_match.lower() == 'true':
                         align_params = ':match=0.8,2,-1,-1,-0.25'
 
-                    elif params.merge_align.lower() == 'false':
+                    elif params.merge_match.lower() == 'false':
                         align_params = ''
 
                     else:
-                        align_params = f';match={params.merge_align}'
+                        align_params = f';match={params.merge_match}'
 
                     config_def += align_params
 
