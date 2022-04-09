@@ -78,7 +78,7 @@ BATCH_COUNT_DEFAULT = 60
 # Merge batches.
 rule call_inv_batch_merge:
     input:
-        bed=expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
+        bed=lambda wildcards: expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
     output:
         bed=temp('temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz')
     run:
@@ -110,10 +110,10 @@ rule call_inv_batch:
     log:
         log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
     params:
-        k_size=config.get('inv_k_size', 31),
-        inv_threads=config.get('inv_threads', 4),
-        inv_region_limit=config.get('inv_region_limit', None),
-        inv_min_expand=config.get('inv_min_expand', None)
+        k_size=lambda wildcards: get_config(wildcards, 'inv_k_size', 31),
+        inv_threads=lambda wildcards: get_config(wildcards, 'inv_threads', 4),
+        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
+        inv_min_expand=lambda wildcards: get_config(wildcards, 'inv_min_expand', None, True)
     run:
 
         # Get params
@@ -125,7 +125,7 @@ rule call_inv_batch:
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get SRS (state-run-smooth)
-        srs_tree = pavlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
+        srs_tree = pavlib.inv.get_srs_tree(get_config(wildcards, 'srs_list', None, True))  # If none, tree contains a default for all region sizes
 
         # Read and subset table to records in this batch
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
@@ -330,9 +330,9 @@ rule call_inv_merge_flagged_loci:
     output:
         bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz'
     params:
-        flank=config.get('inv_sig_merge_flank', 500) , # Merge windows within this many bp
-        batch_count=int(config.get('inv_sig_batch_count', BATCH_COUNT_DEFAULT)),  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
-        inv_sig_filter=config.get('inv_sig_filter', 'svindel')   # Filter flagged regions
+        flank=lambda wildcards: get_config(wildcards, 'inv_sig_merge_flank', 500) , # Merge windows within this many bp
+        batch_count=lambda wildcards: int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT)),  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
+        inv_sig_filter=lambda wildcards: get_config(wildcards, 'inv_sig_filter', 'svindel')   # Filter flagged regions
     run:
         # Parameters
         flank = params.flank
@@ -489,9 +489,9 @@ rule call_inv_flag_insdel_cluster:
     output:
         bed=temp('temp/{asm_name}/inv_caller/flag/insdel_{vartype}_{hap}.bed.gz')
     params:
-        flank_cluster=int(config.get('inv_sig_insdel_cluster_flank', 2)), # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
-        flank_merge=int(config.get('inv_sig_insdel_merge_flank', 2000)),  # Merge clusters within this distance
-        cluster_min_svlen=int(config.get('inv_sig_cluster_svlen_min', 4))    # Discard indels less than this size
+        flank_cluster=lambda wildcards: int(get_config(wildcards, 'inv_sig_insdel_cluster_flank', 2)), # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
+        flank_merge=lambda wildcards: int(get_config(wildcards, 'inv_sig_insdel_merge_flank', 2000)),  # Merge clusters within this distance
+        cluster_min_svlen=lambda wildcards: int(get_config(wildcards, 'inv_sig_cluster_svlen_min', 4))    # Discard indels less than this size
     wildcard_constraints:
         vartype='sv|indel'
     run:
@@ -606,10 +606,10 @@ rule call_inv_cluster:
     output:
         bed=temp('temp/{asm_name}/inv_caller/flag/cluster_{vartype}_{hap}.bed.gz')
     params:
-        cluster_win=config.get('inv_sig_cluster_win', 200),            # Cluster variants within this many bases
-        cluster_win_min=config.get('inv_sig_cluster_win_min', 500),    # Window must reach this size
-        cluster_min_snv=config.get('inv_sig_cluster_snv_min', 20),     # Minimum number if SNVs in window (if vartype == snv)
-        cluster_min_indel=config.get('inv_sig_cluster_indel_min', 10)  # Minimum number of indels in window (if vartype == indel)
+        cluster_win=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_win', 200),            # Cluster variants within this many bases
+        cluster_win_min=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_win_min', 500),    # Window must reach this size
+        cluster_min_snv=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_snv_min', 20),     # Minimum number if SNVs in window (if vartype == snv)
+        cluster_min_indel=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_indel_min', 10)  # Minimum number of indels in window (if vartype == indel)
     wildcard_constraints:
         vartype='indel|snv'
     run:

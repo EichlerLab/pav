@@ -31,8 +31,8 @@ rule align_cut_tig_overlap:
     output:
         bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
     params:
-        min_trim_tig_len=np.int32(config.get('min_trim_tig_len', 1000)),  # Minimum aligned tig length
-        redundant_callset=pavlib.util.as_bool(config.get('redundant_callset', False))
+        min_trim_tig_len=lambda wildcards: np.int32(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
+        redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
 
         # Trim alignments
@@ -61,7 +61,7 @@ rule align_get_read_bed:
         bed='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.bed.gz',
         align_head='results/{asm_name}/align/pre-cut/aligned_tig_{hap}.headers.gz'
     params:
-        chrom_cluster=pavlib.util.as_bool(config.get('chrom_cluster', False))  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
+        chrom_cluster=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'chrom_cluster', False))  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
     wildcard_constraints:
         hap='h(0|1|2)'
     run:
@@ -128,26 +128,21 @@ rule align_get_read_bed:
 rule align_map:
     input:
         ref_fa='data/ref/ref.fa.gz',
-        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz' if config.get('aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
-        gli='data/ref/ref.fa.gz.gli' if config.get('aligner', 'minimap2') == 'lra' else [],
-        mmi='data/ref/ref.fa.gz.mmi' if config.get('aligner', 'minimap2') == 'lra' else []
+        fa=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
+        gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else [],
+        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mmi' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else []
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:
-        cpu=lambda wildcards: _align_map_cpu(wildcards, config),
-        aligner=config.get('aligner', 'minimap2')
+        cpu=lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards)),
+        aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2')
     run:
 
         # Get aligner
-        if 'aligner' in config:
+        if params.aligner not in {'minimap2', 'lra'}:
+            raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(params.aligner))
 
-            if params.aligner not in {'minimap2', 'lra'}:
-                raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(params.aligner))
-
-            aligner = params.aligner
-
-        else:
-            aligner = 'minimap2'
+        aligner = params.aligner
 
         # Write an empty file if input is empty
         if os.stat(input.fa).st_size == 0:
@@ -198,7 +193,7 @@ rule align_uncompress_tig:
 # Get FASTA files.
 rule align_get_tig_fa:
     input:
-        fa=align_input_list
+        fa=lambda wildcards: pavlib.pipeline.get_rule_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, get_config(wildcards))
     output:
         fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
         fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai')
@@ -207,7 +202,7 @@ rule align_get_tig_fa:
         # Get input files
         input_list = input.fa if 'fa' in input.keys() else []
 
-        input_tuples = pavlib.seq.expand_input(input_list)
+        input_tuples, fofn_list = pavlib.pipeline.expand_input(input_list)
 
         # Report input sources
         if input_tuples is not None:
@@ -217,7 +212,7 @@ rule align_get_tig_fa:
             print(f'No input sources: {wildcards.asm_name} {wildcards.hap}')
 
         # Merge/write FASTA (or empty files if there is no input)
-        pavlib.seq.input_tuples_to_fasta(input_tuples, output.fa)
+        pavlib.pipeline.input_tuples_to_fasta(input_tuples, output.fa)
 
         # Index
         if os.stat(output.fa).st_size > 0:

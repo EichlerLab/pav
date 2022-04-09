@@ -4,11 +4,6 @@ Call variants from aligned contigs.
 
 
 #
-# Definitions
-#
-
-
-#
 # Finalize variant calls
 #
 
@@ -111,81 +106,34 @@ rule call_final_bed:
 # chromosomes (wildcards.merge_level = merged). The code will know which step its on based on the wildcards and config.
 rule call_merge_haplotypes:
     input:
-        bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
-        bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
-        callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
-        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz',
         bed_chrom=lambda wildcards: [
             'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'.format(
                 asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, chrom=chrom
-            ) for chrom in sorted(svpoplib.ref.get_df_fai(config['reference'] + '.fai').index)
-        ] if pavlib.util.as_bool(config.get('merge_by_chrom', True)) else []
+            ) for chrom in sorted(svpoplib.ref.get_df_fai(get_config(wildcards, 'reference') + '.fai').index)
+        ]
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
-    params:
-        ro_min=float(config.get('ro_min', 0.5)),
-        offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12)),
-        merge_match=config.get('merge_match', 'true')
     run:
 
-        if pavlib.util.as_bool(config.get('merge_by_chrom', True)):
-            # Merge in one step
+        # Concatenate merged chromosomes
+        print('Concatenating chromosome merges')
 
-            # Get configured merge definition
-            if wildcards.vartype_svtype == 'snv_snv':
-                config_def = 'nr:refalt'
-            else:
-                config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
+        write_header = True
 
-                # Get alignment merging parameters
-                if params.merge_match is not None:
+        with gzip.open(output.bed, 'wt') as out_file:
+            for in_file_name in input.bed_chrom:
 
-                    if params.merge_match.lower() == 'true':
-                        align_params = ':match=0.8,2,-1,-1,-0.25'
+                df_iter = pd.read_csv(
+                    in_file_name,
+                    sep='\t', iterator=True, chunksize=20000
+                )
 
-                    elif params.merge_match.lower() == 'false':
-                        align_params = ''
-
-                    else:
-                        align_params = f';match={params.merge_match}'
-
-                    config_def += align_params
-
-            print('Merging with def: ' + config_def)
-            sys.stdout.flush()
-
-            # Merge
-            df = pavlib.call.merge_haplotypes(
-                input.bed_var_h1, input.bed_var_h2,
-                input.callable_h1,input.callable_h2,
-                config_def,
-                threads=params.merge_threads,
-                chrom=None
-            )
-
-            # Save BED
-            df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
-
-        else:
-            # Concatenate merged chromosomes
-
-            write_header = True
-
-            with gzip.open(output.bed, 'wt') as out_file:
-                for in_file_name in input.bed_chrom:
-
-                    df_iter = pd.read_csv(
-                        in_file_name,
-                        sep='\t', iterator=True, chunksize=20000
+                for df in df_iter:
+                    df.to_csv(
+                        out_file,sep='\t', index=False, header=write_header
                     )
 
-                    for df in df_iter:
-                        df.to_csv(
-                            out_file,sep='\t', index=False, header=write_header
-                        )
-
-                        write_header = False
+                    write_header = False
 
 
 # call_merge_haplotypes_chrom
@@ -200,10 +148,7 @@ rule call_merge_haplotypes_chrom:
     output:
         bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'
     params:
-        ro_min=float(config.get('ro_min', 0.5)),
-        offset_max=int(config.get('offset_max', 200)),
-        merge_threads=int(config.get('merge_threads', 12)),
-        merge_align=config.get('merge_align', 'true')
+        merge_threads=lambda wildcards: int(get_config(wildcards, 'merge_threads', 12))
     run:
 
         var_svtype_list = wildcards.vartype_svtype.split('_')
@@ -212,24 +157,7 @@ rule call_merge_haplotypes_chrom:
             raise RuntimeError('Wildcard "vartype_svtype" must be two elements separated by an underscore: {}'.format(wildcards.var_svtype))
 
         # Get configured merge definition
-        if wildcards.vartype_svtype == 'snv_snv':
-            config_def = 'nr:refalt'
-        else:
-            config_def = 'nr:szro={}:offset={}'.format(int(params.ro_min * 100), params.offset_max)
-
-            # Get alignment merging parameters
-            if params.merge_align is not None:
-
-                if params.merge_align.lower() == 'true':
-                    align_params = ':match=0.8,2,-1,-4,-0.25,500000,9'
-
-                elif params.merge_align.lower() == 'false':
-                    align_params = ''
-
-                else:
-                    align_params = f':match={params.merge_align}'
-
-                config_def += align_params
+        config_def = pavlib.call.get_merge_params(wildcards, get_config(wildcards))
 
         print('Merging with def: ' + config_def)
         sys.stdout.flush()
@@ -306,10 +234,12 @@ rule call_integrate_sources:
         bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz'),
         bed_inv_dropped='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz'
     params:
-        inv_min=config.get('inv_min', 300),
-        inv_max=config.get('inv_max', 2000000),
-        redundant_callset=pavlib.util.as_bool(config.get('redundant_callset', False))
+        inv_min=lambda wildcards: get_config(wildcards, 'inv_min', 300),
+        inv_max=lambda wildcards: get_config(wildcards, 'inv_max', 2000000),
+        redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
+
+        local_config = get_config(wildcards)
 
         # Set parameters
         if params.inv_min is not None and params.inv_min != 'unlimited':
@@ -325,9 +255,9 @@ rule call_integrate_sources:
         # Read tig filter (if present)
         tig_filter_tree = None
 
-        if 'tig_filter_pattern' in config:
+        if 'tig_filter_pattern' in local_config:
 
-            tig_filter_file = config['tig_filter_pattern'].format(**wildcards)
+            tig_filter_file = local_config['tig_filter_pattern'].format(**wildcards)
 
             if os.path.isfile(tig_filter_file):
                 tig_filter_tree = collections.defaultdict(intervaltree.IntervalTree)

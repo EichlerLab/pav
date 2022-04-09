@@ -10,10 +10,12 @@
 
 ## Call
 
-* ro_min [0.5]
-* offset_max [200]
+* merge_ins [param merge_svindel]: Override default merging parameters for SV/indel insertions (INS).
+* merge_del [param merge_svindel]: Override default merging parameters for SV/indel deletions (DEL).
+* merge_inv [param merge_svindel]: Override default merging parameters for SV/indel inversions (INV). 
+* merge_svindel [nr::exact:ro(0.5):szro(0.5,200):match]: Override default merging parameters for INS, DEL, INV
+* merge_snv [nrsnv:exact]: Override default merging parameters for SNVs
 * merge_threads [12]
-* merge_align [None]
 * min_inv [300]
 * max_inv [2000000]
 * inv_min_svlen [300]

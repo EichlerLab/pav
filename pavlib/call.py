@@ -390,3 +390,38 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
 
     # Return merged BED
     return df
+
+
+def get_merge_params(wildcards, config):
+    """
+    Get merging parameters.
+
+    :param wildcards: Rule wildcards.
+    :param config: Config parameters.
+
+    :return: An SV-Pop merge definition string describing how variants should be intersected.
+    """
+
+    # Get svtype
+    vartype, svtype = wildcards.vartype_svtype.split('_')
+
+    # Get merge parameters
+    config_def = None
+
+    if svtype in {'ins', 'del', 'inv'}:  # Search config for a matching override
+        if f'merge_{svtype}' in config:
+            config_def = config[f'merge_{svtype}']
+        elif 'merge_insdelinv' in config:
+            config_def = config['merge_snv']
+
+    elif svtype == 'snv' and 'merge_snv' in config:
+        config_def = config['merge_snv']
+
+    if config_def is None:  # Get default
+        config_def = pavlib.constants.MERGE_PARAM_DEFAULT.get(svtype, None)
+
+    if config_def is None:
+        raise RuntimeError(f'No merge parameters for svtype: {svtype}')
+
+    # Return config definition
+    return config_def

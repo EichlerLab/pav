@@ -32,6 +32,7 @@ rule vcf_write_vcf:
         alt_fmt='alt|sym'
     run:
 
+
         # Check assembly name
         if wildcards.asm_name in {'#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'FORMAT'}:
             raise RuntimeError(f'Assembly name conflicts with a VCF header column name: {wildcards.asm_name}')
@@ -44,6 +45,9 @@ rule vcf_write_vcf:
         #     symbolic_alt = True
         # else:
         #     raise RuntimeError(f'Unknown alt format wildcard (alt_fmt): {alt_fmt}')
+
+        # Get reference
+        reference_file = get_config(wildcards, 'reference')
 
         # Process variant types
         df_list = list()
@@ -120,11 +124,11 @@ rule vcf_write_vcf:
 
                 # REF
                 if 'REF' not in df.columns:
-                    df['REF'] = list(svpoplib.vcf.ref_base(df, config['reference']))
+                    df['REF'] = list(svpoplib.vcf.ref_base(df, reference_file))
 
                 if svtype == 'inv' and not symbolic_alt:
                     df_ref_base = df['REF']
-                    df['REF'] = df_ref_base + svpoplib.ref.get_ref_region(df, config['reference']).apply(lambda val: val.upper())
+                    df['REF'] = df_ref_base + svpoplib.ref.get_ref_region(df, reference_file).apply(lambda val: val.upper())
 
                 # ALT
                 if vartype != 'snv':
@@ -226,7 +230,7 @@ rule vcf_write_vcf:
                 alt_header_list,
                 filter_header_list,
                 variant_source='PAV {}'.format(pavlib.constants.get_version_string()),
-                ref_file_name=os.path.basename(config.get('reference'))
+                ref_file_name=os.path.basename(reference_file)
             ):
                 out_file.write(line)
 

@@ -91,7 +91,7 @@ rule align_ref:
     run:
 
         # Copy FASTA to FA/GZ
-        pavlib.seq.input_tuples_to_fasta([(input.ref_fa, 'fasta')], output.ref_fa)
+        pavlib.pipeline.input_tuples_to_fasta([(input.ref_fa, 'fasta')], output.ref_fa)
 
         # Index
         if os.stat(output.ref_fa).st_size > 0:

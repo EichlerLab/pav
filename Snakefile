@@ -61,6 +61,7 @@ if not os.path.isfile(ENV_FILE):
 sys.path.append(PIPELINE_DIR)  # pavlib
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop'))  # svpoplib
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop', 'dep'))  # kanapy
+sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop', 'dep', 'ply'))  # ply - lexer / parser
 
 import pavlib
 import svpoplib
@@ -137,8 +138,8 @@ rule pav_all:
 
 ### Includes ###
 
+include: 'rules/pipeline.snakefile'
 include: 'rules/data.snakefile'
-include: 'rules/input_functions.snakefile'
 include: 'rules/align.snakefile'
 include: 'rules/call.snakefile'
 include: 'rules/call_inv.snakefile'

@@ -7,9 +7,9 @@ Call alignment-truncating events (large SVs).
 # Merge variant calls from large SVs.
 rule call_merge_lg:
     input:
-        bed=expand(
+        bed=lambda wildcards: expand(
             'temp/{{asm_name}}/lg_sv/batch/sv_{{svtype}}_{{hap}}_{batch}.bed.gz',
-            batch=range(config.get('lg_batch_count', 10))
+            batch=range(get_config(wildcards, 'lg_batch_count', 10))
         )
     output:
         bed=temp('temp/{asm_name}/lg_sv/sv_{svtype}_{hap}.bed.gz')
@@ -40,13 +40,13 @@ rule call_lg_discover:
     log:
         log='log/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
     params:
-        k_size=int(config.get('inv_k_size', 31)),
-        inv_threads_lg=int(config.get('inv_threads_lg', 12)),
-        inv_region_limit=config.get('inv_region_limit', None)
+        k_size=lambda wildcards: int(get_config(wildcards, 'inv_k_size', 31)),
+        inv_threads_lg=lambda wildcards: int(get_config(wildcards, 'inv_threads_lg', 12)),
+        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True)
     run:
 
         # Get SRS (state-run-smooth)
-        srs_tree = pavlib.inv.get_srs_tree(config.get('srs_list', None))  # If none, tree contains a default for all region sizes
+        srs_tree = pavlib.inv.get_srs_tree(get_config(wildcards, 'srs_list', None, True))  # If none, tree contains a default for all region sizes
 
         # Read
         df = pd.read_csv(input.bed, sep='\t')
@@ -101,7 +101,7 @@ rule call_lg_split:
     output:
         tsv=temp('temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz')
     params:
-        batch_count=config.get('lg_batch_count', 10)
+        batch_count=lambda wildcards: get_config(wildcards, 'lg_batch_count', 10)
     run:
 
         # Read
