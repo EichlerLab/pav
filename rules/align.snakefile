@@ -202,7 +202,9 @@ rule align_get_tig_fa:
         # Get input files
         input_list = input.fa if 'fa' in input.keys() else []
 
-        input_tuples, fofn_list = pavlib.pipeline.expand_input(input_list)
+        input_tuples, fofn_list = pavlib.pipeline.expand_input(
+            pavlib.pipeline.get_asm_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, config)
+        )
 
         # Report input sources
         if input_tuples is not None:

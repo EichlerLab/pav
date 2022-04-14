@@ -24,8 +24,8 @@ def get_version_string():
 ### Haplotype Merging ###
 
 # Default merge for INS/DEL/INV
-MERGE_PARAM_INSDELINV = 'nr::exact:ro(0.5):szro(0.5,200):match'
-MERGE_PARAM_SNV = 'nrsnv:exact'
+MERGE_PARAM_INSDELINV = 'nr::exact:ro(0.5):szro(0.5,200,4):match'
+MERGE_PARAM_SNV = 'nrsnv::exact'
 
 MERGE_PARAM_DEFAULT = {
     'ins': MERGE_PARAM_INSDELINV,
