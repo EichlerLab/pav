@@ -4,7 +4,9 @@
 
 * aligner [minimap2]
 * min_trim_tig_len [1000]
-* redundant_callset [False]
+* redundant_callset [False]: Allow multiple haplotypes in one assembly. This option turns off trimming reference bases
+  from alignments unless two alignment records are from the same contig. Can increase false calls, especially for small
+  variants, but should not eliminate haplotypic variation in an assembly that is not separated into two FASTA files.
 * chrom_cluster [False]
 * sample_delimiter [_]: For extracting sample from assembly name ("{sample}" wildcard in input path patterns). May be one of "_", ".", "-", "+", "#".
 
