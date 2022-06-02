@@ -375,6 +375,11 @@ rule call_integrate_sources:
             axis=0
         ).sort_values(['#CHROM', 'POS'])
 
+        # De-duplicate IDs if any exist (can occur with redundant callsets)
+        df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+        df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+        df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
+
         # Write
         df_insdel.loc[
             df_insdel['SVTYPE'] == 'INS'
