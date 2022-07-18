@@ -175,7 +175,7 @@ rule vcf_write_vcf:
 
         info_header_list.append(('ID', '1', 'String', 'Variant ID'))
         info_header_list.append(('SVTYPE', '1', 'String', 'Variant type'))
-        info_header_list.append(('SVLEN', '.', 'String', 'Variant length'))
+        info_header_list.append(('SVLEN', '.', 'Integer', 'Variant length'))
         info_header_list.append(('TIG_REGION', '.', 'String', 'Contig region where variant was found (one per alt with h1 before h2 for homozygous calls)'))
         info_header_list.append(('QUERY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows TIG_REGION)'))
         info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (order follows TIG_REGION)'))
