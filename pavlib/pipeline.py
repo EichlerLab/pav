@@ -406,7 +406,7 @@ def input_tuples_to_fasta(file_name_tuples, out_file_name):
         if os.stat(file_name).st_size > 0:
             has_data = True
         else:
-            file_name_tuples[index][1] = 'empty'  # Mark file as empty
+            file_name_tuples[index] = (file_name_tuples[index][0], 'empty')  # Mark file as empty
 
     # Stop if there are no records. An empty file to signal downstream steps that there is no data for this haplotype.
     if not has_data:
