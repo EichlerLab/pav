@@ -42,13 +42,22 @@ rule figures_inv_dot_density:
         # Get inversion call
         inv_call = pavlib.inv.get_inv_from_record(inv_row, df_density)
 
+        # Get contig sequence
+        with pysam.FastaFile(input.tig_fa) as fa_file:
+            seq_tig = fa_file.fetch(
+                inv_call.region_tig_discovery.chrom,
+                inv_call.region_tig_discovery.pos,
+                inv_call.region_tig_discovery.end
+            )
+
         # Make plots
+        # WARNING: Contig sequence should be extracted from flag region
         fig_dot = pavlib.plot.dotplot_inv_call(
-            inv_call, REF_FA, seq_tig=inv_row['SEQ']
+            inv_call, REF_FA, seq_tig=seq_tig
         )
 
         fig_density = pavlib.plot.kmer_density_plot(
-            inv_call, hap=wildcards.hap, flank_whiskers=True
+            inv_call, hap=wildcards.hap, flank_whiskers=False
         )
 
         # Write plots

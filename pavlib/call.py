@@ -289,12 +289,16 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
     if 'DISC_CLASS' in df.columns:
         del (df['DISC_CLASS'])
 
+    if 'HAP_AC' in df.columns:
+        del (df['HAP_AC'])
+
+    if 'HAP_AF' in df.columns:
+        del (df['HAP_AF'])
+
     df.columns = [re.sub('^MERGE_', 'HAP_', val) for val in df.columns]
 
     del (df['HAP_SRC'])
     del (df['HAP_SRC_ID'])
-    del (df['HAP_AC'])
-    del (df['HAP_AF'])
 
     df.columns = ['HAP' if val == 'HAP_SAMPLES' else val for val in df.columns]
 
@@ -306,14 +310,17 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
         if 'HAP_RO' in df.columns:
             df['HAP_RO'] = df['HAP_RO'].apply(lambda val: ';'.join(val.split(',')))
 
-        if 'HAP_OFFSET' in df.columns:
-            df['HAP_OFFSET'] = df['HAP_OFFSET'].apply(lambda val: ';'.join(val.split(',')))
-
         if 'HAP_SZRO' in df.columns:
             df['HAP_SZRO'] = df['HAP_SZRO'].apply(lambda val: ';'.join(val.split(',')))
 
+        if 'HAP_OFFSET' in df.columns:
+            df['HAP_OFFSET'] = df['HAP_OFFSET'].apply(lambda val: ';'.join(val.split(',')))
+
         if 'HAP_OFFSZ' in df.columns:
             df['HAP_OFFSZ'] = df['HAP_OFFSZ'].apply(lambda val: ';'.join(val.split(',')))
+
+        if 'HAP_MATCH' in df.columns:
+            df['HAP_MATCH'] = df['HAP_MATCH'].apply(lambda val: ';'.join(val.split(',')))
 
         # Add h1 and h2 to columns
         df_h1 = svpoplib.pd.read_csv_chrom(h1_file_name, chrom=chrom, sep='\t', low_memory=False)

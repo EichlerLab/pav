@@ -15,7 +15,6 @@ from Bio import SeqIO
 import Bio.bgzf
 
 
-
 def get_asm_config(asm_name, hap, asm_table, config):
     """
     Get a dictionary of parameters and paths for one assembly.
@@ -99,8 +98,8 @@ def get_asm_config(asm_name, hap, asm_table, config):
         if '{asm_name}' not in filename_pattern:
             raise RuntimeError('Cannot get contig filter BED: {}: Missing {{asm_name}} wildcard in config["asm_pattern"]: {}'.format(asm_name, filename_pattern))
 
-        if '{hap}' not in filename_pattern:
-            raise RuntimeError('Cannot get contig filter BED: {}: Missing {{hap}} wildcard in config["asm_pattern"]: {}'.format(asm_name, filename_pattern))
+        if '{hap}' not in filename_pattern and hap != 'h1':
+            filname_pattern = None
 
     # Get filter
     tig_filter_pattern = None
@@ -199,7 +198,7 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
             elif hap == 'h2':
                 parent = 'pat'
             else:
-                raise RuntimeError('"Cannot get input file for {asm_name} with "{{parent}}" pattern: Haplotype must be "h1" or "h2": Found {hap}: {file_name}'.format(asm_name=wildcards.asm_name, file_name=file_name, hap=wildcards.hap))
+                raise RuntimeError('"Cannot get input file for {asm_name} with "{{parent}}" pattern: Haplotype must be "h1" or "h2": Found {hap}: {file_name}'.format(asm_name=asm_name, file_name=file_name, hap=hap))
 
         else:
             parent = None
@@ -208,10 +207,10 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
         if record_source == 'config':
 
             if '{asm_name}' not in file_name:
-                raise RuntimeError('Cannot get input file for {asm_name}: Path from config "asm_name" must have {{asm_name}} wildcard: {file_name}'.format(asm_name=wildcards.asm_name, file_name=file_name))
+                raise RuntimeError('Cannot get input file for {asm_name}: Path from config "asm_name" must have {{asm_name}} wildcard: {file_name}'.format(asm_name=asm_name, file_name=file_name))
 
-            if '{hap}' not in file_name and parent is None:
-                raise RuntimeError('Cannot get input file for {asm_name}: Path from config "asm_pattern" must have {{hap}} or {{parent}} wildcard: {file_name}'.format(asm_name=wildcards.asm_name, file_name=file_name))
+            if '{hap}' not in file_name and parent is None and hap != 'h1':
+                return list()
 
         if '{sample}' in file_name:
             delim = config.get('sample_delimiter', '_')
@@ -225,7 +224,7 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
             re_match = re.match('^([^{delim}]+){delim}.*'.format(delim=delim), asm_name)
 
             if re_match is None:
-                raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" contains wildcard {{sample}}, but sample cannot be extracted from the assembly name (expected to be at the start of the assembly name and separated by an underscore): {file_name}'.format(asm_name=wildcards.asm_name, file_name=file_name))
+                raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" contains wildcard {{sample}}, but sample cannot be extracted from the assembly name (expected to be at the start of the assembly name and separated by an underscore): {file_name}'.format(asm_name=asm_name, file_name=file_name))
 
             sample = re_match[1]
         else:
@@ -557,4 +556,3 @@ def get_override_config(config, asm_name, asm_table):
         return config
 
     return get_config_with_override(config, get_config_override_dict(asm_table_entry['CONFIG']))
-

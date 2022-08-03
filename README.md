@@ -100,6 +100,8 @@ When assembly "HG00733_CCS_SS_PG_PRR" is run, then PAV will expect to find two f
 1. /path/to/assemblies/HG00733_CCS_SS_PG_PRR/h1.fa.gz
 1. /path/to/assemblies/HG00733_CCS_SS_PG_PRR/h2.fa.gz
 
+If there is no "hap" or "parent" (see below) wildcard in the path, it is treated as an unphased assembly by PAV.
+
 ##### hifiasm-trio
 
 To support hifiasm-trio, you may substitute the "hap" wildcard for "parent" (do not include both "hap" and "parent"

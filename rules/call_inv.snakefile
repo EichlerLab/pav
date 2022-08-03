@@ -591,7 +591,14 @@ rule call_inv_flag_insdel_cluster:
                 pos = row['POS']
                 end = row['END']
 
-        df_match = pd.concat(match_merged_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+        if len(match_merged_list) > 0:
+            df_match = pd.concat(match_merged_list, axis=1).T.sort_values(['#CHROM', 'POS'])
+
+        else:
+            df_match = pd.DataFrame(
+                [],
+                columns=['#CHROM', 'POS', 'END']
+            )
 
         # Write
         df_match.to_csv(output.bed, sep='\t', index=False, compression='gzip')

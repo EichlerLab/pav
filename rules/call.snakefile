@@ -31,9 +31,9 @@ rule call_final_bed:
     run:
 
         # Process INS/DEL/INV (SV and indel)
-        df_ins = pd.read_csv(input.bed_ins, sep='\t', low_memory=False)
-        df_del = pd.read_csv(input.bed_del, sep='\t', low_memory=False)
-        df_inv = pd.read_csv(input.bed_inv, sep='\t', low_memory=False)
+        df_ins = pd.read_csv(input.bed_ins, sep='\t', low_memory=False, keep_default_na=False)
+        df_del = pd.read_csv(input.bed_del, sep='\t', low_memory=False, keep_default_na=False)
+        df_inv = pd.read_csv(input.bed_inv, sep='\t', low_memory=False, keep_default_na=False)
 
         df_svtype_dict = {
             'ins': df_ins,
@@ -88,7 +88,7 @@ rule call_final_bed:
             df.to_csv(bed_file_name, sep='\t', index=False, compression='gzip')
 
         # Process SNVs
-        df = pd.read_csv(input.bed_snv, sep='\t', low_memory=False)
+        df = pd.read_csv(input.bed_snv, sep='\t', low_memory=False, keep_default_na=False)
         df.to_csv(output.bed_snv_snv, sep='\t', index=False, compression='gzip')
 
 
@@ -125,7 +125,7 @@ rule call_merge_haplotypes:
 
                 df_iter = pd.read_csv(
                     in_file_name,
-                    sep='\t', iterator=True, chunksize=20000
+                    sep='\t', iterator=True, chunksize=20000, keep_default_na=False
                 )
 
                 for df in df_iter:
@@ -270,8 +270,8 @@ rule call_integrate_sources:
         # Read INV calls
         df_inv = pd.concat(
             [
-                pd.read_csv(input.bed_inv, sep='\t', low_memory=False),
-                pd.read_csv(input.bed_lg_inv, sep='\t', low_memory=False)
+                pd.read_csv(input.bed_inv, sep='\t', low_memory=False, keep_default_na=False),
+                pd.read_csv(input.bed_lg_inv, sep='\t', low_memory=False, keep_default_na=False)
             ],
             axis=0
         ).sort_values(
@@ -324,8 +324,8 @@ rule call_integrate_sources:
             filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
 
         # Read large variants and filter by inversions
-        df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False)
-        df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False)
+        df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False, keep_default_na=False)
+        df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False, keep_default_na=False)
 
         if df_lg_ins.shape[0] > 0:
             df_lg_ins = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
@@ -344,8 +344,8 @@ rule call_integrate_sources:
                 filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
 
         # Read CIGAR calls
-        df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False)
-        df_snv = pd.read_csv(input.bed_cigar_snv, sep='\t', low_memory=False)
+        df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False, keep_default_na=False)
+        df_snv = pd.read_csv(input.bed_cigar_snv, sep='\t', low_memory=False, keep_default_na=False)
 
         # Check column conformance among INS/DEL callsets (required for merging)
         if list(df_cigar_insdel.columns) != list(df_lg_ins.columns):
@@ -374,6 +374,11 @@ rule call_integrate_sources:
             ],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
+
+        # De-duplicate IDs if any exist (can occur with redundant callsets)
+        df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+        df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+        df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
 
         # Write
         df_insdel.loc[
@@ -409,7 +414,7 @@ rule call_cigar_merge:
 
         # INS/DEL
         df_insdel = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_insdel],
+            [pd.read_csv(file_name, sep='\t', keep_default_na=False) for file_name in input.bed_insdel],
             axis=0
         )
 
@@ -423,7 +428,7 @@ rule call_cigar_merge:
 
         # SNV
         df_snv = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_snv],
+            [pd.read_csv(file_name, sep='\t', keep_default_na=False) for file_name in input.bed_snv],
             axis=0
         )
 
@@ -453,7 +458,7 @@ rule call_cigar:
         os.makedirs(os.path.dirname(output.bed_insdel), exist_ok=True)  # Random crashes with "FileNotFoundError", Snakemake not creating output directory?
 
         # Read
-        df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str})
+        df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, keep_default_na=False)
 
         df_align = df_align.loc[df_align['CALL_BATCH'] == batch]
 
