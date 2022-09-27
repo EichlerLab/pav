@@ -135,7 +135,8 @@ rule align_map:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:
         cpu=lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards)),
-        aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2')
+        aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2'),
+        minimap2_params=lambda wildcards: get_config(wildcards, 'minimap2_params', '-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5')
     run:
 
         # Get aligner
@@ -155,9 +156,8 @@ rule align_map:
             if aligner == 'minimap2':
                 shell(
                     """minimap2 """
-                        """-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 """
+                        """{params.minimap2_params} """
                         """--secondary=no -a -t {params.cpu} --eqx -Y """
-                        """-O 5,56 -E 4,1 -B 5 """
                         """{input.ref_fa} {input.fa} | """
                         """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
                         """gzip > {output.sam}"""
