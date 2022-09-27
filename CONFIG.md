@@ -9,6 +9,7 @@
   variants, but should not eliminate haplotypic variation in an assembly that is not separated into two FASTA files.
 * chrom_cluster [False]
 * sample_delimiter [_]: For extracting sample from assembly name ("{sample}" wildcard in input path patterns). May be one of "_", ".", "-", "+", "#".
+* minimap2_params [-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5]: Alignment parameters used to run minimap2
 
 ## Call
 
