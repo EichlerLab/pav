@@ -2,6 +2,13 @@
 Call variants from aligned contigs.
 """
 
+FILTER_REASON = {
+    'TIG_FILTER': 'TIG_FILTER: Contig filter region (tig_filter_pattern)',
+    'COMPOUND': 'COMPOUND: Inside larger variant',
+    'COMPOUND_INV': 'COMPOUND_INV: Inside a larger inversion',
+    'INV_MIN': 'INV_MIN: Less than min INV size ({})',
+    'INV_MAX': 'INV_MAX: Exceeds max INV size ({})'
+}
 
 #
 # Finalize variant calls
@@ -232,14 +239,22 @@ rule call_integrate_sources:
         bed_del=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_del.bed.gz'),
         bed_inv=temp('temp/{asm_name}/bed/integrated/{hap}/sv_inv.bed.gz'),
         bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz'),
-        bed_inv_dropped='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz'
+        bed_inv_drp='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz',
+        bed_insdel_drp='results/{asm_name}/bed/dropped/svindel_insdel_{hap}.bed.gz',
+        bed_snv_drp='results/{asm_name}/bed/dropped/snv_snv_{hap}.bed.gz',
     params:
-        inv_min=lambda wildcards: get_config(wildcards, 'inv_min', 300),
-        inv_max=lambda wildcards: get_config(wildcards, 'inv_max', 2000000),
+        inv_min=lambda wildcards: get_config(wildcards, 'inv_min', 0),
+        inv_max=lambda wildcards: get_config(wildcards, 'inv_max', 1e10),
+        inv_inner=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'inv_inner', False)),
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
 
         local_config = get_config(wildcards)
+
+        # Init dropped variant lists
+        inv_drp_list = list()
+        insdel_drp_list = list()
+        snv_drp_list = list()
 
         # Set parameters
         if params.inv_min is not None and params.inv_min != 'unlimited':
@@ -267,6 +282,9 @@ rule call_integrate_sources:
                 for index, row in df_filter.iterrows():
                     tig_filter_tree[row['#CHROM']][row['POS']:row['END']] = True
 
+
+        ### INV ###
+
         # Read INV calls
         df_inv = pd.concat(
             [
@@ -280,107 +298,147 @@ rule call_integrate_sources:
 
         df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
 
-        # Filter INV by size
-        inv_dropped_list = list()
+        # INV: Filter by contig blacklisted regions
+        df_inv, df_inv_drp = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
+        df_inv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+        inv_drp_list.append(df_inv_drp)
+
+        # INV: Filter by size
         if inv_min is not None:
-            inv_dropped_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min])
-            inv_dropped_list[-1]['REASON'] = 'Less than min size'
-            df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min]
+            inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min].copy())
+            inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MIN'].format(inv_min)
+            df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min].copy()
 
         if inv_max is not None:
-            inv_dropped_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max])
-            inv_dropped_list[-1]['REASON'] = 'Greater than max size'
-            df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max]
+            inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max].copy())
+            inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MAX'].format(inv_max)
+            df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max].copy()
 
-        # Apply contig filter to INV
-        df_inv = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
+        # INV: Filter compound INVs
+        if not params.inv_inner:
 
-        # Filter overlapping inversion calls
-        inv_tree = collections.defaultdict(intervaltree.IntervalTree)
-        inv_index_set = set()
-        inv_dropped_index_set = set()
+            # Build filter tree based on INV loci
+            inv_tree = collections.defaultdict(intervaltree.IntervalTree)
+            inv_index_set = set()
+            inv_drp_index_set = set()
 
-        for index, row in df_inv.sort_values(['SVLEN', 'POS']).iterrows():
-            if len(inv_tree[row['#CHROM']][row['POS']:row['END']]) == 0:
-                inv_index_set.add(index)
-                inv_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
-            else:
-                inv_dropped_index_set.add(index)
+            for index, row in df_inv.sort_values(['SVLEN', 'POS']).iterrows():
+                if len(inv_tree[row['#CHROM']][row['POS']:row['END']]) == 0:
+                    inv_index_set.add(index)
+                    inv_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
+                else:
+                    inv_drp_index_set.add(index)
 
-        if inv_dropped_index_set:
-            inv_dropped_list.append(df_inv.loc[inv_dropped_index_set].sort_values(['#CHROM', 'POS']))
-            inv_dropped_list[-1]['REASON'] = 'Overlaps another inversion'
+            if inv_drp_index_set:
+                inv_drp_list.append(df_inv.loc[inv_drp_index_set].sort_values(['#CHROM', 'POS']))
+                inv_drp_list[-1]['REASON'] = FILTER_REASON['COMPOUND_INV']
 
-        df_inv = df_inv.loc[inv_index_set].sort_values(['#CHROM', 'POS'])
+            df_inv = df_inv.loc[inv_index_set].sort_values(['#CHROM', 'POS']).copy()
 
-        # Write dropped inversions
-        pd.concat(inv_dropped_list).to_csv(output.bed_inv_dropped, sep='\t', index=False, compression='gzip')
 
-        # Initialize filter with inversions
+        ### Init filter tree ###
+
+        # Create large variant filter tree (for filtering small variants inside larger ones)
         filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        for index, row in df_inv.iterrows():
-            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
+        # Initialize large variant filter with INV locations
+        if not params.inv_inner:
+            for index, row in df_inv.iterrows():
+                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
 
-        # Read large variants and filter by inversions
+
+        ### INS/DEL - Large ###
+
+        # Large: Read
         df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False, keep_default_na=False)
         df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False, keep_default_na=False)
 
-        if df_lg_ins.shape[0] > 0:
-            df_lg_ins = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
+        # Large: Filter by tig regions
+        df_lg_ins, df_ins_drp = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
+        df_lg_del, df_del_drp = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
 
-            # Apply contig filter to large INS
-            df_lg_ins = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
+        df_ins_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+        df_del_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
-        if df_lg_del.shape[0] > 0:
-            df_lg_del = pavlib.call.filter_by_ref_tree(df_lg_del, filter_tree, match_tig=params.redundant_callset)
+        insdel_drp_list.append(df_ins_drp)
+        insdel_drp_list.append(df_del_drp)
 
-            # Apply contig filter to large DEL
-            df_lg_del = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
+        # Large: Compound filter
+        df_lg_ins, df_ins_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
+        df_lg_ins, df_del_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
 
-            # Add large deletions to filter
-            for index, row in df_lg_del.iterrows():
-                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
+        df_ins_drp['REASON'] = FILTER_REASON['COMPOUND']
+        df_del_drp['REASON'] = FILTER_REASON['COMPOUND']
 
-        # Read CIGAR calls
-        df_cigar_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False, keep_default_na=False)
+        insdel_drp_list.append(df_ins_drp)
+        insdel_drp_list.append(df_del_drp)
+
+        # Large: Add DEL to filter regions
+        for index, row in df_lg_del.iterrows():
+            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
+
+
+        ### CIGAR calls ###
+
+        # CIGAR: Read
+        df_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False, keep_default_na=False)
         df_snv = pd.read_csv(input.bed_cigar_snv, sep='\t', low_memory=False, keep_default_na=False)
 
-        # Check column conformance among INS/DEL callsets (required for merging)
-        if list(df_cigar_insdel.columns) != list(df_lg_ins.columns):
+        # CIGAR: Check column conformance among INS/DEL callsets (required for merging)
+        if list(df_insdel.columns) != list(df_lg_ins.columns):
             raise RuntimeError('Columns from CIGAR and large SV INS callsets do not match')
 
-        if list(df_cigar_insdel.columns) != list(df_lg_del.columns):
+        if list(df_insdel.columns) != list(df_lg_del.columns):
             raise RuntimeError('Columns from CIGAR and large SV DEL callsets do not match')
 
-        # Filter CIGAR calls
-        if df_cigar_insdel.shape[0] > 0:
-            df_cigar_insdel = pavlib.call.filter_by_ref_tree(df_cigar_insdel, filter_tree, match_tig=params.redundant_callset)
+        # CIGAR: Filter by tig regions
+        df_insdel, df_insdel_drp = pavlib.call.filter_by_tig_tree(df_insdel, tig_filter_tree)
+        df_snv, df_snv_drp = pavlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
 
-        if df_snv.shape[0] > 0:
-            df_snv = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset)
+        df_insdel_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+        df_snv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
-        # Apply contig filter to small variants
-        df_cigar_insdel = pavlib.call.filter_by_tig_tree(df_cigar_insdel, tig_filter_tree)
-        df_snv = pavlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
+        df_insdel_drp.append(df_insdel_drp)
+        df_snv_drp.append(df_snv_drp)
 
-        # Merge insertion/deletion variants
+        # CIGAR: Compound filter
+        df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset)
+        df_snv, df_snv_drp = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset)
+
+        df_insdel_drp['REASON'] = FILTER_REASON['COMPOUND']
+        df_snv_drp['REASON'] = FILTER_REASON['COMPOUND']
+
+        insdel_drp_list.append(df_insdel_drp)
+        snv_drp_list.append(df_snv_drp)
+
+
+        ### Concat ###
+
+        # Concat: Merge insertion/deletion variants
         df_insdel = pd.concat(
             [
                 df_lg_ins,
                 df_lg_del,
-                df_cigar_insdel
+                df_insdel
             ],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
 
-        # De-duplicate IDs if any exist (can occur with redundant callsets)
+        # Concat: De-duplicate IDs (can occur with redundant callsets)
         df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
         df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
         df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
 
-        # Write
+
+        ### Write ###
+
+        # Write: dropped variants
+        pd.concat(inv_drp_list).to_csv(output.bed_inv_drp, sep='\t', index=False, compression='gzip')
+        pd.concat(insdel_drp_list).to_csv(output.bed_insdel_drp, sep='\t', index=False, compression='gzip')
+        pd.concat(snv_drp_list).to_csv(output.bed_snv_drp, sep='\t', index=False, compression='gzip')
+
+        # Write: Passed variants
         df_insdel.loc[
             df_insdel['SVTYPE'] == 'INS'
         ].to_csv(
@@ -395,6 +453,7 @@ rule call_integrate_sources:
 
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
         df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
+
 
 #
 # Call from CIGAR

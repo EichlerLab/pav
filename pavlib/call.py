@@ -83,24 +83,21 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False):
     """
 
     if match_tig:
-        df = df.loc[
-            df.apply(
-                lambda row: not np.any(
-                    [row['TIG_REGION'].split(':', 1)[0] == region.data for region in filter_tree[row['#CHROM']][row['POS']:row['END']]]
-                ),
-                axis=1
-            )
-        ]
+        filter_pass = df.apply(
+            lambda row: not np.any(
+                [row['TIG_REGION'].split(':', 1)[0] == region.data for region in filter_tree[row['#CHROM']][row['POS']:row['END']]]
+            ),
+            axis=1
+        )
+
 
     else:
-        df = df.loc[
-            df.apply(
-                lambda row: len(filter_tree[row['#CHROM']][row['POS']:row['END']]) == 0,
-                axis=1
-            )
-        ]
+        filter_pass = df.apply(
+            lambda row: len(filter_tree[row['#CHROM']][row['POS']:row['END']]) == 0,
+            axis=1
+        )
 
-    return df
+    return df.loc[filter_pass], df.loc[~ filter_pass]
 
 
 def filter_by_tig_tree(df, tig_filter_tree):
@@ -112,11 +109,11 @@ def filter_by_tig_tree(df, tig_filter_tree):
         no-call regions. Variants with a tig region intersecting these records will be removed (any intersect). If
         `None`, then `df` is not filtered.
 
-    :return: Filtered `df`.
+    :return: A tuple of dataframes: (passed, filtered).
     """
 
     if tig_filter_tree is None:
-        return df
+        return df, pd.DataFrame([], columns=df.columns)
 
     rm_index_set = set()
 
@@ -130,10 +127,7 @@ def filter_by_tig_tree(df, tig_filter_tree):
             rm_index_set.add(index)
 
     # Return
-    if not rm_index_set:
-        return df
-
-    return df.loc[[val not in rm_index_set for val in df.index]]
+    return df.loc[[val not in rm_index_set for val in df.index]].copy(), df.loc[[val in rm_index_set for val in df.index]].copy()
 
 
 def left_homology(pos_tig, seq_tig, seq_sv):

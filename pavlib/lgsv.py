@@ -133,155 +133,232 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             subindex2 += 1
                             continue
 
-                    if dist_tig >= 50 or dist_ref >= 50:
+                    # Call DEL
+                    if dist_ref >= 50 and dist_tig < 50:
 
-                        if dist_tig < 50:
+                        # Call DEL
+                        svlen = dist_ref
 
-                            # Call DEL
-                            svlen = dist_ref
+                        pos_ref = row1['END']
+                        end_ref = row2['POS']
+                        pos_tig = query_pos
+                        end_tig = pos_tig + 1
 
-                            pos_ref = row1['END']
-                            end_ref = row2['POS']
-                            pos_tig = query_pos
-                            end_tig = pos_tig + 1
+                        ref_region = pavlib.seq.Region(chrom, pos_ref, end_ref)
+
+                        # Get reference and tig sequences (left shift and homology search)
+                        seq_ref = seq_cache_ref.get(chrom, False)
+                        seq_tig = seq_cache_tig.get(tig_id, is_rev)
+
+                        # Get SV sequence
+                        seq = pavlib.seq.region_seq_fasta(ref_region, ref_fa_name)
+
+                        # Left-shift through matching bases and get position
+                        left_shift = np.min([
+                            pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                            pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
+                        ])
+
+                        if left_shift > 0:
+                            pos_ref -= left_shift
+                            end_ref -= left_shift
+                            pos_tig -= left_shift
+                            end_tig -= left_shift
 
                             ref_region = pavlib.seq.Region(chrom, pos_ref, end_ref)
-
-                            # Get reference and tig sequences (left shift and homology search)
-                            seq_ref = seq_cache_ref.get(chrom, False)
-                            seq_tig = seq_cache_tig.get(tig_id, is_rev)
-
-                            # Get SV sequence
                             seq = pavlib.seq.region_seq_fasta(ref_region, ref_fa_name)
 
-                            # Left-shift through matching bases and get position
-                            left_shift = np.min([
-                                pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
-                                pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
-                            ])
+                        # Get ID and log
+                        sv_id = '{}-{}-DEL-{}'.format(chrom, pos_ref, svlen)
 
-                            if left_shift > 0:
-                                pos_ref -= left_shift
-                                end_ref -= left_shift
-                                pos_tig -= left_shift
-                                end_tig -= left_shift
+                        log.write('DEL: {}\n'.format(sv_id))
+                        log.flush()
 
-                                ref_region = pavlib.seq.Region(chrom, pos_ref, end_ref)
-                                seq = pavlib.seq.region_seq_fasta(ref_region, ref_fa_name)
+                        # Find breakpoint homology
+                        seq_upper = seq.upper()
 
-                            # Get ID and log
-                            sv_id = '{}-{}-DEL-{}'.format(chrom, pos_ref, svlen)
+                        hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
+                        hom_ref_r = pavlib.call.right_homology(end_ref, seq_ref, seq_upper)
 
-                            log.write('DEL: {}\n'.format(sv_id))
-                            log.flush()
+                        hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
+                        hom_tig_r = pavlib.call.right_homology(pos_tig, seq_tig, seq_upper)
 
-                            # Find breakpoint homology
-                            seq_upper = seq.upper()
+                        # Append
+                        del_list.append(pd.Series(
+                            [
+                                chrom, pos_ref, end_ref,
+                                sv_id, 'DEL', svlen,
+                                hap,
+                                f'{tig_id}:{pos_tig + 1}-{end_tig}', '-' if row1['REV'] else '+',
+                                dist_tig,
+                                '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
+                                CALL_SOURCE,
+                                seq
+                            ],
+                            index=[
+                                '#CHROM', 'POS', 'END',
+                                'ID', 'SVTYPE', 'SVLEN',
+                                'HAP',
+                                'TIG_REGION', 'QUERY_STRAND',
+                                'CI',
+                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
+                                'CALL_SOURCE',
+                                'SEQ'
+                            ]
+                        ))
 
-                            hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
-                            hom_ref_r = pavlib.call.right_homology(end_ref, seq_ref, seq_upper)
+                        # Done with this contig break
+                        break
 
-                            hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
-                            hom_tig_r = pavlib.call.right_homology(pos_tig, seq_tig, seq_upper)
+                    # Call INS
+                    elif dist_ref < 50 and dist_tig >= 50:
 
-                            # Append
-                            del_list.append(pd.Series(
-                                [
-                                    chrom, pos_ref, end_ref,
-                                    sv_id, 'DEL', svlen,
-                                    hap,
-                                    f'{tig_id}:{pos_tig + 1}-{end_tig}', '-' if row1['REV'] else '+',
-                                    dist_tig,
-                                    '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
-                                    left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
-                                    CALL_SOURCE,
-                                    seq
-                                ],
-                                index=[
-                                    '#CHROM', 'POS', 'END',
-                                    'ID', 'SVTYPE', 'SVLEN',
-                                    'HAP',
-                                    'TIG_REGION', 'QUERY_STRAND',
-                                    'CI',
-                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
-                                    'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
-                                    'CALL_SOURCE',
-                                    'SEQ'
-                                ]
-                            ))
+                        # Call INS
+                        pos_ref = row1['END']
+                        end_ref = pos_ref + 1
+                        pos_tig = query_pos
+                        end_tig = query_end
 
-                            # Done with this contig break
-                            break
+                        svlen = dist_tig
 
-                        elif dist_ref < 50:
+                        tig_region = pavlib.seq.Region(tig_id, pos_tig, end_tig, is_rev=is_rev)
 
-                            # Call INS
-                            pos_ref = row1['END']
-                            end_ref = pos_ref + 1
-                            pos_tig = query_pos
-                            end_tig = query_end
+                        # Get reference and tig sequences (left shift and homology search)
+                        seq_ref = seq_cache_ref.get(chrom, False)
+                        seq_tig = seq_cache_tig.get(tig_id, is_rev)
 
-                            svlen = dist_tig
+                        # SV sequence
+                        seq = pavlib.seq.region_seq_fasta(
+                            tig_region,
+                            tig_fa_name,
+                            rev_compl=is_rev
+                        )
+
+                        # Left-shift through matching bases and get position
+                        left_shift = np.min([
+                            pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                            pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
+                        ])
+
+                        if left_shift > 0:
+                            pos_ref -= left_shift
+                            end_ref -= left_shift
+                            pos_tig -= left_shift
+                            end_tig -= left_shift
 
                             tig_region = pavlib.seq.Region(tig_id, pos_tig, end_tig, is_rev=is_rev)
 
-                            # Get reference and tig sequences (left shift and homology search)
-                            seq_ref = seq_cache_ref.get(chrom, False)
-                            seq_tig = seq_cache_tig.get(tig_id, is_rev)
-
-                            # SV sequence
                             seq = pavlib.seq.region_seq_fasta(
                                 tig_region,
                                 tig_fa_name,
                                 rev_compl=is_rev
                             )
 
-                            # Left-shift through matching bases and get position
-                            left_shift = np.min([
-                                pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
-                                pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
-                            ])
+                        # Get ID and log
+                        sv_id = '{}-{}-INS-{}'.format(chrom, pos_ref, svlen)
 
-                            if left_shift > 0:
-                                pos_ref -= left_shift
-                                end_ref -= left_shift
-                                pos_tig -= left_shift
-                                end_tig -= left_shift
+                        log.write('INS: {}\n'.format(sv_id))
+                        log.flush()
 
-                                tig_region = pavlib.seq.Region(tig_id, pos_tig, end_tig, is_rev=is_rev)
+                        # Find breakpoint homology
+                        seq_upper = seq.upper()
 
-                                seq = pavlib.seq.region_seq_fasta(
-                                    tig_region,
-                                    tig_fa_name,
-                                    rev_compl=is_rev
-                                )
+                        hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
+                        hom_ref_r = pavlib.call.right_homology(pos_ref, seq_ref, seq_upper)
 
-                            # Get ID and log
-                            sv_id = '{}-{}-INS-{}'.format(chrom, pos_ref, svlen)
+                        hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
+                        hom_tig_r = pavlib.call.right_homology(end_tig, seq_tig, seq_upper)
 
-                            log.write('INS: {}\n'.format(sv_id))
+                        # APPEND
+                        ins_list.append(pd.Series(
+                            [
+                                chrom, pos_ref, end_ref,
+                                sv_id, 'INS', svlen,
+                                hap,
+                                tig_region.to_base1_string(), '-' if is_rev else '+',
+                                dist_ref,
+                                '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
+                                CALL_SOURCE,
+                                seq
+                            ],
+                            index=[
+                                '#CHROM', 'POS', 'END',
+                                'ID', 'SVTYPE', 'SVLEN',
+                                'HAP',
+                                'TIG_REGION', 'QUERY_STRAND',
+                                'CI',
+                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
+                                'CALL_SOURCE',
+                                'SEQ'
+                            ]
+                        ))
+
+                        # Done with this contig break
+                        break
+
+                    # INV (2 contig)
+                    elif dist_ref >= 50 and dist_tig >= 50:
+
+                        region_flag = pavlib.seq.Region(chrom, row1['END'], row2['POS'], is_rev=row1['REV'])
+
+                        # Try INV
+                        inv_call = pavlib.inv.scan_for_inv(
+                            region_flag,
+                            ref_fa_name, tig_fa_name,
+                            align_lift, k_util,
+                            max_region_size=max_region_size,
+                            threads=threads,
+                            n_tree=n_tree,
+                            srs_tree=srs_tree,
+                            log=log,
+                            min_exp_count=1  # If alignment truncation does not contain inverted k-mers at sufficient density, stop searching
+                        )
+
+                        if inv_call is not None:
+                            log.write('INV (2-tig): {}\n'.format(inv_call))
                             log.flush()
 
-                            # Find breakpoint homology
-                            seq_upper = seq.upper()
+                            seq = pavlib.seq.region_seq_fasta(
+                                inv_call.region_tig_outer,
+                                tig_fa_name,
+                                rev_compl=is_rev
+                            )
 
-                            hom_ref_l = pavlib.call.left_homology(pos_ref - 1, seq_ref, seq_upper)
-                            hom_ref_r = pavlib.call.right_homology(pos_ref, seq_ref, seq_upper)
-
-                            hom_tig_l = pavlib.call.left_homology(pos_tig - 1, seq_tig, seq_upper)
-                            hom_tig_r = pavlib.call.right_homology(end_tig, seq_tig, seq_upper)
-
-                            # APPEND
-                            ins_list.append(pd.Series(
+                            inv_list.append(pd.Series(
                                 [
-                                    chrom, pos_ref, end_ref,
-                                    sv_id, 'INS', svlen,
+                                    inv_call.region_ref_outer.chrom,
+                                    inv_call.region_ref_outer.pos,
+                                    inv_call.region_ref_outer.end,
+
+                                    inv_call.id,
+                                    'INV',
+                                    inv_call.svlen,
+
                                     hap,
-                                    tig_region.to_base1_string(), '-' if is_rev else '+',
-                                    dist_ref,
-                                    '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
-                                    left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
-                                    CALL_SOURCE,
+
+                                    inv_call.region_tig_outer.to_base1_string(),
+                                    '-' if is_rev else '+',
+
+                                    0,
+
+                                    inv_call.region_ref_inner.to_base1_string(),
+                                    inv_call.region_tig_inner.to_base1_string(),
+
+                                    inv_call.region_ref_discovery.to_base1_string(),
+                                    inv_call.region_tig_discovery.to_base1_string(),
+
+                                    inv_call.region_flag.region_id(),
+                                    'ALNTRUNC',
+
+                                    '{},{}'.format(row1['INDEX'], row2['INDEX']),
+                                    row1['CLUSTER_MATCH'],
+
+                                    CALL_SOURCE_INV_DENSITY,
+
                                     seq
                                 ],
                                 index=[
@@ -290,115 +367,47 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     'HAP',
                                     'TIG_REGION', 'QUERY_STRAND',
                                     'CI',
+                                    'RGN_REF_INNER', 'RGN_TIG_INNER',
+                                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                    'FLAG_ID', 'FLAG_TYPE',
                                     'ALIGN_INDEX', 'CLUSTER_MATCH',
-                                    'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                     'CALL_SOURCE',
                                     'SEQ'
                                 ]
                             ))
 
+                            # Save density table
+                            if density_out_dir is not None:
+                                inv_call.df.to_csv(
+                                    os.path.join(density_out_dir,
+                                                 'density_{}_{}.tsv.gz'.format(inv_call.id, hap)),
+                                    sep='\t', index=False, compression='gzip'
+                                )
+
                             # Done with this contig break
                             break
 
-                        else:
-
-                            region_flag = pavlib.seq.Region(chrom, row1['END'], row2['POS'], is_rev=row1['REV'])
-
-                            # Try INV
-                            inv_call = pavlib.inv.scan_for_inv(
-                                region_flag,
-                                ref_fa_name, tig_fa_name,
-                                align_lift, k_util,
-                                max_region_size=max_region_size,
-                                threads=threads,
-                                n_tree=n_tree,
-                                srs_tree=srs_tree,
-                                log=log,
-                                min_exp_count=1  # If alignment truncation does not contain inverted k-mers at sufficient density, stop searching
-                            )
-
-                            if inv_call is not None:
-                                log.write('INV (2-tig): {}\n'.format(inv_call))
-                                log.flush()
-
-                                seq = pavlib.seq.region_seq_fasta(
-                                    inv_call.region_tig_outer,
-                                    tig_fa_name,
-                                    rev_compl=is_rev
-                                )
-
-                                inv_list.append(pd.Series(
-                                    [
-                                        inv_call.region_ref_outer.chrom,
-                                        inv_call.region_ref_outer.pos,
-                                        inv_call.region_ref_outer.end,
-
-                                        inv_call.id,
-                                        'INV',
-                                        inv_call.svlen,
-
-                                        hap,
-
-                                        inv_call.region_tig_outer.to_base1_string(),
-                                        '-' if is_rev else '+',
-
-                                        0,
-
-                                        inv_call.region_ref_inner.to_base1_string(),
-                                        inv_call.region_tig_inner.to_base1_string(),
-
-                                        inv_call.region_ref_discovery.to_base1_string(),
-                                        inv_call.region_tig_discovery.to_base1_string(),
-
-                                        inv_call.region_flag.region_id(),
-                                        'ALNTRUNC',
-
-                                        '{},{}'.format(row1['INDEX'], row2['INDEX']),
-                                        row1['CLUSTER_MATCH'],
-
-                                        CALL_SOURCE_INV_DENSITY,
-
-                                        seq
-                                    ],
-                                    index=[
-                                        '#CHROM', 'POS', 'END',
-                                        'ID', 'SVTYPE', 'SVLEN',
-                                        'HAP',
-                                        'TIG_REGION', 'QUERY_STRAND',
-                                        'CI',
-                                        'RGN_REF_INNER', 'RGN_TIG_INNER',
-                                        'RGN_REF_DISC', 'RGN_TIG_DISC',
-                                        'FLAG_ID', 'FLAG_TYPE',
-                                        'ALIGN_INDEX', 'CLUSTER_MATCH',
-                                        'CALL_SOURCE',
-                                        'SEQ'
-                                    ]
-                                ))
-
-                                # Save density table
-                                if density_out_dir is not None:
-                                    inv_call.df.to_csv(
-                                        os.path.join(density_out_dir,
-                                                     'density_{}_{}.tsv.gz'.format(inv_call.id, hap)),
-                                        sep='\t', index=False, compression='gzip'
-                                    )
-
-                                # Done with this contig break
-                                break
-
-                            # Else: Call SUB?
+                        # Else: Call SUB?
 
                     # Next record
                     subindex2 += 1
 
+                # INV (3 contig)
                 elif subindex2 + 1 < tig_index_list_len:
-                    # subindex1 and subindex2 are in opposite directions
 
                     subindex3 = subindex2 + 1
 
                     row3 = df.loc[tig_index_list[subindex3]]
 
-                    if row3['REV'] == row1['REV']:  # Already known: row1['REV'] != row2['REV']
+                    # Determine if the three alignment records have an inversion signature
+                    if (
+                        row3['REV'] == row1['REV']
+                    ) and (
+                        row1['QUERY_TIG_END'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_POS']) // 2 < row3['QUERY_TIG_POS']  # Middle alignment record must be between the flanking alignment records on tnhe contig
+                    ):
+
+                        # Classic INV signature: +,-,+ or -,+,-
+                        # subindex1 and subindex2 are in opposite directions (already tested)
 
                         # Find inversion in 3-part alignment with middle in opposite orientation as flanks
                         region_flag = pavlib.seq.Region(chrom, row1['END'], row3['POS'], is_rev=row1['REV'])
