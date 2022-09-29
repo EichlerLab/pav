@@ -4,7 +4,7 @@ Program constants
 
 # Version constants
 VERSION_MAJOR = 2
-VERSION_MINOR = 0
+VERSION_MINOR = 1
 VERSION_DEV = 0
 
 

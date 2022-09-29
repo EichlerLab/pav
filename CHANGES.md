@@ -1,7 +1,37 @@
 # PAV changes
 
-## 1.2
+## 2.1.0
+* Added parameter "inv_inner" (boolean, default False) to allow small variants inside inversions
+* Added tunable parameter "minimap2_params" (thanks to Edwmard Rice).
+* If contig name is a number, convert it to str (thanks to Peng Jia).
+* Inversion caller bug fixes:
+  * Incorrectly calling large inversions based on misaligned contigs.
+  * Small inversions were being missed (scripts/density.py wasn't able to find kanapy, also fixed reason it was failing silently).
+* Batching haplotype merges (20 batches) instead of one per chrom (generates too many jobs on unplaced/unlocalized contigs)
 
+## 2.0.1
+* If hap and parent are missing in asm_pattern, it's an unphased assembly (no longer an error).
+* Fixed INV signature bug when there are no indel clusters flagging INVs.
+* Reading small indels that cross Ns (particularly "NA") causes Pandas to read the table back with missing data instead of a "NA" deletion or insertion
+* Merging info changes (removed HAP_AC and HAP_AF, not meaningful).
+* Updated parameters for redundant callsets (multiple haplotypes in one assembly).
+* Added missing code for creating dotplots.
+* De-duplicating IDs before merging (for redundant callsets).
+* Fixed sys paths in scripts/reconstruct_sam.py.
+
+## 2.0.0
+* Haplotype merging uses sequence content by default (not just size/position).
+* Fixed tuple assignment bug while finding input files (#12, thanks to Edward Rice).
+* Fixed SNV merge strategy typo (#14).
+
+## 1.2.2
+* More granular merging control based on variant type.
+* VCF SVLEN header had the incorrect data type.
+
+## 1.2.1
+* Changed parameter "merge_align" to "merge_match" to better match matching paradigm.
+
+## 1.2.0
 * PAV merges using sequence context by default. Sequences are only merged if
   they are 80% identical by alignment parameters. Merging is done with SV-Pop
   parameters "match=0.8,2,-1,-4,-0.25,500000,9" (80% identical, match=2, mismatch=-1,
@@ -9,3 +39,4 @@
   Jaccard k-mer size 9). Parameter is tunable with option "merge_align", which may be
   "true" (default), "false" (no sequence matching), or a string that replaces everything
   after "match=".
+
