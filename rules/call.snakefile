@@ -2,6 +2,8 @@
 Call variants from aligned contigs.
 """
 
+localrules: call_merge_batch_table
+
 FILTER_REASON = {
     'TIG_FILTER': 'TIG_FILTER: Contig filter region (tig_filter_pattern)',
     'COMPOUND': 'COMPOUND: Inside larger variant',
@@ -9,6 +11,9 @@ FILTER_REASON = {
     'INV_MIN': 'INV_MIN: Less than min INV size ({})',
     'INV_MAX': 'INV_MAX: Exceeds max INV size ({})'
 }
+
+MERGE_BATCH_COUNT = 20
+
 
 #
 # Finalize variant calls
@@ -105,30 +110,28 @@ rule call_final_bed:
 
 # pg_variant_bed
 #
-# Make variant BED and FASTA. Write all variant calls regardless of consensus loci.
-#
-# If merging is not done by chromosome (default), then this rule reads from each haplotype and merges in one step
-# (wildcards.merge_level = merged). If merging is done per chromosome (config['merge_by_chrom'] is True), then this
-# rule calls itself recursively first by chromosome (wildcards.merge_level = bychrom) then by concatenating the merged
-# chromosomes (wildcards.merge_level = merged). The code will know which step its on based on the wildcards and config.
+# Concatenate variant BED files from batched merges.
 rule call_merge_haplotypes:
     input:
-        bed_chrom=lambda wildcards: [
-            'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'.format(
-                asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, chrom=chrom
-            ) for chrom in sorted(svpoplib.ref.get_df_fai(get_config(wildcards, 'reference') + '.fai').index)
+        bed_batch=lambda wildcards: [
+            'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'.format(
+                asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, batch=batch
+            ) for batch in range(MERGE_BATCH_COUNT)
         ]
     output:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     run:
 
         # Concatenate merged chromosomes
-        print('Concatenating chromosome merges')
+        print('Concatenating merges')
 
         write_header = True
 
         with gzip.open(output.bed, 'wt') as out_file:
-            for in_file_name in input.bed_chrom:
+            for in_file_name in input.bed_batch:
+
+                if os.stat(in_file_name).st_size == 0:
+                    continue
 
                 df_iter = pd.read_csv(
                     in_file_name,
@@ -137,27 +140,36 @@ rule call_merge_haplotypes:
 
                 for df in df_iter:
                     df.to_csv(
-                        out_file,sep='\t', index=False, header=write_header
+                        out_file, sep='\t', index=False, header=write_header
                     )
 
                     write_header = False
 
+        if write_header:
+            raise RuntimeError('Concatenated 0 batches (all empty?)')
+
 
 # call_merge_haplotypes_chrom
 #
-# Merge by chromosome. This rule is used if "merge_by_chrom" is True.
-rule call_merge_haplotypes_chrom:
+# Merge by batches.
+rule call_merge_haplotypes_batch:
     input:
+        tsv='data/ref/merge_batch.tsv.gz',
         bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
         bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
         callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
         callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
-        bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{chrom}.bed.gz'
+        bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'
     params:
         merge_threads=lambda wildcards: int(get_config(wildcards, 'merge_threads', 12))
     run:
 
+        # Read batch table
+        df_batch = pd.read_csv(input.tsv, sep='\t')
+        df_batch = df_batch.loc[df_batch['BATCH'] == int(wildcards.batch)]
+
+        # Get variant type
         var_svtype_list = wildcards.vartype_svtype.split('_')
 
         if len(var_svtype_list) != 2:
@@ -170,17 +182,86 @@ rule call_merge_haplotypes_chrom:
         sys.stdout.flush()
 
         # Merge
-        df = pavlib.call.merge_haplotypes(
-            input.bed_var_h1, input.bed_var_h2,
-            input.callable_h1, input.callable_h2,
-            config_def,
-            threads=params.merge_threads,
-            chrom=wildcards.chrom,
-            is_inv=var_svtype_list[1] == 'inv'
-        )
+        df_list = list()
 
-        # Save BED
-        df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
+        for chrom in df_batch['CHROM']:
+            df_list.append(
+                pavlib.call.merge_haplotypes(
+                    input.bed_var_h1, input.bed_var_h2,
+                    input.callable_h1, input.callable_h2,
+                    config_def,
+                    threads=params.merge_threads,
+                    chrom=chrom,
+                    is_inv=var_svtype_list[1] == 'inv'
+                )
+            )
+
+        # Concat and save
+        if len(df_list) > 0:
+            pd.concat(
+                df_list, axis=0
+            ).to_csv(
+                output.bed, sep='\t', index=False, compression='gzip'
+            )
+        else:
+            with open(output.bed, 'wt') as out_file:
+                pass
+
+
+
+# call_merge_batch_table
+#
+# Create a table of merge batch assignments
+rule call_merge_batch_table:
+    input:
+        tsv='data/ref/contig_info.tsv.gz'
+    output:
+        tsv='data/ref/merge_batch.tsv.gz'
+    run:
+
+        # Read and sort
+        df = pd.read_csv(
+            'data/ref/contig_info.tsv.gz', sep='\t'
+        ).sort_values(
+            'LEN', ascending=False
+        ).set_index(
+            'CHROM'
+        )[['LEN']]
+
+        df['BATCH'] = -1
+
+        # Get a list of assignments for each batch
+        list_chr = collections.defaultdict(list)
+        list_size = collections.Counter()
+
+        def get_smallest():
+            """
+            Get the next smallest bin.
+            """
+
+            min_index = 0
+
+            for i in range(MERGE_BATCH_COUNT):
+
+                if list_size[i] == 0:
+                    return i
+
+                if list_size[i] < list_size[min_index]:
+                    min_index = i
+
+            return min_index
+
+        for chrom in df.index:
+            i = get_smallest()
+            df.loc[chrom, 'BATCH'] = i
+            list_size[i] += df.loc[chrom, 'LEN']
+
+        # Check
+        if np.any(df['BATCH'] < 0):
+            raise RuntimeError('Failed to assign all reference contigs to batches (PROGRAM BUG)')
+
+        # Write
+        df.to_csv(output.tsv, sep='\t', index=True, compression='gzip')
 
 
 #

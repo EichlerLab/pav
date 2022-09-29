@@ -33,3 +33,13 @@ MERGE_PARAM_DEFAULT = {
     'inv': MERGE_PARAM_INSDELINV,
     'snv': MERGE_PARAM_SNV
 }
+
+
+####################
+### Return Codes ###
+####################
+
+# When scripts/density.py fails to find an inversion but not because of an error, this value is returned to indicate
+# that the pipeline should go ahead without crashing. Return codes other than 0 and ERR_INV_FAIL indicate a problem or
+# that should be corrected.
+ERR_INV_FAIL = 125

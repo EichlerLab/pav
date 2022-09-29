@@ -22,6 +22,7 @@
 * min_inv [300]
 * max_inv [2000000]
 * inv_min_svlen [300]
+* inv_inner [False]: If True, allow small variant calls inside inversions. Variants will be in reference orientation, but some could be the result of poor alignments around inversion breakpoints.
 
 * inv_min [300]
 * inv_max [2000000]

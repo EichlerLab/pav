@@ -82,6 +82,9 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False):
     :return: Filtered DataFrame.
     """
 
+    if df.shape[0] == 0:
+        return df, df.copy()
+
     if match_tig:
         filter_pass = df.apply(
             lambda row: not np.any(
@@ -114,6 +117,9 @@ def filter_by_tig_tree(df, tig_filter_tree):
 
     if tig_filter_tree is None:
         return df, pd.DataFrame([], columns=df.columns)
+
+    if df.shape[0] == 0:
+        return df, df.copy()
 
     rm_index_set = set()
 

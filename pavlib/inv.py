@@ -265,21 +265,23 @@ def scan_for_inv(
         proc_stdout, proc_stderr = proc.communicate()
 
         if proc.returncode != 0:
-            _write_log(
-                (
-                    'Received return code {} from density.py for region {}:\n{}'
-                ).format(
-                    proc.returncode, str(region_ref),
-                    proc_stderr.decode() if proc_stderr is not None else '<No STDERR Message>'
-                ),
-                log
+            err_message = (
+                'Received return code {} from scripts/density.py for region {}:\n{}'
+            ).format(
+                proc.returncode, str(region_ref),
+                proc_stderr.decode() if proc_stderr is not None else '<No STDERR Message>'
             )
+
+            _write_log(err_message, log)
+
+            if proc.returncode != pavlib.constants.ERR_INV_FAIL:
+                raise RuntimeError(err_message)
 
             return None
 
         if proc_stdout is None:
-            _write_log(f'No output from density.py for region {region_ref}')
-            return None
+            _write_log(f'No output from scripts/density.py for region {region_ref}')
+            raise RuntimeError(f'No output from scripts/density.py for region {region_ref}')
 
         #df = pickle.loads(proc_stdout)
         df = pickle.loads(codecs.decode(proc_stdout, "base64"))

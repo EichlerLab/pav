@@ -402,8 +402,12 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                     # Determine if the three alignment records have an inversion signature
                     if (
                         row3['REV'] == row1['REV']
-                    ) and (
-                        row1['QUERY_TIG_END'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_POS']) // 2 < row3['QUERY_TIG_POS']  # Middle alignment record must be between the flanking alignment records on tnhe contig
+                    ) and ( # Middle alignment record must be between the flanking alignment records on tnhe contig
+                        (
+                            not row1['REV'] and (row1['QUERY_TIG_END'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_END']) // 2 < row3['QUERY_TIG_POS'])
+                        ) or (
+                            row1['REV'] and (row3['QUERY_TIG_POS'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_END']) // 2 < row1['QUERY_TIG_END'])
+                        )
                     ):
 
                         # Classic INV signature: +,-,+ or -,+,-

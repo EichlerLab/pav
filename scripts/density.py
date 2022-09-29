@@ -18,7 +18,7 @@ PIPELINE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 sys.path.append(PIPELINE_DIR)  # pavlib
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop'))  # svpoplib
-sys.path.append(os.path.join(PIPELINE_DIR, 'dep'))  # kanapy
+sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop', 'dep'))  # kanapy
 
 import pavlib
 import svpoplib
@@ -499,7 +499,9 @@ if __name__ == '__main__':
     ref_kmer_count = pavlib.seq.ref_kmers(region_ref, args.ref, k_util)
 
     if ref_kmer_count is None or len(ref_kmer_count) == 0:
-        raise RuntimeError(f'No reference k-mers for region {region_ref}')
+        print(f'No reference k-mers for region {region_ref}', file=sys.stdout)
+        sys.exit(pavlib.constants.ERR_INV_FAIL)
+        #raise RuntimeError(f'No reference k-mers for region {region_ref}')
 
     # Skip low-complexity sites with repetitive k-mers
     max_mer_count = np.max(list(ref_kmer_count.values()))
@@ -507,12 +509,20 @@ if __name__ == '__main__':
     if max_mer_count > MAX_REF_KMER_COUNT:
         max_mer = [kmer for kmer, count in ref_kmer_count.items() if count == max_mer_count][0]
 
-        raise RuntimeError('K-mer count exceeds max: {} > {} ({}): {}'.format(
+        print('K-mer count exceeds max: {} > {} ({}): {}'.format(
             max_mer_count,
             MAX_REF_KMER_COUNT,
             k_util.to_string(max_mer),
             region_ref
-        ))
+        ), file=sys.stderr)
+        sys.exit(pavlib.constants.ERR_INV_FAIL)
+
+        # raise RuntimeError('K-mer count exceeds max: {} > {} ({}): {}'.format(
+        #     max_mer_count,
+        #     MAX_REF_KMER_COUNT,
+        #     k_util.to_string(max_mer),
+        #     region_ref
+        # ))
 
     ref_kmer_set = set(ref_kmer_count)
 
