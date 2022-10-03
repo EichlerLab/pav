@@ -122,31 +122,14 @@ rule call_merge_haplotypes:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     run:
 
-        # Concatenate merged chromosomes
-        print('Concatenating merges')
-
-        write_header = True
-
-        with gzip.open(output.bed, 'wt') as out_file:
-            for in_file_name in input.bed_batch:
-
-                if os.stat(in_file_name).st_size == 0:
-                    continue
-
-                df_iter = pd.read_csv(
-                    in_file_name,
-                    sep='\t', iterator=True, chunksize=20000, keep_default_na=False
-                )
-
-                for df in df_iter:
-                    df.to_csv(
-                        out_file, sep='\t', index=False, header=write_header
-                    )
-
-                    write_header = False
-
-        if write_header:
-            raise RuntimeError('Concatenated 0 batches (all empty?)')
+        df = pd.concat(
+            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch],
+            axis=0
+        ).sort_values(
+            ['#CHROM', 'POS', 'END', 'ID']
+        ).to_csv(
+            output.bed, sep='\t', index=False, compression='gzip'
+        )
 
 
 # call_merge_haplotypes_chrom
