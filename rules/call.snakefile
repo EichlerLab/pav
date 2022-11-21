@@ -138,8 +138,8 @@ rule call_merge_haplotypes:
 rule call_merge_haplotypes_batch:
     input:
         tsv='data/ref/merge_batch.tsv.gz',
-        bed_var_h1='temp/{asm_name}/bed/integrated/h1/{vartype_svtype}.bed.gz',
-        bed_var_h2='temp/{asm_name}/bed/integrated/h2/{vartype_svtype}.bed.gz',
+        bed_var_h1='results/{asm_name}/bed/pre_merge/h1/{vartype_svtype}.bed.gz',
+        bed_var_h2='results/{asm_name}/bed/pre_merge/h2/{vartype_svtype}.bed.gz',
         callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
         callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
@@ -299,10 +299,10 @@ rule call_integrate_sources:
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
         bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
-        bed_ins=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_ins.bed.gz'),
-        bed_del=temp('temp/{asm_name}/bed/integrated/{hap}/svindel_del.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/bed/integrated/{hap}/sv_inv.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/bed/integrated/{hap}/snv_snv.bed.gz'),
+        bed_ins='results/{asm_name}/bed/pre_merge/{hap}/svindel_ins.bed.gz',
+        bed_del='results/{asm_name}/bed/pre_merge/{hap}/svindel_del.bed.gz',
+        bed_inv='results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz',
+        bed_snv='results/{asm_name}/bed/pre_merge/{hap}/snv_snv.bed.gz',
         bed_inv_drp='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz',
         bed_insdel_drp='results/{asm_name}/bed/dropped/svindel_insdel_{hap}.bed.gz',
         bed_snv_drp='results/{asm_name}/bed/dropped/snv_snv_{hap}.bed.gz',

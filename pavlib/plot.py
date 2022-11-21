@@ -12,7 +12,11 @@ import pavlib
 import kanapy
 
 
-def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
+def dotplot_inv_call(
+    inv_call, ref_fa, tig_fa=None, seq_tig=None,
+    region_ref=None, region_tig=None,
+    k=32
+):
     """
     Make a dotplot of an inversion call.
 
@@ -20,13 +24,19 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
     :param ref_fa: Reference FASTA.
     :param tig_fa: Contig FASTA file name.
     :param seq_tig: Contig alignment sequence or `None`. If `None`, then `tig_fa` must be set.
+    :param region_ref: Reference region. If None, uses inv_call.region_ref_discovery.
+    :param region_tig: Contig region. If none, uses inv_call.region_tig_discovery.
+    :param k: K-mer size.
 
     :return: A plot object. Before it is discarded, this object should be closed with `matplotlib.pyplot.close()` to
         free memory.
     """
 
-    region_ref = inv_call.region_ref_discovery
-    region_tig = inv_call.region_tig_discovery
+    if region_ref is None:
+        region_ref = inv_call.region_ref_discovery
+
+    if region_tig is None:
+        region_tig = inv_call.region_tig_discovery
 
     # Get reference sequence
     seq_ref = pavlib.seq.region_seq_fasta(region_ref, ref_fa, False)
@@ -45,6 +55,7 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
         'label_y': '{} ({:,d} - {:,d})'.format(region_ref.chrom, region_ref.pos + 1, region_ref.end),
         'start_x': region_tig.pos,
         'start_y': region_ref.pos,
+        'k': k
     }
 
     # Add annotations
@@ -58,8 +69,8 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
         {
             'type': 'vline',
             'x': np.array([inv_call.region_tig_outer.pos, inv_call.region_tig_outer.end]),
-            'ymin': inv_call.region_ref_discovery.pos + 1,
-            'ymax': inv_call.region_ref_discovery.end,
+            'ymin': region_ref.pos + 1,
+            'ymax': region_ref.end,
             'color': 'lightseagreen',
             'style': 'solid',
             'alpha': 0.4
@@ -81,13 +92,117 @@ def dotplot_inv_call(inv_call, ref_fa, tig_fa=None, seq_tig=None):
             {
                 'type': 'vline',
                 'x': np.array([inv_call.region_tig_inner.pos, inv_call.region_tig_inner.end]),
-                'ymin': inv_call.region_ref_discovery.pos + 1,
-                'ymax': inv_call.region_ref_discovery.end,
+                'ymin': region_ref.pos + 1,
+                'ymax': region_ref.end,
                 'color': 'seagreen',
                 'style': 'dashed',
                 'alpha': 0.4
             }
         )
+
+    # Add short dotted lines for discovery region - Tig
+    if inv_call.region_tig_discovery is not None:
+        if region_tig.pos <= inv_call.region_tig_discovery.pos <= region_tig.end:
+            anno_list.append(
+                {
+                    'type': 'vline',
+                    'x': inv_call.region_tig_discovery.pos,
+                    'ymin': region_ref.pos + 1,
+                    'ymax': region_ref.pos + 1 + int(len(region_ref) * 0.1),
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+            anno_list.append(
+                {
+                    'type': 'vline',
+                    'x': inv_call.region_tig_discovery.pos,
+                    'ymin': region_ref.end - int(len(region_ref) * 0.1),
+                    'ymax': region_ref.end,
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+        if region_tig.pos <= inv_call.region_tig_discovery.end <= region_tig.end:
+            anno_list.append(
+                {
+                    'type': 'vline',
+                    'x': inv_call.region_tig_discovery.end,
+                    'ymin': region_ref.pos + 1,
+                    'ymax': region_ref.pos + 1 + int(len(region_ref) * 0.1),
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+            anno_list.append(
+                {
+                    'type': 'vline',
+                    'x': inv_call.region_tig_discovery.end,
+                    'ymin': region_ref.end - int(len(region_ref) * 0.1),
+                    'ymax': region_ref.end,
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+    
+    if inv_call.region_ref_discovery is not None:
+        if region_ref.pos <= inv_call.region_ref_discovery.pos <= region_ref.end:
+            anno_list.append(
+                {
+                    'type': 'hline',
+                    'y': inv_call.region_ref_discovery.pos,
+                    'xmin': region_tig.pos + 1,
+                    'xmax': region_tig.pos + 1 + int(len(region_tig) * 0.1),
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+            anno_list.append(
+                {
+                    'type': 'hline',
+                    'y': inv_call.region_ref_discovery.pos,
+                    'xmin': region_tig.end - int(len(region_tig) * 0.1),
+                    'xmax': region_tig.end,
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+        if region_ref.pos <= inv_call.region_ref_discovery.end <= region_ref.end:
+            anno_list.append(
+                {
+                    'type': 'hline',
+                    'y': inv_call.region_ref_discovery.end,
+                    'xmin': region_tig.pos + 1,
+                    'xmax': region_tig.pos + 1 + int(len(region_tig) * 0.1),
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
+            anno_list.append(
+                {
+                    'type': 'hline',
+                    'y': inv_call.region_ref_discovery.end,
+                    'xmin': region_tig.end - int(len(region_tig) * 0.1),
+                    'xmax': region_tig.end,
+                    'color': '0.3',
+                    'style': 'dotted',
+                    'alpha': 0.4
+                }
+            )
+
 
     # Make plot
     fig = kanapy.plot.dotplot.dotplot(
