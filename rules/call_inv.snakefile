@@ -166,8 +166,7 @@ rule call_inv_batch:
                 input.bed_aln,
                 sep='\t',
                 usecols=('INDEX', 'CLUSTER_MATCH'),
-                index_col='INDEX',
-                squeeze=False
+                index_col='INDEX'
             )
 
             # Call inversions
