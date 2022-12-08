@@ -28,10 +28,7 @@ rule vcf_write_vcf:
         ref_tsv='data/ref/contig_info.tsv.gz'
     output:
         vcf='pav_{asm_name}.vcf.gz'
-    wildcard_constraints:
-        alt_fmt='alt|sym'
     run:
-
 
         # Check assembly name
         if wildcards.asm_name in {'#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'FORMAT'}:
@@ -59,6 +56,9 @@ rule vcf_write_vcf:
                 # Read variants
                 bed_file_name = input[f'bed_{vartype}_{svtype}']
                 df = pd.read_csv(bed_file_name, sep='\t')
+
+                if df.shape[0] == 0:
+                    continue
 
                 df['VARTYPE'] = vartype.upper()
 
