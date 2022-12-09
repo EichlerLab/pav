@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+# Run pipeline locally with minimal configuration. All arguments are sent directly to
+# Snakemake. This script only runs Snakemake with some default options set.
+#
+# --ri: Rerun incomplete rules when restarting.
+# -k: Keep going if there is a single failure.
+# --jobname: Use the rule and job number in the job name (helpful if rules are distributed).
+# -w: Wait for slow (distributed) filesystems for output files to appear before Snakemake fails the rule.
+#
+# All command-line options from this script are given directly to Snakemake, so these can be overridden.
+#
+# Note: Use "-j N" to run N jobs at once.
+
+# Path to Snakefile
+PAV_DIR="/opt/pav"
+SNAKEFILE="${PAV_DIR}/Snakefile"
+
+# Setup a fake home for programs that read/write to the home directory
+FAKE_HOME=/home/default
+
+export SENTENCE_TRANSFORMERS_HOME=${FAKE_HOME}
+export HOME=${FAKE_HOME}
+
+# Define help output function
+printhelp() {
+  echo "Usage:"
+  echo "  pav [-h] [--help]: Print help"
+  echo "  pav <snakemake options>"
+  echo
+  echo "Run containerized PAV through an embedded Snakemake pipeline."
+  echo
+  echo "Docker:"
+  echo "  sudo docker run --rm -v \${PWD}:\${PWD} --user \"\$(id -u):\$(id -g)\" --workdir \${PWD} pav:2.1.1 -j 4"
+  echo
+  echo "Singularity:"
+  echo "  singularity run --bind \"\$(pwd):\$(pwd)\" --writable-tmpfs library://paudano/pav/pav:latest -j 4"
+  echo
+  echo "These commands run PAV 4 jobs at a time (-j 4), adjust the number of jobs as needed."
+  echo "All the program options (\"-j 4\" in the above examples) are passed directly to"
+  echo "snakemake and any Snakemake options are available."
+  echo
+  echo "Snakemake command options:"
+  echo "  https://snakemake.readthedocs.io/en/stable/executing/cli.html"
+  echo
+  echo "The default target creates an output VCF for all files in \"assemblies.tsv\". Additional"
+  echo "targets may be specified, for example to stop at a certain step or to run samples without "
+  echo "assemblies.tsv (see README.md in the PAV source)."
+  echo
+  echo "Help options (\"--help\" and \"-h\") print help from this PAV run script. Use \"--snake-help\""
+  echo "for snakemake command-line help. The version options (\"--version\" and \"-v\") also print "
+  echo "the PAV version, use \"--snake-version\" to get the snakemake version running PAV."
+  echo
+  echo "PAV source repository (code, documentation, citation info):"
+  echo "  https://github.com/EichlerLab/pav"
+}
+
+# Print help for no arguments or if requested
+if [[ $# == "0" ]]; then
+  printhelp
+  exit
+fi
+
+# Capture version, pass --snake-version and --snake-help to snakemake
+ARG_ARRAY=("$@")
+
+for INDEX in $(seq 0 $(expr ${#ARG_ARRAY[@]} - 1)); do
+  case ${ARG_ARRAY[$INDEX]} in
+    "-h" | "--help")
+      printhelp
+      exit
+      ;;
+
+    "-v" | "--version")
+      ${PAV_DIR}/scripts/print_version.py
+      exit
+      ;;
+
+    "--snake-version" | "--snakemake-version")
+      ARG_ARRAY[${INDEX}]="--version"
+      ;;
+
+    "--snake-help" | "--snakemake-help")
+      ARG_ARRAY[${INDEX}]="--help"
+      ;;
+  esac
+done
+
+# Check for config.json
+if [[ ! -a "config.json" ]]; then
+  echo "Missing \"config.json\", which is required to run PAV."
+  echo
+  echo "See PAV documentation for help:"
+  echo "https://github.com/EichlerLab/pav"
+  exit
+fi
+
+# Run
+snakemake \
+    -s ${SNAKEFILE} \
+    --ri -k \
+    --jobname "{rulename}.{jobid}" \
+    -w 20 \
+    -j 1 \
+    --rerun-triggers mtime \
+    "${ARG_ARRAY[@]}"
+
+# Note:
+# Jobs are erroneously re-run with "reason: Code has changed since last execution" without "--rerun-triggers mtime".
+# This may be a bug in Snakemake or some odd Snakemake/Docker issue.
+# Since 7.8, Snakemake triggers re-runs for any changes, not just mtime:
+# https://github.com/snakemake/snakemake/issues/1694

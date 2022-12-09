@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.1.1
+* Dockerized PAV
+* Added a small example (EXAMPLE.md)
+* Fixed bug writing VCFs with no variants of a certain type (most often caused by no inversions).
+
 ## 2.1.0
 * Added parameter "inv_inner" (boolean, default False) to allow small variants inside inversions
 * Added tunable parameter "minimap2_params" (thanks to Edwmard Rice).
