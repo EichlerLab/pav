@@ -418,8 +418,10 @@ def get_merge_params(wildcards, config):
     if svtype in {'ins', 'del', 'inv'}:  # Search config for a matching override
         if f'merge_{svtype}' in config:
             config_def = config[f'merge_{svtype}']
+        elif 'merge_insdel' in config:
+            config_def = config['merge_insdel']
         elif 'merge_insdelinv' in config:
-            config_def = config['merge_snv']
+            config_def = config['merge_insdelinv']
 
     elif svtype == 'snv' and 'merge_snv' in config:
         config_def = config['merge_snv']
