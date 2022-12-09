@@ -137,6 +137,7 @@ rule align_map:
         cpu=lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards)),
         aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2'),
         minimap2_params=lambda wildcards: get_config(wildcards, 'minimap2_params', '-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5')
+    threads: lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards))
     run:
 
         # Get aligner
@@ -157,7 +158,7 @@ rule align_map:
                 shell(
                     """minimap2 """
                         """{params.minimap2_params} """
-                        """--secondary=no -a -t {params.cpu} --eqx -Y """
+                        """--secondary=no -a -t {threads} --eqx -Y """
                         """{input.ref_fa} {input.fa} | """
                         """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
                         """gzip > {output.sam}"""
@@ -165,7 +166,7 @@ rule align_map:
 
             if aligner == 'lra':
                 shell(
-                    """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {params.cpu} | """
+                    """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {threads} | """
                     """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
                     """gzip > {output.sam}"""
                 )

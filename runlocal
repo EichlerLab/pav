@@ -29,8 +29,8 @@ SNAKEFILE="${SITE_DIR}/Snakefile"
 SITE_CONFIG_DIR="${SITE_DIR}/config"
 LOCAL_CONFIG_DIR="$(readlink -f config)"
 
-# Get jobs
-JOB_COUNT=$1
+# Get cores
+CORES=$1
 
 shift
 
@@ -81,6 +81,9 @@ exit 1
 # module load lra/202008
 # module load htslib/1.9
 #
+# JOB_COUNT=20
+#
 #snakemake -s ${SNAKEFILE} -j ${JOB_COUNT} --nt --ri -k \
+#    --cores ${CORES} \
 #    --jobname "{rulename}.{jobid}" \
 #    -w 30 "$@"

@@ -71,7 +71,7 @@ From the ANALYSIS directory, run the container.
 
 Docker:
 ```
-sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} paudano/pav:2.1.1 -j 4 --nt
+sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} paudano/pav:latest -j 4 --nt
 ```
 
 Singularity:

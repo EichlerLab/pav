@@ -255,7 +255,7 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
                 if os.path.isfile(file_name_parsed_alt):
                     file_name_parsed = file_name_parsed_alt
 
-        if file_name_parsed is not None:
+        if file_name_parsed is not None and os.stat(file_name_parsed).st_size > 0:
             path_list.append(file_name_parsed)
 
         # Return paths

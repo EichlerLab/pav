@@ -111,9 +111,9 @@ rule call_inv_batch:
         log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
     params:
         k_size=lambda wildcards: get_config(wildcards, 'inv_k_size', 31),
-        inv_threads=lambda wildcards: get_config(wildcards, 'inv_threads', 4),
         inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
         inv_min_expand=lambda wildcards: get_config(wildcards, 'inv_min_expand', None, True)
+    threads: lambda wildcards: get_config(wildcards, 'inv_threads', 4)
     run:
 
         # Get params
@@ -182,7 +182,7 @@ rule call_inv_batch:
                         inv_call = pavlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
                             max_region_size=params.inv_region_limit,
-                            threads=params.inv_threads, log=log_file, srs_tree=srs_tree,
+                            threads=threads, log=log_file, srs_tree=srs_tree,
                             min_exp_count=params.inv_min_expand
                         )
 

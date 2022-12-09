@@ -122,9 +122,10 @@ rule call_merge_haplotypes:
         bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
     run:
 
+        df_list = [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch if os.stat(file_name).st_size > 0]
+
         df = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch],
-            axis=0
+            df_list, axis=0
         ).sort_values(
             ['#CHROM', 'POS', 'END', 'ID']
         ).to_csv(
@@ -144,8 +145,7 @@ rule call_merge_haplotypes_batch:
         callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
         bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'
-    params:
-        merge_threads=lambda wildcards: int(get_config(wildcards, 'merge_threads', 12))
+    threads: lambda wildcards: int(get_config(wildcards, 'merge_threads', 12))
     run:
 
         # Read batch table
@@ -173,7 +173,7 @@ rule call_merge_haplotypes_batch:
                     input.bed_var_h1, input.bed_var_h2,
                     input.callable_h1, input.callable_h2,
                     config_def,
-                    threads=params.merge_threads,
+                    threads=threads,
                     chrom=chrom,
                     is_inv=var_svtype_list[1] == 'inv'
                 )
@@ -204,7 +204,7 @@ rule call_merge_batch_table:
 
         # Read and sort
         df = pd.read_csv(
-            'data/ref/contig_info.tsv.gz', sep='\t'
+            'data/ref/contig_info.tsv.gz', sep='\t', dtype={'CHROM': str, 'LEN': int}
         ).sort_values(
             'LEN', ascending=False
         ).set_index(

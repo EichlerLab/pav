@@ -29,7 +29,7 @@ rule data_ref_contig_table:
 # align_ref_anno_n_gap
 #
 # Find locations of N-gaps.
-rule align_ref_anno_n_gap:
+rule data_align_ref_anno_n_gap:
     input:
         ref_fa='data/ref/ref.fa.gz'
     output:
@@ -70,7 +70,7 @@ rule align_ref_anno_n_gap:
 # align_ref_lra_index
 #
 # Index reference for LRA.
-rule align_ref_lra_index:
+rule data_align_ref_lra_index:
     input:
         fa='data/ref/ref.fa.gz',
     output:
@@ -82,7 +82,7 @@ rule align_ref_lra_index:
 # align_ref
 #
 # Setup reference.
-rule align_ref:
+rule data_align_ref:
     input:
         ref_fa=config['reference']
     output:
@@ -90,8 +90,14 @@ rule align_ref:
         ref_fai='data/ref/ref.fa.gz.fai'
     run:
 
-        # Copy FASTA to FA/GZ
-        pavlib.pipeline.input_tuples_to_fasta([(input.ref_fa, 'fasta')], output.ref_fa)
+        # Link or copy FASTA to FA/GZ
+        if os.path.basename(input.ref_fa).endswith('.gz'):
+            # Link if gzipped
+            os.symlink(os.path.abspath(input.ref_fa), output.ref_fa)
+
+        else:
+            # Copy if not gzipped
+            pavlib.pipeline.input_tuples_to_fasta([(input.ref_fa, 'fasta')], output.ref_fa)
 
         # Index
         if os.stat(output.ref_fa).st_size > 0:

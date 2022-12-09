@@ -55,7 +55,7 @@ rule vcf_write_vcf:
 
                 # Read variants
                 bed_file_name = input[f'bed_{vartype}_{svtype}']
-                df = pd.read_csv(bed_file_name, sep='\t')
+                df = pd.read_csv(bed_file_name, sep='\t', dtype={'#CHROM': str})
 
                 if df.shape[0] == 0:
                     continue

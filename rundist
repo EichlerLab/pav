@@ -29,8 +29,8 @@ SNAKEFILE="${SITE_DIR}/Snakefile"
 SITE_CONFIG_DIR="${SITE_DIR}/config"
 LOCAL_CONFIG_DIR="$(readlink -f config)"
 
-# Get jobs
-JOB_COUNT=$1
+# Get cores
+CORES=$1
 
 shift
 
@@ -71,7 +71,10 @@ exit 1
 # module load lra/202008
 # module load htslib/1.9
 #
+#JOB_COUNT=80  # Maximum number of jobs
+#
 #snakemake -s ${SNAKEFILE} -j ${JOB_COUNT} --nt --ri -k \
+#    --cores ${CORES} \
 #    --jobname "{rulename}.{jobid}" \
 #    --drmaa " -V -cwd -j y -o ./log -l centos=7 -pe serial {cluster.cpu} -l mfree={cluster.mem} -l disk_free={cluster.disk} -l h_rt={cluster.rt} {cluster.params} -w n -S /bin/bash" \
 #    -w 60 -u ${SITE_CONFIG_DIR}/sge.json "$@"

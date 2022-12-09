@@ -41,8 +41,8 @@ rule call_lg_discover:
         log='log/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
     params:
         k_size=lambda wildcards: int(get_config(wildcards, 'inv_k_size', 31)),
-        inv_threads_lg=lambda wildcards: int(get_config(wildcards, 'inv_threads_lg', 12)),
         inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True)
+    threads: lambda wildcards: int(get_config(wildcards, 'inv_threads_lg', 12))
     run:
 
         # Get SRS (state-run-smooth)
@@ -81,7 +81,7 @@ rule call_lg_discover:
                 k_size=params.k_size,
                 n_tree=n_tree,
                 srs_tree=srs_tree,
-                threads=params.inv_threads_lg,
+                threads=threads,
                 log=log_file,
                 density_out_dir=density_out_dir,
                 max_region_size=params.inv_region_limit
