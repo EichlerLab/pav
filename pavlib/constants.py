@@ -4,9 +4,15 @@ Program constants
 
 # Version constants
 VERSION_MAJOR = 2
-VERSION_MINOR = 1
-VERSION_DEV = 2
+VERSION_MINOR = 2
+VERSION_DEV = 0  # Small changes, usually bug fixes
 VERSION_PATCH = None
+
+
+# Note: In rare cases when an older version of PAV is patched, the patch version is set. Changes to those versions are
+# not synced with the main branch, but may contain fixes applied to later and replicated into an earlier branch.
+# This is rarely used and only in special circumstances when a very large project is using a specific version but needs
+# bug without significant changes to PAV.
 
 
 def get_version_string():
