@@ -11,20 +11,15 @@ PAV was developed for the Human Genome Structural Variation Consortium (HGSVC)
 
     Ebert et al., “Haplotype-Resolved Diverse Human Genomes and Integrated Analysis of Structural Variation”, Science, February 25, 2021, eabf7117, https://doi.org/10.1126/science.abf7117.
 
-## Running from Docker or Singularity
 
-PAV is packaged as Docker and Singularity containers:
-* Docker: paudano/pav:latest
-* Singularity: library://paudano/pav/pav:latest
+PAV was originally developed as part of the Eichler lab at UW and is now updated and maintained by the Beck lab at JAX.
+Both labs continue to contribute to the HGSVC.
 
-## Running native PAV
+Eichler lab:
+https://eichlerlab.gs.washington.edu/
 
-See `NATIVE_INSTALL.md` for help installing and PAV natively on a machine. A native installation is not needed to run
-PAV from Docker or Singularity.
-
-## Running a small example
-
-See `EXAMPLE.md` to setup small example run to test PAV on your system.
+Beck lab:
+https://www.jax.org/research-and-faculty/research-labs/the-beck-lab
 
 ## Configuring PAV
 
@@ -130,9 +125,40 @@ This was a feature used mainly for HGSVC where we used a "sample/assembly" direc
 `assemblies/HG00733/HG00733_CCS_SS_PG_PRR_h1.fa.gz` from pattern `assemblies/{sample}/{asm_name}_{hap}.fa.gz`).
 This may be useful for consorita with several assemblies per sample.
 
-## Configuration parameters
+### Additional configuration parameters
 
 Additional information about configuration parameters for `config.json` can be found in `CONFIG.md`.
+
+## Running PAV from Docker and Singularity
+ 
+Change to the ANALYSIS directory (where `config.json` is found), then run the container:
+
+Docker:
+```
+sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest
+```
+
+Singularity:
+```
+singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest
+```
+
+Notes:
+1. **Cores**: By default, all available cores will be used, which can be restricted specifying the number of cores with `-c` (or
+`--cores`).
+1. **Directory binding**: You may need to adjust the directory bindings for your machine, but these parameters should work for most.
+1. **Version**: You may change "latest" to an explicit PAV version to ensure compatibility among samples.
+
+
+## Running native PAV
+
+See `NATIVE_INSTALL.md` for help installing and PAV natively on a machine. This option necessary if Docker and
+Singularity are not available or if distribute individual PAV steps over a cluster.
+
+## Running a small example
+
+See `EXAMPLE.md` to setup small example run to test PAV on your system.
+
 
 ## Interpreting output
 

@@ -101,8 +101,6 @@ snakemake \
     --ri -k \
     --jobname "{rulename}.{jobid}" \
     -w 20 \
-    -j 80 \
-    --cores 8 \
     --rerun-triggers mtime \
     "${ARG_ARRAY[@]}"
 

@@ -71,12 +71,12 @@ From the ANALYSIS directory, run the container.
 
 Docker:
 ```
-sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} paudano/pav:latest -j 4 --nt
+sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest
 ```
 
 Singularity:
 ```
-singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://paudano/pav/pav:latest -j 4
+singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest
 ```
 
 You may need to adjust the directory bindings for your machine, but these parameters should work for most.
