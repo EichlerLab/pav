@@ -135,17 +135,16 @@ Change to the ANALYSIS directory (where `config.json` is found), then run the co
 
 Docker:
 ```
-sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest
+sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest -c 16
 ```
 
 Singularity:
 ```
-singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest
+singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest -c 16
 ```
 
 Notes:
-1. **Cores**: By default, all available cores will be used, which can be restricted specifying the number of cores with `-c` (or
-`--cores`).
+1. **Cores**: Set the maximum number of cores `-c` (or `--cores`) to be used simultaneously.
 1. **Directory binding**: You may need to adjust the directory bindings for your machine, but these parameters should work for most.
 1. **Version**: You may change "latest" to an explicit PAV version to ensure compatibility among samples.
 

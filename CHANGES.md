@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.2.1
+* Fixed missing library path in scripts/density.py
+* Quieted merging output
+* Minor documentation changes
+
 ## 2.2.0
 * Dockerized PAV
 * Added a small example (EXAMPLE.md)
