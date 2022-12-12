@@ -19,6 +19,7 @@ PIPELINE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(PIPELINE_DIR)  # pavlib
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop'))  # svpoplib
 sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop', 'dep'))  # kanapy
+sys.path.append(os.path.join(PIPELINE_DIR, 'dep', 'svpop', 'dep', 'ply'))  # ply - lexer / parser
 
 import pavlib
 import svpoplib

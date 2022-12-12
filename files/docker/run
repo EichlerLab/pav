@@ -55,12 +55,6 @@ printhelp() {
   echo "  https://github.com/EichlerLab/pav"
 }
 
-# Print help for no arguments or if requested
-if [[ $# == "0" ]]; then
-  printhelp
-  exit
-fi
-
 # Capture version, pass --snake-version and --snake-help to snakemake
 ARG_ARRAY=("$@")
 
