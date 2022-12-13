@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.2.2
+* Minor SV-Pop bug incorrectly parsed chromosome names with "." while versioning variants.
+
 ## 2.2.1
 * Fixed missing library path in scripts/density.py
 * Quieted merging output
