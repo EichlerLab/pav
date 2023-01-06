@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.2.3
+* Minor SV-Pop bug incorrectly de-duplicates variant IDs
+
 ## 2.2.2
 * Minor SV-Pop bug incorrectly parsed chromosome names with "." while versioning variants.
 

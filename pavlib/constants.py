@@ -6,7 +6,7 @@ Program constants
 VERSION_MAJOR = 2
 VERSION_MINOR = 2
 VERSION_DEV = 2  # Small changes, usually bug fixes
-VERSION_PATCH = None
+VERSION_PATCH = 1
 
 
 # Note: In rare cases when an older version of PAV is patched, the patch version is set. Changes to those versions are
