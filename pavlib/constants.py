@@ -5,11 +5,14 @@ Program constants
 # Version constants
 VERSION_MAJOR = 2
 VERSION_MINOR = 2
-VERSION_DEV = 2  # Small changes, usually bug fixes
-VERSION_PATCH = 1
+VERSION_DEV = 3  # Small changes, usually bug fixes
+VERSION_PATCH = None
 
-
-# Note: In rare cases when an older version of PAV is patched, the patch version is set. Changes to those versions are
+# VERSION_PATCH is "None" for releases or set if:
+#
+# 1) Testing fixes before a release.
+#
+# 2) In rare cases when an older version of PAV is patched, the patch version is set. Changes to those versions are
 # not synced with the main branch, but may contain fixes applied to later and replicated into an earlier branch.
 # This is rarely used and only in special circumstances when a very large project is using a specific version but needs
 # bug without significant changes to PAV.
