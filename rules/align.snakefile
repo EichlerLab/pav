@@ -130,7 +130,7 @@ rule align_map:
         ref_fa='data/ref/ref.fa.gz',
         fa=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
         gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else [],
-        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mmi' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else []
+        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else []
     output:
         sam=temp('temp/{asm_name}/align/pre-cut/aligned_tig_{hap}.sam.gz')
     params:

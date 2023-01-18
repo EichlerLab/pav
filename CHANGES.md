@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.2.4
+* Updating for LRA index file name change from ".mmi" to ".mms".
+
 ## 2.2.3
 * Minor SV-Pop bug incorrectly de-duplicates variant IDs.
 

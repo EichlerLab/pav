@@ -148,6 +148,8 @@ Notes:
 1. **Directory binding**: You may need to adjust the directory bindings for your machine, but these parameters should work for most.
 1. **Version**: You may change "latest" to an explicit PAV version to ensure compatibility among samples.
 
+PAV can process a phased human genome in 4.5 to 5.5 hours with 64 GB of memory and 32 cores with minimap2 alignments.
+Actual memory usage is around 52 GB.
 
 ## Running native PAV
 

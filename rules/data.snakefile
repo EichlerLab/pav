@@ -75,7 +75,7 @@ rule data_align_ref_lra_index:
         fa='data/ref/ref.fa.gz',
     output:
         gli='data/ref/ref.fa.gz.gli',
-        mmi='data/ref/ref.fa.gz.mmi'
+        mmi='data/ref/ref.fa.gz.mms'
     shell:
         """lra index -CONTIG {input.fa}"""
 
