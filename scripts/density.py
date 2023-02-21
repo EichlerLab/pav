@@ -213,12 +213,6 @@ def get_smoothed_density():
     if sample_index_list[-1] != np.int32(df.iloc[-1]['INDEX_DEN']):  # Add last table element if it does not exist
         sample_index_list.append(np.int32(df.iloc[-1]['INDEX_DEN']))
 
-    # Break sample_index_list into equal-sized lists for parallel processing in chunks (last list may be shorter)
-    sample_index_chunked = [
-        sample_index_list[x:x + SAMPLE_INDEX_CHUNK_SIZE]
-            for x in range(0, len(sample_index_list), SAMPLE_INDEX_CHUNK_SIZE)
-    ]
-
     # Init fields
     df['STATE'] = -1
     df['KERN_FWD'] = np.nan
@@ -226,17 +220,31 @@ def get_smoothed_density():
     df['KERN_REV'] = np.nan
     df['INTERP'] = False
 
-    # Setup thread object
-    pool = mp.Pool(threads, initializer=init_process)
+    # Break sample_index_list into equal-sized lists for parallel processing in chunks (last list may be shorter)
+    sample_index_chunked = [
+        sample_index_list[x:x + SAMPLE_INDEX_CHUNK_SIZE]
+            for x in range(0, len(sample_index_list), SAMPLE_INDEX_CHUNK_SIZE)
+    ]
 
-    # Assign density on samples sites
-    df.loc[sample_index_list, 'KERN_FWD'] = np.concatenate(pool.map(density_fwd, sample_index_chunked))
-    df.loc[sample_index_list, 'KERN_FWDREV'] = np.concatenate(pool.map(density_fwdrev, sample_index_chunked))
-    df.loc[sample_index_list, 'KERN_REV'] = np.concatenate(pool.map(density_rev, sample_index_chunked))
+    if threads > 1:
+        # Setup thread object
+        pool = mp.Pool(threads, initializer=init_process)
 
-    # Destroy thread object (must be re-created to see changes to df)
-    pool.close()
-    del(pool)
+        # Assign density on samples sites
+        df.loc[sample_index_list, 'KERN_FWD'] = np.concatenate(pool.map(density_fwd, sample_index_chunked))
+        df.loc[sample_index_list, 'KERN_FWDREV'] = np.concatenate(pool.map(density_fwdrev, sample_index_chunked))
+        df.loc[sample_index_list, 'KERN_REV'] = np.concatenate(pool.map(density_rev, sample_index_chunked))
+
+        # Destroy thread object (must be re-created to see changes to df)
+        pool.close()
+        del(pool)
+
+    else:
+        init_process()
+
+        df.loc[sample_index_list, 'KERN_FWD'] = density_fwd(sample_index_list)
+        df.loc[sample_index_list, 'KERN_FWDREV'] = density_fwdrev(sample_index_list)
+        df.loc[sample_index_list, 'KERN_REV'] = density_rev(sample_index_list)
 
     # Get max state
     df.loc[sample_index_list, 'STATE'] = df.loc[
