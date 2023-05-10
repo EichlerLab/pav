@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.2.5
+* Added support for systems without /dev/shm
+  * Set "inv_threads" and "inv_threads_lg" to "1" in config.json. Slower, but will not try to multiprocess.
+* Fixed bug in variant calling ("Passing a set as an indexer is not supported.", #34)
+
 ## 2.2.4
 * Updating for LRA index file name change from ".mmi" to ".mms".
 

@@ -71,15 +71,16 @@ From the ANALYSIS directory, run the container.
 
 Docker:
 ```
-sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest
+sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD} becklab/pav:latest -c 12
 ```
 
 Singularity:
 ```
-singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest
+singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest -c 12
 ```
 
-You may need to adjust the directory bindings for your machine, but these parameters should work for most.
+You may need to adjust the directory bindings for your machine, but these parameters should work for most. This example
+uses 12 threads (`-c 12`), but adjust to your local environment.
 
 
 ### Run scripts (native install)

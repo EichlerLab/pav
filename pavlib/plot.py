@@ -203,7 +203,6 @@ def dotplot_inv_call(
                 }
             )
 
-
     # Make plot
     fig = kanapy.plot.dotplot.dotplot(
         seq_x=seq_tig,

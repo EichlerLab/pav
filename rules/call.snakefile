@@ -398,7 +398,7 @@ rule call_integrate_sources:
                 inv_drp_list.append(df_inv.loc[inv_drp_index_set].sort_values(['#CHROM', 'POS']))
                 inv_drp_list[-1]['REASON'] = FILTER_REASON['COMPOUND_INV']
 
-            df_inv = df_inv.loc[inv_index_set].sort_values(['#CHROM', 'POS']).copy()
+            df_inv = df_inv.loc[list(inv_index_set)].sort_values(['#CHROM', 'POS']).copy()
 
 
         ### Init filter tree ###
