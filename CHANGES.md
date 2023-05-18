@@ -1,5 +1,11 @@
 # PAV changes
 
+## 2.2.6
+
+* SNV ID format is now: CHROM-POS-END-REFALT
+  * Eliminated dash between REF and ALT (single base each), consistent with SV-Pop library and makes IDs more paresable.
+* Updated SV-Pop submodule.
+
 ## 2.2.5
 * Added support for systems without /dev/shm
   * Set "inv_threads" and "inv_threads_lg" to "1" in config.json. Slower, but will not try to multiprocess.
