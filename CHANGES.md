@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.2.7
+
+* Fixed bug creating the callable region BED if large SV BED files are empty.
+* Eliminating the need for --writable-tmpfs (Singularity), fails for some kernels
+
 ## 2.2.6
 
 * SNV ID format is now: CHROM-POS-END-REFALT

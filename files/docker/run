@@ -22,6 +22,15 @@ FAKE_HOME=/home/default
 export SENTENCE_TRANSFORMERS_HOME=${FAKE_HOME}
 export HOME=${FAKE_HOME}
 
+mkdir -p /dev/shm/cache
+
+export MPLCONFIGDIR=/dev/shm/config/matplotlib
+mkdir -p ${MPLCONFIGDIR}
+
+# Move temp directory to a writable location
+export TMPDIR=/dev/shm/tmp
+mkdir -p ${TMPDIR}
+
 # Define help output function
 printhelp() {
   echo "Usage:"

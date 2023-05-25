@@ -3,6 +3,7 @@ General utility functions.
 """
 
 import numpy as np
+import os
 import pandas as pd
 
 
@@ -48,7 +49,7 @@ def region_merge(file_list, pad=500):
                 file_name,
                 sep='\t',
                 usecols=('#CHROM', 'POS', 'END')
-            ) for file_name in file_list
+            ) for file_name in file_list if os.stat(file_name).st_size > 0
         ],
         axis=0
     ).sort_values(['#CHROM', 'POS', 'END'], ascending=[True, True, False]).reset_index(drop=True)

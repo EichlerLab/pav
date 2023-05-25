@@ -140,7 +140,7 @@ sudo docker run --rm -v ${PWD}:${PWD} --user "$(id -u):$(id -g)" --workdir ${PWD
 
 Singularity:
 ```
-singularity run --bind "$(pwd):$(pwd)" --writable-tmpfs library://becklab/pav/pav:latest -c 16
+singularity run --bind "$(pwd):$(pwd)" library://becklab/pav/pav:latest -c 16
 ```
 
 Notes:

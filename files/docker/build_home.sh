@@ -10,3 +10,11 @@ EOF
 
 # Setup default
 mkdir -p /home/default -m 777
+
+# Link .cache to /dev/shm/cache
+mkdir -p /dev/shm/cache
+mkdir -p /dev/shm/config
+mkdir -p /dev/shm/tmp
+
+ln -s /dev/shm/cache /home/default/.cache
+ln -s /dev/shm/config /home/default/.config
