@@ -204,7 +204,7 @@ rule call_merge_batch_table:
 
         # Read and sort
         df = pd.read_csv(
-            'data/ref/contig_info.tsv.gz', sep='\t', dtype={'CHROM': str, 'LEN': int}
+            input.tsv, sep='\t', dtype={'CHROM': str, 'LEN': int}
         ).sort_values(
             'LEN', ascending=False
         ).set_index(
