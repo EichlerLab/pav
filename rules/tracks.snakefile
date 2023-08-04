@@ -17,6 +17,8 @@ ALIGN_COLOR = {
     'h2': '64,00,160'   # Purple
 }
 
+VAR_BED_PREMERGE_PATTERN = 'results/{{asm_name}}/bed/pre_merge/{{hap}}/{vartype}_{svtype}.bed.gz'
+
 def _track_get_input_bed(wildcards):
     """
     Get one or more input files for tracks. If "svtype" is "all", collect all relevant input files.
@@ -26,17 +28,40 @@ def _track_get_input_bed(wildcards):
     :return: List of input file(s).
     """
 
-    if wildcards.svtype == 'insdel':
+    # Get input file variant type
+    if wildcards.vartype in {'sv', 'indel', 'svindel'}:
 
-        if wildcards.vartype not in {'sv', 'indel'}:
-            raise RuntimeError('Cannot collect "all" for variant type: {} (must be a valid variant type with more than one svtype)'.format(wildcards.vartype))
 
-        return [
-            'results/{{asm_name}}/bed/pre_merge/{{vartype}}_{svtype}_{{hap}}.bed.gz'.format(svtype=svtype)
-            for svtype in VARTYPE_TO_SVTYPE_TUPLE[wildcards.vartype]
-        ]
+        if wildcards.svtype in {'ins', 'del'}:
+            input_vartype = 'svindel'
+            input_svtype = [wildcards.vartype]
+        elif wildcards.svtype == 'insdel':
+            input_vartype = 'svindel'
+            input_svtype = ['ins', 'del']
+        elif wildcards.svtype == 'inv':
+            input_vartype = 'sv'
+            input_svtype = ['inv']
+        else:
+            raise RuntimeError(f'Unknown svtype {wildcards.svtype} for variant type {wildcards.vartype} (expected "ins", "del", or "insdel" - "inv" allowed for vartype "sv")')
 
-    return ['results/{asm_name}/bed/pre_merge/{vartype}_{svtype}_{hap}.bed.gz']
+        if 'inv' in input_svtype and input_vartype not in {'sv', 'svindel'}:
+            raise RuntimeError(f'Bad svtype {wildcards.svtype} for variant type {wildcards.vartype}: vartype must include SVs to output inversions')
+
+    elif wildcards.vartype == 'snv':
+        if wildcards.svtype != 'snv':
+            raise RuntimeError(f'Unknown svtype {wildcards.svtype} for variant type {wildcards.vartype} (expected "snv")')
+
+        input_vartype = 'snv'
+        input_svtype = ['snv']
+
+    else:
+        raise RuntimeError(f'Unrecognized variant type: {wildcards.vartype}')
+
+    # Return list of input files
+    return [
+        VAR_BED_PREMERGE_PATTERN.format(vartype=input_vartype, svtype=svtype)
+            for svtype in input_svtype
+    ]
 
 def _get_align_bed(wildcards):
 
@@ -89,17 +114,29 @@ rule tracks_hap_call:
         df = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
             axis=0
-        )
+        ).reset_index(drop=True)
+
+        if wildcards.vartype == 'sv':
+            df = df.loc[df['SVLEN'] >= 50].copy()
+        elif wildcards.vartype == 'indel':
+            df = df.loc[df['SVLEN'] < 50].copy()
 
         df.sort_values(['#CHROM', 'POS'], inplace=True)
 
         # Select table columns
-        del(df['QUERY_ID'])
-        del(df['QUERY_POS'])
-        del(df['QUERY_END'])
-        del(df['QUERY_STRAND'])
+        if 'QUERY_ID' in df.columns:
+            del(df['QUERY_ID'])
 
-        if wildcards.vartype not in {'snv', 'indel'}:
+        if 'QUERY_POS' in df.columns:
+            del(df['QUERY_POS'])
+
+        if 'QUERY_END' in df.columns:
+            del(df['QUERY_END'])
+
+        if 'QUERY_STRAND' in df.columns:
+            del(df['QUERY_STRAND'])
+
+        if 'SEQ' in df.columns:
             del(df['SEQ'])
 
         # Read FAI and table columns

@@ -1,12 +1,13 @@
 # PAV changes
 
-## 2.2.7
+## 2.2.8
+* Fixed rules for generating UCSC tracks for PAV calls and alignments. 
 
+## 2.2.7
 * Fixed bug creating the callable region BED if large SV BED files are empty.
 * Eliminating the need for --writable-tmpfs (Singularity), fails for some kernels
 
 ## 2.2.6
-
 * SNV ID format is now: CHROM-POS-END-REFALT
   * Eliminated dash between REF and ALT (single base each), consistent with SV-Pop library and makes IDs more paresable.
 * Updated SV-Pop submodule.
