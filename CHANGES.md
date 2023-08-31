@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.2.9
+* Fixed issues with home directory caching (related to bug fixes in 2.2.7)
+
 ## 2.2.8
 * Fixed rules for generating UCSC tracks for PAV calls and alignments. 
 
