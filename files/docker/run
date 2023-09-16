@@ -21,7 +21,7 @@ FAKE_HOME=/dev/shm/home/default
 
 export SENTENCE_TRANSFORMERS_HOME=${FAKE_HOME}
 export HOME=${FAKE_HOME}
-export XDG_CACHE_HOME=${FAKE_HOM}/.cache
+export XDG_CACHE_HOME=${FAKE_HOME}/.cache
 
 mkdir -p ${HOME}
 mkdir -p ${XDG_CACHE_HOME}
