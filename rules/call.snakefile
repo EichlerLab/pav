@@ -463,8 +463,8 @@ rule call_integrate_sources:
         df_insdel_drp['REASON'] = FILTER_REASON['TIG_FILTER']
         df_snv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
-        df_insdel_drp.append(df_insdel_drp)
-        df_snv_drp.append(df_snv_drp)
+        insdel_drp_list.append(df_insdel_drp)
+        snv_drp_list.append(df_snv_drp)
 
         # CIGAR: Compound filter
         df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset)
