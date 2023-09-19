@@ -118,3 +118,15 @@ For example:
     snakemake -s ${PAV}/Snakefile pav_HG00733_CCS_SS_PG_PRR.vcf.gz
 
 Where "HG00733_CCS_SS_PG_PRR" is the name of the sample or assembly to be run.
+
+## Additianal errors and information
+
+### Deadlock and OPENBLAS_NUM_THREADS
+
+If PAV hangs for no apparent reason, try running with "OPENBLAS_NUM_THREADS=1" set in the environment. This could
+be done by adjusting your runlocal.sh or rundist.sh or exporting it before running PAV. There is a reasonable
+explanation here:
+https://stackoverflow.com/questions/56104472/why-would-setting-export-openblas-num-threads-1-impair-the-performance
+
+This issue was observed in GitHub issue #39. If you see this behavior in the Docker or Singularity container distributed
+with PAV, please report a bug.
