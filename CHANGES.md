@@ -1,5 +1,13 @@
 # PAV changes
 
+## 2.3.1
+* Fixed typo in Singularity run script from home directory caching issues (thanks @aidenlx)
+* Fixed bug in variant filtering
+* Updated documentation for native installs related to deadlocks (OPENBLAS_NUM_THREADS)
+
+## 2.3.0
+* Fixed home directory caching issues.
+
 ## 2.2.9
 * Fixed issues with home directory caching (related to bug fixes in 2.2.7)
 
