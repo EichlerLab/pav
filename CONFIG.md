@@ -48,6 +48,38 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 * aligner [minimap2; string]: PAV supports minimap2 (aligner: minimap2) and LRA (aligner: lra). LRA is under development
   with the Chaisson lab (USC).
 
+## Misassembly filter
+
+PAV can ignore variants over known misassemblies. Annotation tools, such as Flagger and NucFreq, can be used to flag
+problematic assembly locations, and PAV can exclude any variants that intersect those assembly coordinates.
+
+To setup the filter, create a BED file for each assembly with the assembly name and haplotype ("h1" or "h2") as part
+of the filename or path to the filename; these will be made into wildcards so PAV can locate the right BAM for each
+assembly. The BED file will be in contig (assembly) coordinates, have three column (chromosome, start, and stop), and
+contain no header line. If there are no regions to filter for an assembly, no file needs to be created for it (PAV will
+assume that a missing file means no regions to filter).
+
+Add "tig_filter_pattern" to the config file (`config.json`) with the filter BED pattern, which is the path to the
+filter BED with the assembly name replaced by "{asm_name}" and the haplotype replaced by "{hap}".
+
+Example:
+```
+{
+    "reference": "/path/to/ref.fa.gz",
+    "tig_filter_pattern": "/path/to/filter/{asm_name}_{hap}.bed"
+}
+```
+
+If a PAV callset was already created and you wish to re-filter it with updated filter BED files (or if you just added
+the filter BED files), force-rerun "results/{asm_name}/bed/pre_merge/{hap}/svindel_del.bed.gz" (substituting the
+wildcards) for the actual assembly name and haplotype), then force-rerun "pav_{asm_name}.vcf.gz".
+
+Example:
+```
+singularity run --bind "$(pwd):$(pwd)" library://becklab/pav/pav:latest -c 16 -f results/SAMPLE/bed/pre_merge/HAP/svindel_del.bed.gz pav_SAMPLE.vcf.gz
+```
+
+
 ## Inversions
 
 * inv_region_limit [1200000; int]: When scanning for inversions, the region is expanded until an inversion flanked
