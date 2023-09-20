@@ -112,11 +112,41 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                 if row2['REV'] == is_rev:
                     # Scan for INS/DEL
 
-                    query_pos = row1['QUERY_TIG_POS'] if is_rev else row1['QUERY_TIG_END']
-                    query_end = row2['QUERY_TIG_END'] if is_rev else row2['QUERY_TIG_POS']
+                    # Determine if contigs are in reference orientation or reverse orientation
+                    # In reference orientation, the left-most alignment record on the reference (row1) is also
+                    # left-most in the contig sequence. If the contig is reversed, then row1 comes before row2 on the
+                    # reference, but row1 comes after row2 on the contig.
+                    if row1['QUERY_TIG_POS'] < row2['QUERY_TIG_POS']:
+                        if row2['QUERY_TIG_POS'] < row1['QUERY_TIG_END']:
+                            raise RuntimeError(
+                                'Contig ranges overlap for two alignment records (should not occur after alignment trimming): '
+                                f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
+                                f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                            )
+
+                        query_pos = row1['QUERY_TIG_END']
+                        query_end = row2['QUERY_TIG_POS']
+
+                    else:
+                        if row1['QUERY_TIG_POS'] < row2['QUERY_TIG_END']:
+                            raise RuntimeError(
+                                'Contig ranges overlap for two alignment records (should not occur after alignment trimming): '
+                                f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
+                                f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                            )
+
+                        query_pos = row2['QUERY_TIG_END']
+                        query_end = row1['QUERY_TIG_POS']
 
                     dist_tig = query_end - query_pos
                     dist_ref = row2['POS'] - row1['END']
+
+                    if dist_tig < 0:
+                        raise RuntimeError(
+                            f'Contig query positions are out of order (program bug): Contig distance is negative ({dist_tig}): '
+                            f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
+                            f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                        )
 
                     min_aln_len = np.min([row1['QRY_LEN'], row2['QRY_LEN']])
                     min_mapq = np.min([row1['MAPQ'], row2['MAPQ']])

@@ -6,7 +6,7 @@ Program constants
 VERSION_MAJOR = 2
 VERSION_MINOR = 3
 VERSION_DEV = 1  # Small changes, usually bug fixes
-VERSION_PATCH = 0
+VERSION_PATCH = 1
 
 # VERSION_PATCH is "None" for releases or set if:
 #

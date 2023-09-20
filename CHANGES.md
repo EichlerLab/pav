@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.4.0
+* Fixed large deletion bug.
+
 ## 2.3.1
 * Fixed typo in Singularity run script from home directory caching issues (thanks @aidenlx)
 * Fixed bug in variant filtering
