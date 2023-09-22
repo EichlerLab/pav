@@ -1,7 +1,8 @@
 # PAV changes
 
-## 2.4.0
+## 2.3.2
 * Fixed large deletion bug.
+* Removed "fake home" from container run script, causes problems with some systems. Some tools in the container will use real home (e.g. .cache)
 
 ## 2.3.1
 * Fixed typo in Singularity run script from home directory caching issues (thanks @aidenlx)

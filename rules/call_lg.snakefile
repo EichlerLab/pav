@@ -75,7 +75,7 @@ rule call_lg_discover:
         os.makedirs(density_out_dir, exist_ok=True)
 
         # Get large events
-        with open(log.log, 'w') as log_file:
+        with open(log.log, 'wt') as log_file:
             df_ins, df_del, df_inv = pavlib.lgsv.scan_for_events(
                 df, df_tig_fai, wildcards.hap, REF_FA, input.fa,
                 k_size=params.k_size,
