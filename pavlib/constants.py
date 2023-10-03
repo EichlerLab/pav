@@ -3,10 +3,10 @@ Program constants
 """
 
 # Version constants
-VERSION_MAJOR = 2
-VERSION_MINOR = 3
-VERSION_DEV = 2  # Small changes, usually bug fixes
-VERSION_PATCH = None
+VERSION_MAJOR = 2     # Major change or a large number of minor changes
+VERSION_MINOR = 3     # A significant change it PAV or a large number of small incremental changes
+VERSION_DEV = 3       # Small changes, usually bug fixes
+VERSION_PATCH = None  # Development and test versions, not for releases
 
 # VERSION_PATCH is "None" for releases or set if:
 #

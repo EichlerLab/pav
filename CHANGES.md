@@ -1,5 +1,9 @@
 # PAV changes
 
+## 2.3.3
+* Fixed minor alignment trimming bug uncovered by the large deletion fix in 2.3.2 causes large variant detection fail.
+* Fixed bug in coordinates causing inversion searches at the edge of chromosomes to fail with an invalid index (-1).
+
 ## 2.3.2
 * Fixed large deletion bug.
 * Removed "fake home" from container run script, causes problems with some systems. Some tools in the container will use real home (e.g. .cache)
