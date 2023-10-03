@@ -248,8 +248,8 @@ def scan_for_inv(
         density_table_args = [
             'python3',
             os.path.join(pipeline_dir, 'scripts', 'density.py'),
-            '--tigregion', str(region_tig),
-            '--refregion', str(region_ref),
+            '--tigregion', region_tig.to_base1_string(),
+            '--refregion', region_ref.to_base1_string(),
             '--ref', ref_fa_name,
             '--tig', tig_fa_name,
             '-k', str(k_util.k_size),
