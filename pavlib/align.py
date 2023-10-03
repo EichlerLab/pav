@@ -116,14 +116,14 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
             rev_l = not df.loc[index_l, 'REV']  # Trim right end of index_l
             rev_r = df.loc[index_r, 'REV']      # Trim left end of index_r
 
-            # Detect overlap in contig space
+            # Detect overlap in reference
             if rev_l == rev_r or df.loc[index_l, '#CHROM'] != df.loc[index_r, '#CHROM']:
                 # Contigs were aligned in different reference chromosomes or orientations, no overlap
                 ref_overlap = False
 
             else:
                 if df.loc[index_l, 'POS'] < df.loc[index_r, 'POS']:
-                    ref_overlap = df.loc[index_r, 'POS'] < df.loc[index_r, 'END']
+                    ref_overlap = df.loc[index_r, 'POS'] < df.loc[index_l, 'END']
 
                 elif df.loc[index_r, 'POS'] < df.loc[index_l, 'POS']:
                     ref_overlap = df.loc[index_l, 'POS'] < df.loc[index_r, 'END']
@@ -365,7 +365,9 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     Trim ends of overlapping alignments until ends no longer overlap. In repeat-mediated events, aligners (e.g.
     minimap2) will align the same parts of a contig to both reference copies (e.g. large DEL) or two parts of a contig
     to the same region (e.g. tandem duplication). This function trims back the alignments using the CIGAR string until
-    the overlap is resolved using a simple greedy algorithm that minimizes variation.
+    the overlap is resolved using a simple greedy algorithm that maximizes the number of variants removed from the
+    alignment during trimming (each variant is an insertion, deletion, or SNVs; currently, no bonus is given to removing
+    larger insertions or deletions vs smaller ones).
 
     For example, a large repeat-mediated deletion will have two reference copies, but one copy in the contig, and the
     single contig copy is aligned to both by breaking the alignment record into two (one up to the deletion, and one
@@ -830,7 +832,9 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
 
     trace_list = list()
 
-    while index < index_end and (diff_cumulative <= diff_bp or cigar_list[index][1] not in {'=', 'X'} or len(trace_list) == 0):
+    last_no_match = False  # Continue until the last element is a match
+
+    while index < index_end and (diff_cumulative <= diff_bp or last_no_match or len(trace_list) == 0):
         cigar_count += 1
         cigar_len, cigar_op = cigar_list[index]
 
@@ -840,11 +844,15 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
             sub_bp = cigar_len
             qry_bp = cigar_len
 
+            last_no_match = False
+
         elif cigar_op == 'X':
             event_count = cigar_len
 
             sub_bp = cigar_len
             qry_bp = cigar_len
+
+            last_no_match = True
 
         elif cigar_op == 'I':
             event_count = 1
@@ -852,11 +860,15 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
             sub_bp = 0
             qry_bp = cigar_len
 
+            last_no_match = True
+
         elif cigar_op == 'D':
             event_count = 1
 
             sub_bp = cigar_len
             qry_bp = 0
+
+            last_no_match = True
 
         elif cigar_op == 'S':
             event_count = 0
@@ -866,6 +878,8 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
 
             clip_s_sum += cigar_len
 
+            last_no_match = True
+
         elif cigar_op == 'H':
             event_count = 0
 
@@ -873,6 +887,8 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
             qry_bp = 0
 
             clip_h_sum += cigar_len
+
+            last_no_match = True
 
         else:
             raise RuntimeError((

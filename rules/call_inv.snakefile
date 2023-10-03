@@ -633,7 +633,10 @@ rule call_inv_cluster:
 
         # Read
         df = pd.concat(
-            [pd.read_csv(input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN')) for input_file_name in input.bed],
+            [pd.read_csv(
+                input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN'),
+                low_memory=False, dtype={'#CHROM': str}
+            ) for input_file_name in input.bed],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
 

@@ -581,7 +581,7 @@ rule call_cigar:
         os.makedirs(os.path.dirname(output.bed_insdel), exist_ok=True)  # Random crashes with "FileNotFoundError", Snakemake not creating output directory?
 
         # Read
-        df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, keep_default_na=False)
+        df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, keep_default_na=False, low_memory=False)
 
         df_align = df_align.loc[df_align['CALL_BATCH'] == batch]
 
