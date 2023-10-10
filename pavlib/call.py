@@ -67,38 +67,59 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
     )
 
 
-def filter_by_ref_tree(df, filter_tree, match_tig=False):
+def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
     """
     Filter DataFrame by a dict (keyed by chromosome) of interval trees.
 
+    `filter_tree` is a dictionary with one key per chromosome and an IntervalTree object as the value for each
+    chromosome. IntervalTrees have a start, end, and data. Elements in the filter tree are usually constructed from
+    the genomic locations of variant calls. The data should be a tuple of two elements: 1) The contig where the variant
+    was called from, and 2) The ID of the variant. The first element is needed for `match_tig`, and the second is needed
+    to annotate why variants are being dropped if they are inside another.
+
     :param df: DataFrame to filter.
-    :param filter_tree: Dict of trees.
+    :param filter_tree: Dict of trees, one entry per chromosome.
     :param match_tig: Match TIG_REGION contig name to the value in the filter tree for intersected intervals (filter
         tree values should be contig names for the interval). When set, only filters variants inside regions with a
         matching contig. This causes PAV to treat each contig as a separate haplotype.
+    :param reason: If not None, add "REASON" and "COMPOUND" columns to the  dropped variants. The REASON column is set
+        to this parameter's value, and the "COMPOUND" column is set to the variant IDs of regions in the filter tree
+        (second item in the data tuple, see above).
 
     :return: Filtered DataFrame.
     """
 
     if df.shape[0] == 0:
-        return df, df.copy()
+        return df, pd.DataFrame([], columns=(list(df.columns) + (['REASON', 'COMPOUND'] if reason is not None else [])))
 
-    if match_tig:
-        filter_pass = df.apply(
-            lambda row: not np.any(
-                [row['TIG_REGION'].split(':', 1)[0] == region.data for region in filter_tree[row['#CHROM']][row['POS']:row['END']]]
-            ),
-            axis=1
-        )
+    # Separate pass/fail
+    pass_index_set = set()
+    fail_list = list()
 
+    for index, row in df.iterrows():
+        intersect_set = filter_tree[row['#CHROM']][row['POS']:row['END']]
 
+        if intersect_set and match_tig:
+            tig_name = row['TIG_REGION'].split(':', 1)[0]
+            intersect_set = {record for record in intersect_set if record.data[0] != tig_name}
+
+        if intersect_set:
+            if reason is not None:
+                row['REASON'] = reason
+                row['COMPOUND'] = ','.join(val.data[1] for val in intersect_set)
+
+            fail_list.append(row)
+        else:
+            pass_index_set.add(index)
+
+    # Construct failed table
+    if fail_list:
+        df_fail = pd.concat(fail_list, axis=1).T
     else:
-        filter_pass = df.apply(
-            lambda row: len(filter_tree[row['#CHROM']][row['POS']:row['END']]) == 0,
-            axis=1
-        )
+        df_fail = pd.DataFrame([], columns=(list(df.columns) + (['REASON', 'COMPOUND'] if reason is not None else [])))
 
-    return df.loc[filter_pass], df.loc[~ filter_pass]
+    # Return tables
+    return df.loc[sorted(pass_index_set)], df_fail
 
 
 def filter_by_tig_tree(df, tig_filter_tree):

@@ -305,7 +305,7 @@ rule call_integrate_sources:
         bed_snv='results/{asm_name}/bed/pre_merge/{hap}/snv_snv.bed.gz',
         bed_inv_drp='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz',
         bed_insdel_drp='results/{asm_name}/bed/dropped/svindel_insdel_{hap}.bed.gz',
-        bed_snv_drp='results/{asm_name}/bed/dropped/snv_snv_{hap}.bed.gz',
+        bed_snv_drp='results/{asm_name}/bed/dropped/snv_snv_{hap}.bed.gz'
     params:
         inv_min=lambda wildcards: get_config(wildcards, 'inv_min', 0),
         inv_max=lambda wildcards: get_config(wildcards, 'inv_max', 1e10),
@@ -366,17 +366,20 @@ rule call_integrate_sources:
         df_inv, df_inv_drp = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
         df_inv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+        df_inv_drp['COMPOUND'] = np.nan
         inv_drp_list.append(df_inv_drp)
 
         # INV: Filter by size
         if inv_min is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min].copy())
             inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MIN'].format(inv_min)
+            inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min].copy()
 
         if inv_max is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max].copy())
             inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MAX'].format(inv_max)
+            inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max].copy()
 
         # INV: Filter compound INVs
@@ -388,15 +391,25 @@ rule call_integrate_sources:
             inv_drp_index_set = set()
 
             for index, row in df_inv.sort_values(['SVLEN', 'POS']).iterrows():
-                if len(inv_tree[row['#CHROM']][row['POS']:row['END']]) == 0:
+                intersect_set = inv_tree[row['#CHROM']][row['POS']:row['END']]
+
+                if len(intersect_set) == 0:
                     inv_index_set.add(index)
                     inv_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
                 else:
-                    inv_drp_index_set.add(index)
+                    inv_drp_index_set.add((index, ','.join(val.data for val in intersect_set)))
 
             if inv_drp_index_set:
-                inv_drp_list.append(df_inv.loc[inv_drp_index_set].sort_values(['#CHROM', 'POS']))
-                inv_drp_list[-1]['REASON'] = FILTER_REASON['COMPOUND_INV']
+                row_drp_list = list()
+
+                for index, compound_id in inv_drp_index_set:
+                    row_drp = df_inv.loc[index].copy()
+                    row_drp['REASON'] = FILTER_REASON['COMPOUND_INV']
+                    row_drp['COMPOUND'] = compound_id
+
+                    row_drp_list.append(row_drp)
+
+                inv_drop_list.append(pd.concat(row_drp_list, axis=1).T)
 
             df_inv = df_inv.loc[list(inv_index_set)].sort_values(['#CHROM', 'POS']).copy()
 
@@ -406,11 +419,14 @@ rule call_integrate_sources:
         # Create large variant filter tree (for filtering small variants inside larger ones)
         filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        # Initialize large variant filter with INV locations
+        # Initialize large variant filter with INV locations. Each data element is a tuple of the contig name and the
+        # variant ID each range belongs to.
         if not params.inv_inner:
             for index, row in df_inv.iterrows():
-                filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
-
+                filter_tree[row['#CHROM']][row['POS']:row['END']] = (
+                    row['TIG_REGION'].split(':', 1)[0],
+                    row['ID']
+                )
 
         ### INS/DEL - Large ###
 
@@ -429,18 +445,15 @@ rule call_integrate_sources:
         insdel_drp_list.append(df_del_drp)
 
         # Large: Compound filter
-        df_lg_ins, df_ins_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
-        df_lg_ins, df_del_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
-
-        df_ins_drp['REASON'] = FILTER_REASON['COMPOUND']
-        df_del_drp['REASON'] = FILTER_REASON['COMPOUND']
+        df_lg_ins, df_ins_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
+        df_lg_del, df_del_drp = pavlib.call.filter_by_ref_tree(df_lg_del, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
 
         insdel_drp_list.append(df_ins_drp)
         insdel_drp_list.append(df_del_drp)
 
         # Large: Add DEL to filter regions
         for index, row in df_lg_del.iterrows():
-            filter_tree[row['#CHROM']][row['POS']:row['END']] = row['TIG_REGION'].split(':', 1)[0]
+            filter_tree[row['#CHROM']][row['POS']:row['END']] = (row['TIG_REGION'].split(':', 1)[0], row['ID'])
 
 
         ### CIGAR calls ###
@@ -467,11 +480,8 @@ rule call_integrate_sources:
         snv_drp_list.append(df_snv_drp)
 
         # CIGAR: Compound filter
-        df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset)
-        df_snv, df_snv_drp = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset)
-
-        df_insdel_drp['REASON'] = FILTER_REASON['COMPOUND']
-        df_snv_drp['REASON'] = FILTER_REASON['COMPOUND']
+        df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
+        df_snv, df_snv_drp = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
 
         insdel_drp_list.append(df_insdel_drp)
         snv_drp_list.append(df_snv_drp)

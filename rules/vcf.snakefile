@@ -11,7 +11,7 @@ _VCF_SVTYPE = {
 
 # vcf_write_vcf
 #
-# Make VCF headers.
+# Make VCF file.
 rule vcf_write_vcf:
     input:
         bed_snv_snv='results/{asm_name}/bed/snv_snv.bed.gz',

@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.3.4
+* Adding "COMPOUND" column for filtered variants annotating which variants it was nested inside of (e.g. small variant
+  inside a large deletion). Can be used to recover small variants if a larger variant is removed from the callset.
+* Fixed bug that dropped large insertions.
+
 ## 2.3.3
 * Fixed minor alignment trimming bug uncovered by the large deletion fix in 2.3.2 causes large variant detection fail.
 * Fixed bug in coordinates causing inversion searches at the edge of chromosomes to fail with an invalid index (-1).
