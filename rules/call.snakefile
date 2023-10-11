@@ -191,7 +191,6 @@ rule call_merge_haplotypes_batch:
                 pass
 
 
-
 # call_merge_batch_table
 #
 # Create a table of merge batch assignments
@@ -409,7 +408,7 @@ rule call_integrate_sources:
 
                     row_drp_list.append(row_drp)
 
-                inv_drop_list.append(pd.concat(row_drp_list, axis=1).T)
+                inv_drp_list.append(pd.concat(row_drp_list, axis=1).T)
 
             df_inv = df_inv.loc[list(inv_index_set)].sort_values(['#CHROM', 'POS']).copy()
 
