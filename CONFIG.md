@@ -237,34 +237,45 @@ for the second parameter will give diminishing returns.
 * merge_inv [param merge_svindel]: Override default merging parameters for SV/indel inversions (INV). 
 * merge_svindel [nr::exact:ro(0.5):szro(0.5,200):match]: Override default merging parameters for INS, DEL, INV
 * merge_snv [nrsnv:exact]: Override default merging parameters for SNVs
-* merge_threads [12]
-* min_inv [300]
-* max_inv [2000000]
-* inv_min_svlen [300]
+* merge_threads [12]: Number of threads to use while merging haplotypes.
+* inv_min [300]: Minimum inversion size.
+* inv_max [2000000]: Maximum inversion size.
 * inv_inner [False]: If True, allow small variant calls inside inversions. Variants will be in reference orientation, but some could be the result of poor alignments around inversion breakpoints.
 
-* inv_min [300]
-* inv_max [2000000]
 
 ### Call - INV
-* inv_k_size [31]
-* inv_threads [4]
-* inv_region_limit [None]
-* inv_min_expand [None]
-* inv_sig_merge_flank [500]
-* inv_sig_batch_count [BATCH_COUNT_DEFAULT]
-* inv_sig_filter [svindel]
-* inv_sig_insdel_cluster_flank [2]
-* inv_sig_insdel_merge_flank [2000]
-* inv_sig_cluster_svlen_min [4]
-* inv_sig_cluster_win [200]
-* inv_sig_cluster_win_min [500]
-* inv_sig_cluster_snv_min [20]
-* inv_sig_cluster_indel_min [10]
+* inv_k_size [31]: K-mer size for inversion density.
+* inv_threads [4]: Number of threads to use for detecting inversions (running density for inversions).
+* inv_region_limit [None]: Before an inversion is resolved, it is comes from a region with inversion signatures. If the
+  region exceeds this size, then stop searching for an inversion.
+* inv_min_expand [1]: Expand the search region up to this many times when searching for an inversion and finding only
+  forward-oriented k-mers.
+* inv_sig_merge_flank [500]: When searching for inversion signatures, merge windows within this distance.
+* inv_sig_batch_count [60]: Split inversion signature regions into this many batches. Each batch is resolved in a separate job.
+* inv_sig_filter [svindel; string]: Determine which inversion signature patterns PAV should try to resolve into an
+  inversion call. See the four recognized signatures above.
+    * single_cluster: Accept signatures from only clustered SNVs or clustered indels. This will cause PAV to search
+      sites and maximize sensitivity for small inversions. There is a steep performance cost, and possibly a
+      sharp increase in false-positive inversions as well. Use this parameter with caution and purpose.
+    * svindel: Accept signatures with matched SVs or matched indels.
+    * sv: Only accept signatures with matched SVs.
+* inv_sig_merge_flank [500; int]: When searching for clustered SNVs or indels, cluster variants within this many bp.
+* inv_sig_batch_count [60; int]: Batch signature regions into this many batches for the caller and distribute
+  each batch as one job. Improves cluster parallelization, but has no performance effect for
+  non-distributed jobs.
+* inv_sig_insdel_cluster_flank [2; float]: For each insertion, multiply the SV length by this value and
+  search for a matching SV deletion.
+* inv_sig_insdel_merge_flank [2000; int]: Merge clusters within this distance.
+* inv_sig_cluster_svlen_min [4; int]: Discard indels less than this size when searching for clustered signatures.
+* inv_sig_cluster_win [200; int]: Cluster variants within this many bases
+* inv_sig_cluster_win_min [500; int]: Clustered window must reach this size (first clustered variant to last
+  clustered variant).
+* inv_sig_cluster_snv_min [20; int]: Minimum number if SNVs in a window to be considered a SNV-clustered site.
+* inv_sig_cluster_indel_min [10; int]: Minimum number of indels in a window to be considered an indel-clustered
+  site.
 
 ### Call - Large SV
-* inv_k_size [31]
-* inv_threads_lg [12]
+* inv_k_size [31]: K-mer size for inversion density.
+* inv_threads_lg [12]: Number of threads to use for detecting large inversions (running density for alignment-truncating inversions).
 * inv_region_limit [None]
 * lg_batch_count [10]
-
