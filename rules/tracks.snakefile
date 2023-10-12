@@ -112,7 +112,7 @@ rule tracks_hap_call:
 
         # Read variants
         df = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
+            [pd.read_csv(file_name, sep='\t', dtype={'#CHROM': str}, low_memory=False) for file_name in input.bed],
             axis=0
         ).reset_index(drop=True)
 
@@ -121,7 +121,7 @@ rule tracks_hap_call:
         elif wildcards.vartype == 'indel':
             df = df.loc[df['SVLEN'] < 50].copy()
 
-        df.sort_values(['#CHROM', 'POS'], inplace=True)
+        df.sort_values(['#CHROM', 'POS', 'END'], inplace=True)
 
         # Select table columns
         if 'QUERY_ID' in df.columns:
