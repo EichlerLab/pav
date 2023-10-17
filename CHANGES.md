@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.3.5
+* Added ".fna" and ".fnq" to recognized file types.
+
 ## 2.3.4
 * Adding "COMPOUND" column for filtered variants annotating which variants it was nested inside of (e.g. small variant
   inside a large deletion). Can be used to recover small variants if a larger variant is removed from the callset.

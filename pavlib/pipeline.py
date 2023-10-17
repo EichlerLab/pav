@@ -337,10 +337,10 @@ def expand_input(file_name_list):
                     if line:
                         file_name_list.append(line)
 
-        elif file_name_ext in {'fasta', 'fa', 'fn'}:
+        elif file_name_ext in {'fasta', 'fa', 'fn', 'fna'}:
             file_name_tuples.append((file_name, 'fasta'))
 
-        elif file_name_ext in {'fastq', 'fq'}:
+        elif file_name_ext in {'fastq', 'fq', 'fnq'}:
             file_name_tuples.append((file_name, 'fastq'))
 
         elif file_name_ext == 'gfa':
