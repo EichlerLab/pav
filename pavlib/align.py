@@ -29,7 +29,7 @@ TC_CLIPS_BP = 9
 TC_CLIPH_BP = 10
 
 
-def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
+def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both'):
     """
     Do alignment trimming from prepared alignment BED file. This BED contains information about reference and
     contig coordinates mapped, CIGAR string and flags.
@@ -43,11 +43,31 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
         This mode is useful for generating a maximal callset where multiple contigs may cover the same region (e.g.
         alleles in squashed assembly or mixed haplotypes (e.g. subclonal events). Additional QC should be applied to
         callsets using this option.
+    :param mode: Trim alignments to remove redundantly mapped tig bases (mode = "tig"), reference bases with more than
+        one alignment (mode = "ref"), or both (mode = "both"). If None, assume "both".
 
     :return: Trimmed alignments as an alignment DataFrame. Same format as `df` with columns added describing the
         number of reference and contig bases that were trimmed. Dropped records (mapped inside another or too shart) are
         removed.
     """
+
+    # Check mode
+    if mode is None:
+        mode = 'both'
+
+    mode = mode.lower()
+
+    if mode == 'tig':
+        do_trim_tig = True
+        do_trim_ref = False
+    elif mode == 'ref':
+        do_trim_tig = False
+        do_trim_ref = True
+    elif mode == 'both':
+        do_trim_tig = True
+        do_trim_ref = True
+    else:
+        raise RuntimeError(f'Unrecognized trimming mode "{mode}": Expected "tig", "ref", or "both"')
 
     # Add fields for the number of bases that are removed from each end
     df['CUT_REF_L'] = 0
@@ -60,281 +80,294 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
         if df.loc[index, 'QUERY_TIG_END'] - df.loc[index, 'QUERY_TIG_POS'] < min_trim_tig_len:
             df.loc[index, 'INDEX'] = -1
 
+    # Discard fully trimmed records (shouldn't occur at this stage)
+    df = df.loc[df['INDEX'] >= 0].copy()
+
 
     ###                                          ###
     ### Trim overlapping contigs in contig space ###
     ###                                          ###
 
-    # Discard fully trimmed records
-    df = df.loc[df['INDEX'] >= 0].copy()
+    if do_trim_tig:
 
-    # Sort by alignment lengths in contig space
-    df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
-    df['SUB_LEN'] = df['END'] - df['POS']
+        # Sort by alignment lengths in contig space
+        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+        df['SUB_LEN'] = df['END'] - df['POS']
 
-    df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
+        df.sort_values(['QUERY_ID', 'QUERY_LEN'], ascending=(True, False), inplace=True)
 
-    df.reset_index(inplace=True, drop=True)
+        df.reset_index(inplace=True, drop=True)
 
-    # Do trim in contig space #
-    iter_index_l = 0
-    index_max = df.shape[0]
+        # Do trim in contig space #
+        iter_index_l = 0
+        index_max = df.shape[0]
 
-    while iter_index_l < index_max:
+        while iter_index_l < index_max:
 
-        iter_index_r = iter_index_l + 1
+            iter_index_r = iter_index_l + 1
 
-        while iter_index_r < index_max and df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID']:
+            while iter_index_r < index_max and df.loc[iter_index_l, 'QUERY_ID'] == df.loc[iter_index_r, 'QUERY_ID']:
 
-            # Get index in order of contig placement
-            if df.loc[iter_index_l, 'QUERY_TIG_POS'] <= df.loc[iter_index_r, 'QUERY_TIG_POS']:
-                index_l = iter_index_l
-                index_r = iter_index_r
-            else:
-                index_l = iter_index_r
-                index_r = iter_index_l
-
-            # Skip if one record was already removed
-            if df.loc[index_l, 'INDEX'] < 0 or df.loc[index_r, 'INDEX'] < 0:
-                iter_index_r += 1
-                continue
-
-            # Skip if there is no overlap
-            if df.loc[index_r, 'QUERY_TIG_POS'] >= df.loc[index_l, 'QUERY_TIG_END']:
-                iter_index_r += 1
-                continue
-
-            # Check for record fully contained within another
-            if df.loc[index_r, 'QUERY_TIG_END'] <= df.loc[index_l, 'QUERY_TIG_END']:
-                df.loc[index_r, 'INDEX'] = -1
-                iter_index_r += 1
-                continue
-
-            # Determine trim orientation (right side of index_l is to trimmed, so must be reversed so
-            # trimmed CIGAR records are at the beginning; left side of index_r is to be trimmed, which is
-            # already at the start of the CIGAR string).
-            rev_l = not df.loc[index_l, 'REV']  # Trim right end of index_l
-            rev_r = df.loc[index_r, 'REV']      # Trim left end of index_r
-
-            # Detect overlap in reference
-            if rev_l == rev_r or df.loc[index_l, '#CHROM'] != df.loc[index_r, '#CHROM']:
-                # Contigs were aligned in different reference chromosomes or orientations, no overlap
-                ref_overlap = False
-
-            else:
-                if df.loc[index_l, 'POS'] < df.loc[index_r, 'POS']:
-                    ref_overlap = df.loc[index_r, 'POS'] < df.loc[index_l, 'END']
-
-                elif df.loc[index_r, 'POS'] < df.loc[index_l, 'POS']:
-                    ref_overlap = df.loc[index_l, 'POS'] < df.loc[index_r, 'END']
-
+                # Get index in order of contig placement
+                if df.loc[iter_index_l, 'QUERY_TIG_POS'] <= df.loc[iter_index_r, 'QUERY_TIG_POS']:
+                    index_l = iter_index_l
+                    index_r = iter_index_r
                 else:
-                    # POS placement was the same,
+                    index_l = iter_index_r
+                    index_r = iter_index_l
+
+                # Skip if one record was already removed
+                if df.loc[index_l, 'INDEX'] < 0 or df.loc[index_r, 'INDEX'] < 0:
+                    iter_index_r += 1
+                    continue
+
+                # Skip if there is no overlap
+                if df.loc[index_r, 'QUERY_TIG_POS'] >= df.loc[index_l, 'QUERY_TIG_END']:
+                    iter_index_r += 1
+                    continue
+
+                # Check for record fully contained within another
+                if df.loc[index_r, 'QUERY_TIG_END'] <= df.loc[index_l, 'QUERY_TIG_END']:
+                    df.loc[index_r, 'INDEX'] = -1
+                    iter_index_r += 1
+                    continue
+
+                # Determine trim orientation (right side of index_l is to trimmed, so must be reversed so
+                # trimmed CIGAR records are at the beginning; left side of index_r is to be trimmed, which is
+                # already at the start of the CIGAR string).
+                rev_l = not df.loc[index_l, 'REV']  # Trim right end of index_l
+                rev_r = df.loc[index_r, 'REV']      # Trim left end of index_r
+
+                # Detect overlap in reference
+                if rev_l == rev_r or df.loc[index_l, '#CHROM'] != df.loc[index_r, '#CHROM']:
+                    # Contigs were aligned in different reference chromosomes or orientations, no overlap
                     ref_overlap = False
 
-            # If contig alignments overlap in reference space and are in the same orientation, preferentially
-            # trim the downstream end more to left-align alignment-truncating SVs (first argument to
-            # trim_alignment_record is preferentially trimmed)
-            if ref_overlap:
-                # Try both trim orientations
+                else:
+                    if df.loc[index_l, 'POS'] < df.loc[index_r, 'POS']:
+                        ref_overlap = df.loc[index_r, 'POS'] < df.loc[index_l, 'END']
 
-                # a: Try with record l as first and r as second
-                record_l_a, record_r_a = trim_alignment_record(
-                    df.loc[index_l], df.loc[index_r], 'query',
-                    rev_l=rev_l,
-                    rev_r=rev_r
-                )
+                    elif df.loc[index_r, 'POS'] < df.loc[index_l, 'POS']:
+                        ref_overlap = df.loc[index_l, 'POS'] < df.loc[index_r, 'END']
 
-                # b: Try with record r as first and l as second
-                record_l_b, record_r_b = trim_alignment_record(
-                    df.loc[index_r], df.loc[index_l], 'query',
-                    rev_l=rev_r,
-                    rev_r=rev_l
-                )
-
-                ### Determine which left-aligns best ###
-                keep = None
-
-                # Case: Alignment trimming completely removes one of the records
-                rm_l_a = record_l_a['QUERY_TIG_END'] - record_l_a['QUERY_TIG_POS'] < min_trim_tig_len
-                rm_l_b = record_l_b['QUERY_TIG_END'] - record_l_b['QUERY_TIG_POS'] < min_trim_tig_len
-
-                rm_r_a = record_r_a['QUERY_TIG_END'] - record_r_a['QUERY_TIG_POS'] < min_trim_tig_len
-                rm_r_b = record_r_b['QUERY_TIG_END'] - record_r_b['QUERY_TIG_POS'] < min_trim_tig_len
-
-                rm_any_a = rm_l_a or rm_r_a
-                rm_any_b = rm_l_b or rm_r_b
-
-                # Break tie if one way removes a record and the other does not
-                if rm_any_a and not rm_any_b:
-                    if not rm_l_a and rm_r_a:
-                        keep = 'a'
-
-                elif rm_any_b and not rm_any_a:
-                    if not rm_l_b and rm_r_b:
-                        keep = 'b'
-
-                # Break tie if both are removed in one (do not leave short alignments).
-                if keep is None and rm_any_a:  # Both l and r are None, case where one is None was checked
-                    keep = 'a'
-
-                if keep is None and rm_any_b:  # Both l and r are None, case where one is None was checked
-                    keep = 'b'
-
-                # Break tie on most left-aligned base
-                if keep is None:
-
-                    # Get position at end of trim
-                    trim_pos_l_a = record_l_a['END'] if not record_l_a['REV'] else record_l_a['POS']
-                    trim_pos_l_b = record_l_b['END'] if not record_l_b['REV'] else record_l_b['POS']
-
-                    if trim_pos_l_a <= trim_pos_l_b:
-                        keep = 'a'
                     else:
+                        # POS placement was the same,
+                        ref_overlap = False
+
+                # If contig alignments overlap in reference space and are in the same orientation, preferentially
+                # trim the downstream end more to left-align alignment-truncating SVs (first argument to
+                # trim_alignment_record is preferentially trimmed)
+                if ref_overlap:
+                    # Try both trim orientations
+
+                    # a: Try with record l as first and r as second
+                    record_l_a, record_r_a = trim_alignment_record(
+                        df.loc[index_l], df.loc[index_r], 'query',
+                        rev_l=rev_l,
+                        rev_r=rev_r
+                    )
+
+                    # b: Try with record r as first and l as second
+                    record_l_b, record_r_b = trim_alignment_record(
+                        df.loc[index_r], df.loc[index_l], 'query',
+                        rev_l=rev_r,
+                        rev_r=rev_l
+                    )
+
+                    ### Determine which left-aligns best ###
+                    keep = None
+
+                    # Case: Alignment trimming completely removes one of the records
+                    rm_l_a = record_l_a['QUERY_TIG_END'] - record_l_a['QUERY_TIG_POS'] < min_trim_tig_len
+                    rm_l_b = record_l_b['QUERY_TIG_END'] - record_l_b['QUERY_TIG_POS'] < min_trim_tig_len
+
+                    rm_r_a = record_r_a['QUERY_TIG_END'] - record_r_a['QUERY_TIG_POS'] < min_trim_tig_len
+                    rm_r_b = record_r_b['QUERY_TIG_END'] - record_r_b['QUERY_TIG_POS'] < min_trim_tig_len
+
+                    rm_any_a = rm_l_a or rm_r_a
+                    rm_any_b = rm_l_b or rm_r_b
+
+                    # Break tie if one way removes a record and the other does not
+                    if rm_any_a and not rm_any_b:
+                        if not rm_l_a and rm_r_a:
+                            keep = 'a'
+
+                    elif rm_any_b and not rm_any_a:
+                        if not rm_l_b and rm_r_b:
+                            keep = 'b'
+
+                    # Break tie if both are removed in one (do not leave short alignments).
+                    if keep is None and rm_any_a:  # Both l and r are None, case where one is None was checked
+                        keep = 'a'
+
+                    if keep is None and rm_any_b:  # Both l and r are None, case where one is None was checked
                         keep = 'b'
 
-                # Set record_l and record_r to the kept record
-                if keep == 'a':
-                    record_l = record_l_a
-                    record_r = record_r_a
+                    # Break tie on most left-aligned base
+                    if keep is None:
+
+                        # Get position at end of trim
+                        trim_pos_l_a = record_l_a['END'] if not record_l_a['REV'] else record_l_a['POS']
+                        trim_pos_l_b = record_l_b['END'] if not record_l_b['REV'] else record_l_b['POS']
+
+                        if trim_pos_l_a <= trim_pos_l_b:
+                            keep = 'a'
+                        else:
+                            keep = 'b'
+
+                    # Set record_l and record_r to the kept record
+                    if keep == 'a':
+                        record_l = record_l_a
+                        record_r = record_r_a
+
+                    else:
+                        # Note: record at index_l became record_r_b (index_r become record_l_b)
+                        # Swap back to match the index
+                        record_l = record_r_b
+                        record_r = record_l_b
 
                 else:
-                    # Note: record at index_l became record_r_b (index_r become record_l_b)
-                    # Swap back to match the index
-                    record_l = record_r_b
-                    record_r = record_l_b
 
-            else:
+                    # Switch record order if they are on the same contig and same orientation (note: rev_l and rev_r are
+                    # opposite if contigs are mapped in the same orientation, one was swapped to trim the dowstream-
+                    # aligned end).
+                    if df.loc[index_l, '#CHROM'] == df.loc[index_r, '#CHROM'] and rev_l != rev_r:
 
-                # Switch record order if they are on the same contig and same orientation (note: rev_l and rev_r are
-                # opposite if contigs are mapped in the same orientation, one was swapped to trim the dowstream-
-                # aligned end).
-                if df.loc[index_l, '#CHROM'] == df.loc[index_r, '#CHROM'] and rev_l != rev_r:
+                        # Get position of end to be trimmed
+                        trim_pos_l = df.loc[index_l, 'END'] if not df.loc[index_l, 'REV'] else df.loc[index_l, 'POS']
+                        trim_pos_r = df.loc[index_r, 'POS'] if not df.loc[index_r, 'REV'] else df.loc[index_r, 'END']
 
-                    # Get position of end to be trimmed
-                    trim_pos_l = df.loc[index_l, 'END'] if not df.loc[index_l, 'REV'] else df.loc[index_l, 'POS']
-                    trim_pos_r = df.loc[index_r, 'POS'] if not df.loc[index_r, 'REV'] else df.loc[index_r, 'END']
+                        # Swap positions so the upstream-aligned end of the contig is index_l. The left end is
+                        # preferentially trimmed shorter where there are equal breakpoints effectively left-aligning
+                        # around large SVs (e.g. large DELs).
+                        if trim_pos_r < trim_pos_l:
+                            # Swap
+                            rev_tmp = rev_l
+                            rev_l = rev_r
+                            rev_r = rev_tmp
 
-                    # Swap positions so the upstream-aligned end of the contig is index_l. The left end is
-                    # preferentially trimmed shorter where there are equal breakpoints effectively left-aligning
-                    # around large SVs (e.g. large DELs).
-                    if trim_pos_r < trim_pos_l:
-                        # Swap
-                        rev_tmp = rev_l
-                        rev_l = rev_r
-                        rev_r = rev_tmp
+                            index_tmp = index_l
+                            index_l = index_r
+                            index_r = index_tmp
 
-                        index_tmp = index_l
-                        index_l = index_r
-                        index_r = index_tmp
+                    # Trim record
+                    record_l, record_r = trim_alignment_record(
+                        df.loc[index_l], df.loc[index_r], 'query',
+                        rev_l=rev_l,
+                        rev_r=rev_r
+                    )
 
-                # Trim record
-                record_l, record_r = trim_alignment_record(
-                    df.loc[index_l], df.loc[index_r], 'query',
-                    rev_l=rev_l,
-                    rev_r=rev_r
-                )
+                # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                    df.loc[index_l] = record_l
+                else:
+                    df.loc[index_l, 'INDEX'] = -1
 
-            # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
-            if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
-                df.loc[index_l] = record_l
-            else:
-                df.loc[index_l, 'INDEX'] = -1
+                if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                    df.loc[index_r] = record_r
+                else:
+                    df.loc[index_r, 'INDEX'] = -1
 
-            if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
-                df.loc[index_r] = record_r
-            else:
-                df.loc[index_r, 'INDEX'] = -1
+                # Next r record
+                iter_index_r += 1
 
-            # Next r record
-            iter_index_r += 1
+            # Next l record
+            iter_index_l += 1
 
-        # Next l record
-        iter_index_l += 1
+        # Clean temporary columns
+        del(df['QUERY_LEN'])
+        del(df['SUB_LEN'])
+
+        # Discard fully trimmed records
+        df = df.loc[df['INDEX'] >= 0].copy()
+
+    # end: if do_trim_tig
 
     ###                                             ###
     ### Trim overlapping contigs in reference space ###
     ###                                             ###
 
-    # Discard fully trimmed records
-    df = df.loc[df['INDEX'] >= 0].copy()
+    if do_trim_ref:
 
-    # Sort by contig alignment length in reference space
-    df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
-    df['SUB_LEN'] = df['END'] - df['POS']
+        # Sort by contig alignment length in reference space
+        df['QUERY_LEN'] = df['QUERY_END'] - df['QUERY_POS']
+        df['SUB_LEN'] = df['END'] - df['POS']
 
-    df.sort_values(['#CHROM', 'SUB_LEN'], ascending=(True, False), inplace=True)
+        df.sort_values(['#CHROM', 'SUB_LEN'], ascending=(True, False), inplace=True)
 
-    df.reset_index(inplace=True, drop=True)
+        df.reset_index(inplace=True, drop=True)
 
-    # Do trim in reference space
-    iter_index_l = 0
-    index_max = df.shape[0]
+        # Do trim in reference space
+        iter_index_l = 0
+        index_max = df.shape[0]
 
-    while iter_index_l < index_max:
-        iter_index_r = iter_index_l + 1
+        while iter_index_l < index_max:
+            iter_index_r = iter_index_l + 1
 
-        while (
-                iter_index_r < index_max and
-                df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
-        ):
+            while (
+                    iter_index_r < index_max and
+                    df.loc[iter_index_l, '#CHROM'] == df.loc[iter_index_r, '#CHROM']
+            ):
 
-            # Skip if one record was already removed
-            if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
-                iter_index_r += 1
-                continue
+                # Skip if one record was already removed
+                if df.loc[iter_index_l, 'INDEX'] < 0 or df.loc[iter_index_r, 'INDEX'] < 0:
+                    iter_index_r += 1
+                    continue
 
-            # Skip if match_tig and query names differ
-            if match_tig and df.loc[iter_index_l, 'QUERY_ID'] != df.loc[iter_index_r, 'QUERY_ID']:
-                iter_index_r += 1
-                continue
+                # Skip if match_tig and query names differ
+                if match_tig and df.loc[iter_index_l, 'QUERY_ID'] != df.loc[iter_index_r, 'QUERY_ID']:
+                    iter_index_r += 1
+                    continue
 
-            # Get indices ordered by contig placement
-            if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
-                index_l = iter_index_l
-                index_r = iter_index_r
-            else:
-                index_l = iter_index_r
-                index_r = iter_index_l
-
-            # Check for overlaps
-            if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
-                # Found overlapping records
-                # print('Ref Overlap: {}-{} ({}:{}-{},{} vs {}:{}-{},{}) [iter {}, {}]'.format(
-                #     df.loc[index_l, 'INDEX'], df.loc[index_r, 'INDEX'],
-                #     df.loc[index_l, 'QUERY_ID'], df.loc[index_l, 'QUERY_TIG_POS'], df.loc[index_l, 'QUERY_TIG_END'], ('-' if df.loc[index_l, 'REV'] else '+'),
-                #     df.loc[index_r, 'QUERY_ID'], df.loc[index_r, 'QUERY_TIG_POS'], df.loc[index_r, 'QUERY_TIG_END'], ('-' if df.loc[index_r, 'REV'] else '+'),
-                #     iter_index_l, iter_index_r
-                # ))
-
-                # Check for record fully contained within another
-                if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
-                    # print('\t* Fully contained')
-
-                    df.loc[index_r, 'INDEX'] = -1
-
+                # Get indices ordered by contig placement
+                if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
+                    index_l = iter_index_l
+                    index_r = iter_index_r
                 else:
+                    index_l = iter_index_r
+                    index_r = iter_index_l
 
-                    record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'subject')
+                # Check for overlaps
+                if df.loc[index_r, 'POS'] < df.loc[index_l, 'END']:
 
-                    if record_l is not None and record_r is not None:
+                    # Check for record fully contained within another
+                    if df.loc[index_r, 'END'] <= df.loc[index_l, 'END']:
+                        # print('\t* Fully contained')
 
-                        # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
-                        if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
-                            df.loc[index_l] = record_l
-                        else:
-                            df.loc[index_l, 'INDEX'] = -1
+                        df.loc[index_r, 'INDEX'] = -1
 
-                        if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
-                            df.loc[index_r] = record_r
-                        else:
-                            df.loc[index_r, 'INDEX'] = -1
+                    else:
 
-            # Next r record
-            iter_index_r += 1
+                        record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'subject')
 
-        # Next l record
-        iter_index_l += 1
+                        if record_l is not None and record_r is not None:
+
+                            # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
+                            if record_l['QUERY_TIG_END'] - record_l['QUERY_TIG_POS'] >= min_trim_tig_len:
+                                df.loc[index_l] = record_l
+                            else:
+                                df.loc[index_l, 'INDEX'] = -1
+
+                            if (record_r['QUERY_TIG_END'] - record_r['QUERY_TIG_POS']) >= min_trim_tig_len:
+                                df.loc[index_r] = record_r
+                            else:
+                                df.loc[index_r, 'INDEX'] = -1
+
+                # Next r record
+                iter_index_r += 1
+
+            # Next l record
+            iter_index_l += 1
+
+        # Clean temporary columns
+        del(df['QUERY_LEN'])
+        del(df['SUB_LEN'])
+
+        # Discard fully trimmed records
+        df = df.loc[df['INDEX'] >= 0].copy()
+
+    # end: if do_trim_ref
+
 
     ###                      ###
     ### Post trim formatting ###
@@ -347,9 +380,6 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False):
     df = df.loc[(df['QUERY_END'] - df['QUERY_POS']) > 0]
 
     df.sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'], ascending=[True, True, False, True], inplace=True)
-
-    del(df['QUERY_LEN'])
-    del(df['SUB_LEN'])
 
     # Check sanity
     df_tig_fai = svpoplib.ref.get_df_fai(tig_fai)
