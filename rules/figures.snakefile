@@ -9,8 +9,6 @@ plotted with rules in this file. These may be useful for reporting results or tr
 # Inversions
 #
 
-localrules: figures_inv_all
-
 
 #######################
 ### Input functions ###
@@ -64,24 +62,21 @@ def fig_input_inv_all_den(wildcards):
 ### All figures ###
 ###################
 
-# figures_inv_all
-#
 # Make density and dotplot figures for all inversions.
+localrules: figures_inv_all
+
 rule figures_inv_all:
     input:
         fig_dot=fig_input_inv_all_dot,
         fig_den=fig_input_inv_all_den
     output:
         flag=touch('temp/flag/fig/all_{asm_name}_{ext}.flag')
-    input:
 
 
 ###############
 ### Density ###
 ###############
 
-# figures_inv_dot_density
-#
 # Make dot and density plot for an inversion call. May plot with inverted repeat whiskers (whiskers=whisk) or without
 # (whiskers=nowhisk). These whiskers show k-mers unique to each inverted repeat flanking the inversion and whether they
 # are in reference orientation (pointing up) or inverted orientation (pointing down).
@@ -154,9 +149,7 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
         fig_density.savefig(output.fig_den, bbox_inches='tight')
 
 
-# figures_inv_dot
-#
-# Dotplot.
+# Inversion dotplot.
 rule figures_inv_dot:
     input:
         bed_inv='results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz',

@@ -28,7 +28,7 @@ import Bio.bgzf
 # Global constants
 #
 
-PIPELINE_DIR = os.path.dirname(workflow.snakefile)
+PIPELINE_DIR = os.path.dirname(os.path.realpath(workflow.snakefile))
 
 
 #
@@ -138,12 +138,13 @@ rule pav_all:
 
 ### Includes ###
 
-include: 'rules/pipeline.snakefile'
-include: 'rules/data.snakefile'
-include: 'rules/align.snakefile'
-include: 'rules/call.snakefile'
-include: 'rules/call_inv.snakefile'
-include: 'rules/call_lg.snakefile'
-include: 'rules/tracks.snakefile'
-include: 'rules/figures.snakefile'
-include: 'rules/vcf.snakefile'
+include: os.path.join(PIPELINE_DIR, 'rules/definitions.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/pipeline.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/data.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/align.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/call.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/call_inv.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/call_lg.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/tracks.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/figures.snakefile')
+include: os.path.join(PIPELINE_DIR, 'rules/vcf.snakefile')

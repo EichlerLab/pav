@@ -1,0 +1,58 @@
+
+---
+latency-wait: 60
+keep-going: True
+rerun-incomplete: True
+printshellcmds: False
+rerun-triggers: "mtime"
+
+# Cluster submission
+jobname: "{rule}.{jobid}"
+max-jobs-per-second: 5
+
+# Resources
+default-resources:
+  - mem_mb=2048
+  - runtime=240
+
+set-threads:
+  - align_map=12
+  - call_inv_batch=4
+  - call_lg_discover=12
+  - call_merge_haplotypes_batch=12
+
+set-resources:
+  - align_genomecov:mem_mb=4196
+  - align_get_cram_postcut:mem_mb=4196
+  - align_get_cram_postcut:runtime=120
+  - align_get_cram_precut:mem_mb=4196
+  - align_get_cram_precut:runtime=120
+  - align_get_read_bed:mem_mb=16384
+  - align_map:mem_mb=49152
+  - align_map:runtime=120
+  - align_merge_h12_read_bed:mem_mb=4196
+  - align_postcut_cram:mem_mb=16384
+  - align_postcut_sam:mem_mb=12288
+  - align_ref_lra_index:mem_mb=32768
+  - align_sort_cram:mem_mb=12288
+  - call_cigar:mem_mb=12288
+  - call_cigar:runtime=120
+  - call_cigar_merge:mem_mb=12288
+  - call_cigar_merge:runtime=120
+  - call_final_bed:mem_mb=8192
+  - call_final_bed:runtime=120
+  - call_integrate_sources:mem_mb=8192
+  - call_inv_batch:mem_mb=6144
+  - call_inv_batch:runtime=120
+  - call_lg_discover:mem_mb=49152
+  - call_lg_discover:runtime=120
+  - call_merge_haplotypes:mem_mb=8192
+  - call_merge_haplotypes:runtime=120
+  - call_merge_haplotypes_chrom:mem_mb=16384
+  - call_merge_haplotypes_chrom:runtime=120
+  - figures_inv_den:mem_mb=16384
+  - figures_inv_den:runtime=120
+  - figures_inv_dot:mem_mb=32768
+  - figures_inv_dot:runtime=120
+  - vcf_write_vcf:mem_mb=24576
+  - vcf_write_vcf:runtime=120

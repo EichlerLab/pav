@@ -7,8 +7,6 @@ Data files including reference and data tables for the reference.
 # Reference contig data table
 #
 
-# data_ref_contig_table
-#
 # Contig table.
 rule data_ref_contig_table:
     output:
@@ -26,8 +24,6 @@ rule data_ref_contig_table:
 # Reference annotation
 #
 
-# align_ref_anno_n_gap
-#
 # Find locations of N-gaps.
 rule data_align_ref_anno_n_gap:
     input:
@@ -67,8 +63,6 @@ rule data_align_ref_anno_n_gap:
 # Reference
 #
 
-# align_ref_lra_index
-#
 # Index reference for LRA.
 rule data_align_ref_lra_index:
     input:
@@ -79,8 +73,6 @@ rule data_align_ref_lra_index:
     shell:
         """lra index -CONTIG {input.fa}"""
 
-# align_ref
-#
 # Setup reference.
 rule data_align_ref:
     input:

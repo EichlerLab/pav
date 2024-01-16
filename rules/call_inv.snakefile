@@ -73,8 +73,6 @@ BATCH_COUNT_DEFAULT = 60
 # Call inversions
 #
 
-# call_inv_batch_merge
-#
 # Merge batches.
 rule call_inv_batch_merge:
     input:
@@ -96,8 +94,6 @@ rule call_inv_batch_merge:
             output.bed, sep='\t', index=False, compression='gzip'
         )
 
-# call_inv_batch
-#
 # Call inversions in batches of flagged regions.
 rule call_inv_batch:
     input:
@@ -113,7 +109,7 @@ rule call_inv_batch:
         k_size=lambda wildcards: get_config(wildcards, 'inv_k_size', 31),
         inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
         inv_min_expand=lambda wildcards: get_config(wildcards, 'inv_min_expand', None, True)
-    threads: lambda wildcards: get_config(wildcards, 'inv_threads', 4)
+    threads: 4
     run:
 
         # Get params
@@ -315,8 +311,6 @@ rule call_inv_batch:
 # Flag regions to scan for inversions
 #
 
-# call_inv_merge_flagged_loci
-#
 # Merge flagged overlapping regions (SV ins/del match, indel ins/del match, indel cluster, SNV cluster) into single
 # flagged record regions and annotate each. Column "TRY_INV" will be used by the inversion caller to determine which
 # regions to try calling.
@@ -477,8 +471,6 @@ rule call_inv_merge_flagged_loci:
         df_merged.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 
-# call_inv_flag_insdel_cluster
-#
 # Flag inversion regions by matched INS/DEL calls, which often occur inside inversions. Aligners will generate a
 # deletion over the inversion with an insertion of the same size flanking it where the inversion is the inverted
 # sequence.
@@ -502,6 +494,7 @@ rule call_inv_flag_insdel_cluster:
 
         # Input
         df = pd.read_csv(input.bed, sep='\t', header=0, low_memory=False)
+        df = df.loc[df['FILTER'] == 'PASS']
         df = df.loc[df['SVLEN'] >= svlen_min]
 
         if wildcards.vartype == 'indel':
@@ -603,8 +596,6 @@ rule call_inv_flag_insdel_cluster:
         df_match.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 
-# call_inv_cluster
-#
 # Detect clusters of indels and SNVs that common occur when contigs are aligned through inversions in direct orientation
 rule call_inv_cluster:
     input:
@@ -639,6 +630,8 @@ rule call_inv_cluster:
             ) for input_file_name in input.bed],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
+
+        df = df.loc[df['FILTER'] == 'PASS']
 
         if wildcards.vartype == 'indel':
             df = df.loc[df['SVLEN'] < 50]
@@ -692,4 +685,3 @@ rule call_inv_cluster:
 
         # Write
         df_cluster.to_csv(output.bed, sep='\t', index=False, compression='gzip')
-

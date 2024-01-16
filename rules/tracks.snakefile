@@ -83,8 +83,6 @@ def _get_align_bed(wildcards):
 # Variant calls
 #
 
-# tracks_hap_call_bb
-#
 # BigBed for one variant set.
 rule tracks_hap_call_bb:
     input:
@@ -96,8 +94,6 @@ rule tracks_hap_call_bb:
     shell:
         """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {input.fai} {output.bb}"""
 
-# tracks_hap_call
-#
 # Tracks for one variant set.
 rule tracks_hap_call:
     input:
@@ -163,8 +159,6 @@ rule tracks_hap_call:
 # Alignments
 #
 
-# tracks_align_bb
-#
 # Alignment track BED to BigBed.
 rule tracks_align_bb:
     input:
@@ -176,8 +170,6 @@ rule tracks_align_bb:
     shell:
         """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {input.fai} {output.bb}"""
 
-# tracks_align
-#
 # Alignment tracks.
 rule tracks_align:
     input:

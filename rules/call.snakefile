@@ -2,25 +2,11 @@
 Call variants from aligned contigs.
 """
 
-localrules: call_merge_batch_table
-
-FILTER_REASON = {
-    'TIG_FILTER': 'TIG_FILTER: Contig filter region (tig_filter_pattern)',
-    'COMPOUND': 'COMPOUND: Inside larger variant',
-    'COMPOUND_INV': 'COMPOUND_INV: Inside a larger inversion',
-    'INV_MIN': 'INV_MIN: Less than min INV size ({})',
-    'INV_MAX': 'INV_MAX: Exceeds max INV size ({})'
-}
-
-MERGE_BATCH_COUNT = 20
-
 
 #
 # Finalize variant calls
 #
 
-# call_final_bed
-#
 # Separate variants into final BED and FA files and write to results.
 rule call_final_bed:
     input:
@@ -108,8 +94,6 @@ rule call_final_bed:
 # Merge haplotypes
 #
 
-# pg_variant_bed
-#
 # Concatenate variant BED files from batched merges.
 rule call_merge_haplotypes:
     input:
@@ -133,8 +117,6 @@ rule call_merge_haplotypes:
         )
 
 
-# call_merge_haplotypes_chrom
-#
 # Merge by batches.
 rule call_merge_haplotypes_batch:
     input:
@@ -145,7 +127,7 @@ rule call_merge_haplotypes_batch:
         callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
         bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'
-    threads: lambda wildcards: int(get_config(wildcards, 'merge_threads', 12))
+    threads: 12
     run:
 
         # Read batch table
@@ -190,10 +172,9 @@ rule call_merge_haplotypes_batch:
             with open(output.bed, 'wt') as out_file:
                 pass
 
-
-# call_merge_batch_table
-#
 # Create a table of merge batch assignments
+localrules: call_merge_batch_table
+
 rule call_merge_batch_table:
     input:
         tsv='data/ref/contig_info.tsv.gz'
@@ -250,8 +231,6 @@ rule call_merge_batch_table:
 # Integrate variant calls
 #
 
-# call_mappable_bed
-#
 # Make a table of mappable regions by merging aligned loci with loci covered by alignment-truncating events.
 # "flank" parameter is an integer describing how far away records may be to merge (similar to the "bedtools merge"
 # "slop" parameter). The flank is not added to the regions that are output.
@@ -286,8 +265,6 @@ rule call_mappable_bed:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# call_correct_inter_inv
-#
 # Filter variants from inside inversions
 rule call_integrate_sources:
     input:
@@ -360,10 +337,12 @@ rule call_integrate_sources:
         ).reset_index(drop=True)
 
         df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+        df_inv['FILTER'] = 'PASS'
 
         # INV: Filter by contig blacklisted regions
         df_inv, df_inv_drp = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
+        df_inv_drp['FILTER'] = 'TIG_FILTER'
         df_inv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
         df_inv_drp['COMPOUND'] = np.nan
         inv_drp_list.append(df_inv_drp)
@@ -371,12 +350,14 @@ rule call_integrate_sources:
         # INV: Filter by size
         if inv_min is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min].copy())
+            inv_drp_list[-1]['FILTER'] = 'INV_MIN'
             inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MIN'].format(inv_min)
             inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min].copy()
 
         if inv_max is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max].copy())
+            inv_drp_list[-1]['FILTER'] = 'INV_MAX'
             inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MAX'].format(inv_max)
             inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max].copy()
@@ -403,6 +384,7 @@ rule call_integrate_sources:
 
                 for index, compound_id in inv_drp_index_set:
                     row_drp = df_inv.loc[index].copy()
+                    row_drp['FILTER'] = 'COMPOUND_INV'
                     row_drp['REASON'] = FILTER_REASON['COMPOUND_INV']
                     row_drp['COMPOUND'] = compound_id
 
@@ -437,7 +419,10 @@ rule call_integrate_sources:
         df_lg_ins, df_ins_drp = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
         df_lg_del, df_del_drp = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
 
+        df_ins_drp['FILTER'] = 'TIG_FILTER'
         df_ins_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+
+        df_del_drp['FILTER'] = 'TIG_FILTER'
         df_del_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
         insdel_drp_list.append(df_ins_drp)
@@ -472,7 +457,10 @@ rule call_integrate_sources:
         df_insdel, df_insdel_drp = pavlib.call.filter_by_tig_tree(df_insdel, tig_filter_tree)
         df_snv, df_snv_drp = pavlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
 
+        df_insdel_drp['FILTER'] = 'TIG_FILTER'
         df_insdel_drp['REASON'] = FILTER_REASON['TIG_FILTER']
+
+        df_snv_drp['FILTER'] = 'TIG_FILTER'
         df_snv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
         insdel_drp_list.append(df_insdel_drp)
@@ -532,8 +520,6 @@ rule call_integrate_sources:
 # Call from CIGAR
 #
 
-# call_cigar_merge
-#
 # Merge discovery sets from each batch.
 rule call_cigar_merge:
     input:
@@ -573,12 +559,11 @@ rule call_cigar_merge:
         )
 
 
-# call_cigar
-#
 # Call variants by alignment CIGAR parsing.
 rule call_cigar:
     input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
+        bed_trim='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
         tig_fa_name='temp/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
@@ -587,7 +572,7 @@ rule call_cigar:
 
         batch = int(wildcards.batch)
 
-        os.makedirs(os.path.dirname(output.bed_insdel), exist_ok=True)  # Random crashes with "FileNotFoundError", Snakemake not creating output directory?
+        os.makedirs(os.path.dirname(output.bed_insdel), exist_ok=True)
 
         # Read
         df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, keep_default_na=False, low_memory=False)
@@ -596,6 +581,37 @@ rule call_cigar:
 
         # Call
         df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap)
+
+        # Set FILTER
+        loc_dict = {  # Dictionary of alignment positions that were not removed by alignment trimming
+            row['ALIGN_INDEX']: (row['POS'], row['END'])
+                for index, row in pd.read_csv(input.bed_trim, sep='\t').iterrows()
+        }
+
+        def get_filter_tag(row):
+            """
+            Return a FILTER value for an alignment record based on the alignment index and reference positions. The
+            variant must be fully within a trimmed alignment record to PASS. "TRIM_REC": Alignment record was
+            removed by trimming. "TRIM_FLANK": Alignment record was trimmed and retained, but the variant exended past
+            the trimmed alignment (by reference coordinates).
+
+            :param row: Variant call row.
+
+            :return: String FILTER value.
+            """
+
+            pos, end = loc_dict.get(row['ALIGN_INDEX'], (None, None))
+
+            if pos is None or end is None:
+                return 'TRIM_REC'
+
+            if row['POS'] < pos or row['END'] > end:
+                return 'TRIM_FLANK'
+
+            return 'PASS'
+
+        df_snv['FILTER'] = df_snv.apply(get_filter_tag, axis=1)
+        df_insdel['FILTER'] = df_insdel.apply(get_filter_tag, axis=1)
 
         # Write
         df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')

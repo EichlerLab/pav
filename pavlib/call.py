@@ -82,9 +82,9 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
     :param match_tig: Match TIG_REGION contig name to the value in the filter tree for intersected intervals (filter
         tree values should be contig names for the interval). When set, only filters variants inside regions with a
         matching contig. This causes PAV to treat each contig as a separate haplotype.
-    :param reason: If not None, add "REASON" and "COMPOUND" columns to the  dropped variants. The REASON column is set
-        to this parameter's value, and the "COMPOUND" column is set to the variant IDs of regions in the filter tree
-        (second item in the data tuple, see above).
+    :param reason: If not None, add "FILTER", "REASON" and "COMPOUND" columns to the dropped variants.
+        FILTER is set to "COMPOUND", REASON is is set to this parameter's value, and the "COMPOUND" column is set to
+        the variant IDs of regions in the filter tree (second item in the data tuple, see above).
 
     :return: Filtered DataFrame.
     """
@@ -105,6 +105,7 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
 
         if intersect_set:
             if reason is not None:
+                row['FILTER'] = 'COMPOUND'
                 row['REASON'] = reason
                 row['COMPOUND'] = ','.join(val.data[1] for val in intersect_set)
 
@@ -116,7 +117,7 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
     if fail_list:
         df_fail = pd.concat(fail_list, axis=1).T
     else:
-        df_fail = pd.DataFrame([], columns=(list(df.columns) + (['REASON', 'COMPOUND'] if reason is not None else [])))
+        df_fail = pd.DataFrame([], columns=(list(df.columns) + (['FILTER', 'REASON', 'COMPOUND'] if reason is not None else [])))
 
     # Return tables
     return df.loc[sorted(pass_index_set)], df_fail

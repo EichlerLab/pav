@@ -9,8 +9,6 @@ _VCF_SVTYPE = {
 }
 
 
-# vcf_write_vcf
-#
 # Make VCF file.
 rule vcf_write_vcf:
     input:
@@ -59,6 +57,11 @@ rule vcf_write_vcf:
 
                 if df.shape[0] == 0:
                     continue
+
+                if 'FILTER' not in df.columns:
+                    df['FILTER'] = 'PASS'
+                else:
+                    df['FILTER'] = df['FILTER'].apply(lambda val: 'PASS' if val is None or val.strip() == '' else val)
 
                 df['VARTYPE'] = vartype.upper()
 

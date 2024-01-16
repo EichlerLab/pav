@@ -55,15 +55,10 @@ both do not need to be installed. PAV can create browser tracks for variant call
 browser tools are needed (bedToBigBed). Pre-compiled binaries can be obtained from
 http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/
 
-## Running PAV
+### Setting up the run directory
 
-There are two ways to run PAV.
+Link `Snakefile` from the SITE directory to the ANALYSIS directory.
 
-1. Run scripts: Execute through `rundist` and `runlocal`. This requires a little more configuration, but allows PAV to be quickly
-executed for a number of projects. This is the recommended way to run PAV.
-1. Snakemake direct: Execute by calling snakemake directly.
-
-Both methods are outlined below.
 
 ### Run scripts
 

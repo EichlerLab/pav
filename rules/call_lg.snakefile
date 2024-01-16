@@ -2,8 +2,6 @@
 Call alignment-truncating events (large SVs).
 """
 
-# call_merge_lg
-#
 # Merge variant calls from large SVs.
 rule call_merge_lg:
     input:
@@ -23,8 +21,6 @@ rule call_merge_lg:
         )
 
 
-# call_lg_discover
-#
 # Call alignment-truncating SVs.
 rule call_lg_discover:
     input:
@@ -42,7 +38,7 @@ rule call_lg_discover:
     params:
         k_size=lambda wildcards: int(get_config(wildcards, 'inv_k_size', 31)),
         inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True)
-    threads: lambda wildcards: int(get_config(wildcards, 'inv_threads_lg', 12))
+    threads: 12
     run:
 
         # Get SRS (state-run-smooth)
@@ -93,8 +89,6 @@ rule call_lg_discover:
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
 
 
-# call_lg_split
-#
 # Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
 rule call_lg_split:
     input:

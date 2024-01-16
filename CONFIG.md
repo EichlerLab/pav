@@ -32,7 +32,6 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 
 ### Alignments
 
-* map_threads [12; int]: Number of threads the aligner will use.
 * chrom_cluster [False; bool]: Use only if contigs are clustered by chromosome and if everything before the first "_" is
   the cluster name (e.g. "chr1_tig00001"). This feature was develoed to incoroprate QC information from PGAS
   (Porubski 2020, https://doi.org/10.1126/science.abf7117; Ebert 2021, https://doi.org/10.1126/science.abf7117), which
@@ -94,7 +93,6 @@ through its k-mer density
 * inv_k_size [31; int]: Use k-mers of this size when resolving inversion breakpoints. Contig k-mers are assigned to
   a reference state (FWD, REV, FWD+REV, NA) by matching k-mers of this size to reference k-mer sets over the
   same region.
-* inv_threads_lg [12; int]: Like `inv_threads`, but for large (alignment-truncating) inversion events.
 * lg_batch_count [10; int]: Run large variant detection (variants truncating alignments) in this many batches and
   run each batch as one job. Improves the speed of large inversion detection in a cluster environment.
 
@@ -108,7 +106,6 @@ inversion call.
 
 Parameters controlling inversion detection for small inversions:
 
-* inv_threads [4; int]: Scan for inversions using this many simultaneous threads to compute smoothed density
   plots for k-mer states (for breakpoint and structure resolution). This parameter is specifically for resolving
   inversions within aligned contigs (i.e. did not break contig into multiple alignment records).
 * inv_min_expand [1; int]: When searching for inversions, expand the search window at least this many times before
@@ -237,7 +234,6 @@ for the second parameter will give diminishing returns.
 * merge_inv [param merge_svindel]: Override default merging parameters for SV/indel inversions (INV). 
 * merge_svindel [nr::exact:ro(0.5):szro(0.5,200):match]: Override default merging parameters for INS, DEL, INV
 * merge_snv [nrsnv:exact]: Override default merging parameters for SNVs
-* merge_threads [12]: Number of threads to use while merging haplotypes.
 * inv_min [300]: Minimum inversion size.
 * inv_max [2000000]: Maximum inversion size.
 * inv_inner [False]: If True, allow small variant calls inside inversions. Variants will be in reference orientation, but some could be the result of poor alignments around inversion breakpoints.
@@ -245,7 +241,6 @@ for the second parameter will give diminishing returns.
 
 ### Call - INV
 * inv_k_size [31]: K-mer size for inversion density.
-* inv_threads [4]: Number of threads to use for detecting inversions (running density for inversions).
 * inv_region_limit [None]: Before an inversion is resolved, it is comes from a region with inversion signatures. If the
   region exceeds this size, then stop searching for an inversion.
 * inv_min_expand [1]: Expand the search region up to this many times when searching for an inversion and finding only
@@ -276,6 +271,5 @@ for the second parameter will give diminishing returns.
 
 ### Call - Large SV
 * inv_k_size [31]: K-mer size for inversion density.
-* inv_threads_lg [12]: Number of threads to use for detecting large inversions (running density for alignment-truncating inversions).
 * inv_region_limit [None]
 * lg_batch_count [10]

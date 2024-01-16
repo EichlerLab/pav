@@ -2,27 +2,11 @@
 Process alignments and alignment tiling paths.
 """
 
-#
-# Definitions
-#
-
-def _align_map_cpu(wildcards, config):
-
-    if 'map_threads' in config:
-        try:
-            return int(config['map_threads'])
-        except ValueError as ex:
-            raise ValueError('Config parameter "map_threads" is not an integer: {map_threads}'.format(**config))
-
-    return 12
-
 
 #
-# Alignment generation and processing
+# Rules
 #
 
-# align_trim_ref
-#
 # Cut contig alignment overlaps in reference coordinates
 rule align_trim_ref:
     input:
@@ -50,8 +34,6 @@ rule align_trim_ref:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# align_trim_tig
-#
 # Cut contig alignment overlaps in contig coordinates
 rule align_trim_tig:
     input:
@@ -79,8 +61,6 @@ rule align_trim_tig:
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 
-# align_get_read_bed
-#
 # Get alignment BED for one part (one aligned cell or split BAM) in one assembly.
 rule align_get_read_bed:
     input:
@@ -150,8 +130,6 @@ rule align_get_read_bed:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# align_map
-#
 # Map contigs as SAM. Pull read information from the SAM before sorting and writing CRAM since tool tend to change
 # "=X" to "M" in the CIGAR.
 rule align_map:
@@ -163,10 +141,9 @@ rule align_map:
     output:
         sam=temp('temp/{asm_name}/align/trim-none/aligned_tig_{hap}.sam.gz')
     params:
-        cpu=lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards)),
         aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2'),
         minimap2_params=lambda wildcards: get_config(wildcards, 'minimap2_params', '-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5')
-    threads: lambda wildcards: _align_map_cpu(wildcards, get_config(wildcards))
+    threads: 12
     run:
 
         # Get aligner
@@ -200,8 +177,6 @@ rule align_map:
                     """gzip > {output.sam}"""
                 )
 
-# align_uncompress_tig
-#
 # Uncompress contig for aligners that cannot read gzipped FASTAs.
 rule align_uncompress_tig:
     input:
@@ -218,8 +193,6 @@ rule align_uncompress_tig:
             with open(output.fa, 'w') as out_file:
                 pass
 
-# align_get_tig_fa
-#
 # Get FASTA files.
 rule align_get_tig_fa:
     input:
@@ -257,11 +230,9 @@ rule align_get_tig_fa:
 
 #
 # Utilities
-#
 # Not needed for PAV, but useful rules for troubleshooting.
-
-# align_get_cram_postcut
 #
+
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
 rule align_get_cram_postcut:
     input:
@@ -278,8 +249,6 @@ rule align_get_cram_postcut:
         """samtools view -T {input.ref_fa} -O CRAM -o {output.cram} && """
         """samtools index {output.cram}"""
 
-# align_get_cram_precut
-#
 # Reconstruct CRAM from alignment BED files before trimming redundantly mapped bases (post-cut).
 rule align_get_cram_precut:
     input:
