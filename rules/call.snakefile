@@ -10,22 +10,22 @@ Call variants from aligned contigs.
 # Separate variants into final BED and FA files and write to results.
 rule call_final_bed:
     input:
-        bed_ins='temp/{asm_name}/bed/merged/svindel_ins.bed.gz',
-        bed_del='temp/{asm_name}/bed/merged/svindel_del.bed.gz',
-        bed_inv='temp/{asm_name}/bed/merged/sv_inv.bed.gz',
-        bed_snv='temp/{asm_name}/bed/merged/snv_snv.bed.gz'
+        bed_ins='temp/{asm_name}/bed/merged/{stage}/svindel_ins.bed.gz',
+        bed_del='temp/{asm_name}/bed/merged/{stage}/svindel_del.bed.gz',
+        bed_inv='temp/{asm_name}/bed/merged/{stage}/sv_inv.bed.gz',
+        bed_snv='temp/{asm_name}/bed/merged/{stage}/snv_snv.bed.gz'
     output:
-        bed_snv_snv='results/{asm_name}/bed/snv_snv.bed.gz',
-        bed_indel_ins='results/{asm_name}/bed/indel_ins.bed.gz',
-        bed_indel_del='results/{asm_name}/bed/indel_del.bed.gz',
-        bed_sv_ins='results/{asm_name}/bed/sv_ins.bed.gz',
-        bed_sv_del='results/{asm_name}/bed/sv_del.bed.gz',
-        bed_sv_inv='results/{asm_name}/bed/sv_inv.bed.gz',
-        fa_indel_ins='results/{asm_name}/bed/fa/indel_ins.fa.gz',
-        fa_indel_del='results/{asm_name}/bed/fa/indel_del.fa.gz',
-        fa_sv_ins='results/{asm_name}/bed/fa/sv_ins.fa.gz',
-        fa_sv_del='results/{asm_name}/bed/fa/sv_del.fa.gz',
-        fa_sv_inv='results/{asm_name}/bed/fa/sv_inv.fa.gz'
+        bed_snv_snv='results/{asm_name}/bed/{stage}/snv_snv.bed.gz',
+        bed_indel_ins='results/{asm_name}/bed/{stage}/indel_ins.bed.gz',
+        bed_indel_del='results/{asm_name}/bed/{stage}/indel_del.bed.gz',
+        bed_sv_ins='results/{asm_name}/bed/{stage}/sv_ins.bed.gz',
+        bed_sv_del='results/{asm_name}/bed/{stage}/sv_del.bed.gz',
+        bed_sv_inv='results/{asm_name}/bed/{stage}/sv_inv.bed.gz',
+        fa_indel_ins='results/{asm_name}/bed/{stage}/fa/indel_ins.fa.gz',
+        fa_indel_del='results/{asm_name}/bed/{stage}/fa/indel_del.fa.gz',
+        fa_sv_ins='results/{asm_name}/bed/{stage}/fa/sv_ins.fa.gz',
+        fa_sv_del='results/{asm_name}/bed/{stage}/fa/sv_del.fa.gz',
+        fa_sv_inv='results/{asm_name}/bed/{stage}/fa/sv_inv.fa.gz'
     run:
 
         # Process INS/DEL/INV (SV and indel)
@@ -98,12 +98,14 @@ rule call_final_bed:
 rule call_merge_haplotypes:
     input:
         bed_batch=lambda wildcards: [
-            'temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'.format(
-                asm_name=wildcards.asm_name, vartype_svtype=wildcards.vartype_svtype, batch=batch
+            'temp/{asm_name}/bed/batch/{stage}/{vartype_svtype}/{batch}.bed.gz'.format(
+                asm_name=wildcards.asm_name, stage=wildcards.stage, vartype_svtype=wildcards.vartype_svtype, batch=batch
             ) for batch in range(MERGE_BATCH_COUNT)
         ]
     output:
-        bed=temp('temp/{asm_name}/bed/merged/{vartype_svtype}.bed.gz')
+        bed=temp('temp/{asm_name}/bed/merged/{stage}/{vartype_svtype}.bed.gz')
+    wildcard_constraints:
+        stage='pass|fail'
     run:
 
         df_list = [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch if os.stat(file_name).st_size > 0]
@@ -121,12 +123,14 @@ rule call_merge_haplotypes:
 rule call_merge_haplotypes_batch:
     input:
         tsv='data/ref/merge_batch.tsv.gz',
-        bed_var_h1='results/{asm_name}/bed/pre_merge/h1/{vartype_svtype}.bed.gz',
-        bed_var_h2='results/{asm_name}/bed/pre_merge/h2/{vartype_svtype}.bed.gz',
+        bed_var_h1='results/{asm_name}/bed/{stage}/h1/{vartype_svtype}.bed.gz',
+        bed_var_h2='results/{asm_name}/bed/{stage}/h2/{vartype_svtype}.bed.gz',
         callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
         callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
     output:
-        bed='temp/{asm_name}/bed/bychrom/{vartype_svtype}/{batch}.bed.gz'
+        bed='temp/{asm_name}/bed/batch/{stage}/{vartype_svtype}/{batch}.bed.gz'
+    wildcard_constraints:
+        stage='pass|fail'
     threads: 12
     run:
 
@@ -275,13 +279,14 @@ rule call_integrate_sources:
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
         bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
     output:
-        bed_ins='results/{asm_name}/bed/pre_merge/{hap}/svindel_ins.bed.gz',
-        bed_del='results/{asm_name}/bed/pre_merge/{hap}/svindel_del.bed.gz',
-        bed_inv='results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz',
-        bed_snv='results/{asm_name}/bed/pre_merge/{hap}/snv_snv.bed.gz',
-        bed_inv_drp='results/{asm_name}/bed/dropped/sv_inv_{hap}.bed.gz',
-        bed_insdel_drp='results/{asm_name}/bed/dropped/svindel_insdel_{hap}.bed.gz',
-        bed_snv_drp='results/{asm_name}/bed/dropped/snv_snv_{hap}.bed.gz'
+        bed_ins='results/{asm_name}/bed/pass/{hap}/svindel_ins.bed.gz',
+        bed_del='results/{asm_name}/bed/pass/{hap}/svindel_del.bed.gz',
+        bed_inv='results/{asm_name}/bed/pass/{hap}/sv_inv.bed.gz',
+        bed_snv='results/{asm_name}/bed/pass/{hap}/snv_snv.bed.gz',
+        bed_ins_drp='results/{asm_name}/bed/fail/{hap}/svindel_ins.bed.gz',
+        bed_del_drp='results/{asm_name}/bed/fail/{hap}/svindel_del.bed.gz',
+        bed_inv_drp='results/{asm_name}/bed/fail/{hap}/sv_inv.bed.gz',
+        bed_snv_drp='results/{asm_name}/bed/fail/{hap}/snv_snv.bed.gz'
     params:
         inv_min=lambda wildcards: get_config(wildcards, 'inv_min', 0),
         inv_max=lambda wildcards: get_config(wildcards, 'inv_max', 1e10),
@@ -495,8 +500,10 @@ rule call_integrate_sources:
         ### Write ###
 
         # Write: dropped variants
+        df_drp_insdel = pd.concat(insdel_drp_list)
         pd.concat(inv_drp_list).to_csv(output.bed_inv_drp, sep='\t', index=False, compression='gzip')
-        pd.concat(insdel_drp_list).to_csv(output.bed_insdel_drp, sep='\t', index=False, compression='gzip')
+        df_drp_insdel.loc[df_drp_insdel['SVTYPE'] == 'INS'].to_csv(output.bed_ins_drp, sep='\t', index=False, compression='gzip')
+        df_drp_insdel.loc[df_drp_insdel['SVTYPE'] == 'DEL'].to_csv(output.bed_del_drp, sep='\t', index=False, compression='gzip')
         pd.concat(snv_drp_list).to_csv(output.bed_snv_drp, sep='\t', index=False, compression='gzip')
 
         # Write: Passed variants

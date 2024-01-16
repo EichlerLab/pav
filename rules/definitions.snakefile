@@ -2,6 +2,7 @@
 
 # Variant call filters.
 FILTER_REASON = {
+    'PASS': 'Variant passed filters',
     'TIG_FILTER': 'Contig filter region (tig_filter_pattern)',
     'COMPOUND': 'Inside larger variant',
     'COMPOUND_INV': 'Inside a larger inversion',

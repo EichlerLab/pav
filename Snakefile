@@ -47,9 +47,7 @@ REF_FAI = REF_FA + '.fai'
 
 # Environment source file for shell commands
 
-env_file = config.get('env_source', 'setenv.sh')
-
-ENV_FILE = os.path.join(PIPELINE_DIR, 'config', env_file)
+ENV_FILE = config.get('env_source', 'setenv.sh')
 
 if not os.path.isfile(ENV_FILE):
     ENV_FILE = None
@@ -112,7 +110,7 @@ else:
 #
 
 if ENV_FILE:
-    shell.prefix('set -euo pipefail; source {}; '.format(ENV_FILE))
+    shell.prefix(f'set -euo pipefail; source {ENV_FILE}; ')
 else:
     shell.prefix('set -euo pipefail; ')
 
