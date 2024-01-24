@@ -240,7 +240,7 @@ rule call_merge_batch_table:
 # "slop" parameter). The flank is not added to the regions that are output.
 rule call_mappable_bed:
     input:
-        bed_align='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        bed_align='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
         bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
         bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
@@ -342,13 +342,14 @@ rule call_integrate_sources:
         ).reset_index(drop=True)
 
         df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
-        df_inv['FILTER'] = 'PASS'
+
+        if 'FILTER' not in df_inv.columns:  # TODO - Add FILTER in previous steps
+            df_inv['FILTER'] = 'PASS'
 
         # INV: Filter by contig blacklisted regions
         df_inv, df_inv_drp = pavlib.call.filter_by_tig_tree(df_inv, tig_filter_tree)
 
         df_inv_drp['FILTER'] = 'TIG_FILTER'
-        df_inv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
         df_inv_drp['COMPOUND'] = np.nan
         inv_drp_list.append(df_inv_drp)
 
@@ -356,14 +357,12 @@ rule call_integrate_sources:
         if inv_min is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] < inv_min].copy())
             inv_drp_list[-1]['FILTER'] = 'INV_MIN'
-            inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MIN'].format(inv_min)
             inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] >= inv_min].copy()
 
         if inv_max is not None:
             inv_drp_list.append(df_inv.loc[df_inv['SVLEN'] > inv_max].copy())
             inv_drp_list[-1]['FILTER'] = 'INV_MAX'
-            inv_drp_list[-1]['REASON'] = FILTER_REASON['INV_MAX'].format(inv_max)
             inv_drp_list[-1]['COMPOUND'] = np.nan
             df_inv = df_inv.loc[df_inv['SVLEN'] <= inv_max].copy()
 
@@ -390,7 +389,6 @@ rule call_integrate_sources:
                 for index, compound_id in inv_drp_index_set:
                     row_drp = df_inv.loc[index].copy()
                     row_drp['FILTER'] = 'COMPOUND_INV'
-                    row_drp['REASON'] = FILTER_REASON['COMPOUND_INV']
                     row_drp['COMPOUND'] = compound_id
 
                     row_drp_list.append(row_drp)
@@ -420,22 +418,25 @@ rule call_integrate_sources:
         df_lg_ins = pd.read_csv(input.bed_lg_ins, sep='\t', low_memory=False, keep_default_na=False)
         df_lg_del = pd.read_csv(input.bed_lg_del, sep='\t', low_memory=False, keep_default_na=False)
 
+        if 'FILTER' not in df_lg_ins.columns:  # TODO - Add FILTER in previous steps
+            df_lg_ins['FILTER'] = 'PASS'
+
+        if 'FILTER' not in df_lg_del.columns:  # TODO - Add FILTER in previous steps
+            df_lg_del['FILTER'] = 'PASS'
+
         # Large: Filter by tig regions
         df_lg_ins, df_ins_drp = pavlib.call.filter_by_tig_tree(df_lg_ins, tig_filter_tree)
         df_lg_del, df_del_drp = pavlib.call.filter_by_tig_tree(df_lg_del, tig_filter_tree)
 
         df_ins_drp['FILTER'] = 'TIG_FILTER'
-        df_ins_drp['REASON'] = FILTER_REASON['TIG_FILTER']
-
         df_del_drp['FILTER'] = 'TIG_FILTER'
-        df_del_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
         insdel_drp_list.append(df_ins_drp)
         insdel_drp_list.append(df_del_drp)
 
         # Large: Compound filter
-        df_lg_ins, df_ins_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
-        df_lg_del, df_del_drp = pavlib.call.filter_by_ref_tree(df_lg_del, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
+        df_lg_ins, df_ins_drp = pavlib.call.filter_by_ref_tree(df_lg_ins, filter_tree, match_tig=params.redundant_callset)
+        df_lg_del, df_del_drp = pavlib.call.filter_by_ref_tree(df_lg_del, filter_tree, match_tig=params.redundant_callset)
 
         insdel_drp_list.append(df_ins_drp)
         insdel_drp_list.append(df_del_drp)
@@ -451,29 +452,34 @@ rule call_integrate_sources:
         df_insdel = pd.read_csv(input.bed_cigar_insdel, sep='\t', low_memory=False, keep_default_na=False)
         df_snv = pd.read_csv(input.bed_cigar_snv, sep='\t', low_memory=False, keep_default_na=False)
 
+        if 'FILTER' not in df_insdel.columns:  # TODO - Add FILTER in previous steps
+            df_insdel['FILTER'] = 'PASS'
+
+        if 'FILTER' not in df_snv.columns:  # TODO - Add FILTER in previous steps
+            df_snv['FILTER'] = 'PASS'
+
         # CIGAR: Check column conformance among INS/DEL callsets (required for merging)
         if list(df_insdel.columns) != list(df_lg_ins.columns):
-            raise RuntimeError('Columns from CIGAR and large SV INS callsets do not match')
+            mismatch_set = ','.join(sorted(set(df_insdel.columns) ^ set(df_lg_ins.columns)))
+            raise RuntimeError(f'Columns from CIGAR and large SV INS callsets do not match: {mismatch_set}')
 
         if list(df_insdel.columns) != list(df_lg_del.columns):
-            raise RuntimeError('Columns from CIGAR and large SV DEL callsets do not match')
+            mismatch_set = ','.join(sorted(set(df_insdel.columns) ^ set(df_lg_ins.columns)))
+            raise RuntimeError(f'Columns from CIGAR and large SV DEL callsets do not match: {mismatch_set}')
 
         # CIGAR: Filter by tig regions
         df_insdel, df_insdel_drp = pavlib.call.filter_by_tig_tree(df_insdel, tig_filter_tree)
         df_snv, df_snv_drp = pavlib.call.filter_by_tig_tree(df_snv, tig_filter_tree)
 
         df_insdel_drp['FILTER'] = 'TIG_FILTER'
-        df_insdel_drp['REASON'] = FILTER_REASON['TIG_FILTER']
-
         df_snv_drp['FILTER'] = 'TIG_FILTER'
-        df_snv_drp['REASON'] = FILTER_REASON['TIG_FILTER']
 
         insdel_drp_list.append(df_insdel_drp)
         snv_drp_list.append(df_snv_drp)
 
         # CIGAR: Compound filter
-        df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
-        df_snv, df_snv_drp = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset, reason=FILTER_REASON['COMPOUND'])
+        df_insdel, df_insdel_drp = pavlib.call.filter_by_ref_tree(df_insdel, filter_tree, match_tig=params.redundant_callset)
+        df_snv, df_snv_drp = pavlib.call.filter_by_ref_tree(df_snv, filter_tree, match_tig=params.redundant_callset)
 
         insdel_drp_list.append(df_insdel_drp)
         snv_drp_list.append(df_snv_drp)
@@ -500,7 +506,7 @@ rule call_integrate_sources:
         ### Write ###
 
         # Write: dropped variants
-        df_drp_insdel = pd.concat(insdel_drp_list)
+        df_drp_insdel = pd.concat(insdel_drp_list, axis=0, ignore_index=True)
         pd.concat(inv_drp_list).to_csv(output.bed_inv_drp, sep='\t', index=False, compression='gzip')
         df_drp_insdel.loc[df_drp_insdel['SVTYPE'] == 'INS'].to_csv(output.bed_ins_drp, sep='\t', index=False, compression='gzip')
         df_drp_insdel.loc[df_drp_insdel['SVTYPE'] == 'DEL'].to_csv(output.bed_del_drp, sep='\t', index=False, compression='gzip')
@@ -570,7 +576,7 @@ rule call_cigar_merge:
 rule call_cigar:
     input:
         bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
-        bed_trim='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        bed_trim='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
         tig_fa_name='temp/{asm_name}/align/contigs_{hap}.fa.gz'
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
@@ -591,7 +597,7 @@ rule call_cigar:
 
         # Set FILTER
         loc_dict = {  # Dictionary of alignment positions that were not removed by alignment trimming
-            row['ALIGN_INDEX']: (row['POS'], row['END'])
+            row['INDEX']: (row['POS'], row['END'])
                 for index, row in pd.read_csv(input.bed_trim, sep='\t').iterrows()
         }
 

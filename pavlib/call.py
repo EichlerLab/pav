@@ -67,7 +67,7 @@ def val_per_hap(df, df_h1, df_h2, col_name, delim=';'):
     )
 
 
-def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
+def filter_by_ref_tree(df, filter_tree, match_tig=False):
     """
     Filter DataFrame by a dict (keyed by chromosome) of interval trees.
 
@@ -82,15 +82,12 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
     :param match_tig: Match TIG_REGION contig name to the value in the filter tree for intersected intervals (filter
         tree values should be contig names for the interval). When set, only filters variants inside regions with a
         matching contig. This causes PAV to treat each contig as a separate haplotype.
-    :param reason: If not None, add "FILTER", "REASON" and "COMPOUND" columns to the dropped variants.
-        FILTER is set to "COMPOUND", REASON is is set to this parameter's value, and the "COMPOUND" column is set to
-        the variant IDs of regions in the filter tree (second item in the data tuple, see above).
 
     :return: Filtered DataFrame.
     """
 
     if df.shape[0] == 0:
-        return df, pd.DataFrame([], columns=(list(df.columns) + (['REASON', 'COMPOUND'] if reason is not None else [])))
+        return df, pd.DataFrame([], columns=(list(df.columns) + [col for col in ['COMPOUND'] if col not in df.columns]))
 
     # Separate pass/fail
     pass_index_set = set()
@@ -104,10 +101,8 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
             intersect_set = {record for record in intersect_set if record.data[0] != tig_name}
 
         if intersect_set:
-            if reason is not None:
-                row['FILTER'] = 'COMPOUND'
-                row['REASON'] = reason
-                row['COMPOUND'] = ','.join(val.data[1] for val in intersect_set)
+            row['FILTER'] = 'COMPOUND'
+            row['COMPOUND'] = ','.join(val.data[1] for val in intersect_set)
 
             fail_list.append(row)
         else:
@@ -117,7 +112,7 @@ def filter_by_ref_tree(df, filter_tree, match_tig=False, reason=None):
     if fail_list:
         df_fail = pd.concat(fail_list, axis=1).T
     else:
-        df_fail = pd.DataFrame([], columns=(list(df.columns) + (['FILTER', 'REASON', 'COMPOUND'] if reason is not None else [])))
+        df_fail = pd.DataFrame([], columns=(list(df.columns) + [col for col in ['COMPOUND'] if col not in df.columns]))
 
     # Return tables
     return df.loc[sorted(pass_index_set)], df_fail

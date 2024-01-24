@@ -7,13 +7,28 @@ Process alignments and alignment tiling paths.
 # Rules
 #
 
+# Create a depth BED file for alignments.
+rule align_depth_bed:
+    input:
+        bed='results/{asm_name}/align/trim-{trim}/aligned_tig_{hap}.bed.gz'
+    output:
+        bed='results/{asm_name}/align/trim-{trim}/depth_tig_{hap}.bed.gz'
+    run:
+
+        pavlib.align.align_bed_to_depth_bed(
+            pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),
+            svpoplib.ref.get_df_fai(REF_FAI)
+        ).to_csv(
+            output.bed, sep='\t', index=False, compression='gzip'
+        )
+
 # Cut contig alignment overlaps in reference coordinates
-rule align_trim_ref:
+rule align_trim_tigref:
     input:
         bed='results/{asm_name}/align/trim-tig/aligned_tig_{hap}.bed.gz',
         tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz'
     params:
         min_trim_tig_len=lambda wildcards: np.int32(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
@@ -21,15 +36,12 @@ rule align_trim_ref:
 
         # Trim alignments
         df = pavlib.align.trim_alignments(
-            pd.read_csv(input.bed, sep='\t'),  # Untrimmed alignment BED
+            pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
             params.min_trim_tig_len,  # Minimum contig length
             input.tig_fai,  # Path to alignment FASTA FAI
             match_tig=params.redundant_callset,  # Redundant callset, trim reference space only for records with matching IDs
             mode='ref'
         )
-
-        # Add batch ID for CIGAR calling (calls in batches)
-        df['CALL_BATCH'] = df['INDEX'].apply(lambda val: val % pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -48,14 +60,11 @@ rule align_trim_tig:
 
         # Trim alignments
         df = pavlib.align.trim_alignments(
-            pd.read_csv(input.bed, sep='\t'),  # Untrimmed alignment BED
+            pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
             params.min_trim_tig_len,  # Minimum contig length
             input.tig_fai,  # Path to alignment FASTA FAI
             mode='tig'
         )
-
-        # Add batch ID for CIGAR calling (calls in batches)
-        df['CALL_BATCH'] = df['INDEX'].apply(lambda val: val % pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -126,6 +135,9 @@ rule align_get_read_bed:
                         line = next(in_file)
                     except StopIteration:
                         break
+
+        # Add batch ID for CIGAR calling (calls in batches)
+        df['CALL_BATCH'] = df['INDEX'].apply(lambda val: val % pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -234,30 +246,15 @@ rule align_get_tig_fa:
 #
 
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
-rule align_get_cram_postcut:
+rule align_get_cram:
     input:
-        bed='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
-        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        align_head='results/{asm_name}/align/trim-none/aligned_tig_{hap}.headers.gz',
-        ref_fa='data/ref/ref.fa.gz'
-
-    output:
-        cram='results/{asm_name}/align/aligned_tig_{hap}.cram'
-    shell:
-        """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
-            """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} | """
-        """samtools view -T {input.ref_fa} -O CRAM -o {output.cram} && """
-        """samtools index {output.cram}"""
-
-# Reconstruct CRAM from alignment BED files before trimming redundantly mapped bases (post-cut).
-rule align_get_cram_precut:
-    input:
-        bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
+        bed='results/{asm_name}/align/trim-{trim}/aligned_tig_{hap}.bed.gz',
         fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         align_head='results/{asm_name}/align/trim-none/aligned_tig_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:
-        cram='results/{asm_name}/align/trim-none/aligned_tig_{hap}.cram'
+        cram='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram',
+        crai='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram.crai'
     shell:
         """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
             """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} | """

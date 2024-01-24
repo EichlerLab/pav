@@ -63,21 +63,6 @@ def _track_get_input_bed(wildcards):
             for svtype in input_svtype
     ]
 
-def _get_align_bed(wildcards):
-
-    if wildcards.align_stage == 'pre-cut':
-        return [
-            'results/{asm_name}/align/pre-cut/aligned_tig_h1.bed.gz'.format(asm_name=wildcards.asm_name),
-            'results/{asm_name}/align/pre-cut/aligned_tig_h2.bed.gz'.format(asm_name=wildcards.asm_name)
-        ]
-
-    if wildcards.align_stage == 'post-cut':
-        return [
-            'results/{asm_name}/align/aligned_tig_h1.bed.gz'.format(asm_name=wildcards.asm_name),
-            'results/{asm_name}/align/aligned_tig_h2.bed.gz'.format(asm_name=wildcards.asm_name)
-        ]
-
-    raise RuntimeError('Unknown align_stage wildcard: '.format(wildcards.align_stage))
 
 #
 # Variant calls
@@ -162,36 +147,40 @@ rule tracks_hap_call:
 # Alignment track BED to BigBed.
 rule tracks_align_bb:
     input:
-        bed='temp/{asm_name}/tracks/align/{align_stage}.bed',
-        asfile='temp/{asm_name}/tracks/align/{align_stage}.as',
-        fai=REF_FAI
+        bed='temp/{asm_name}/tracks/align/tig_align_trim-{trim}.bed',
+        asfile='temp/{asm_name}/tracks/align/tig_align_trim-{trim}.as'
     output:
-        bb='tracks/{asm_name}/align/{align_stage}.bb'
+        bb='tracks/{asm_name}/align/tig_align_trim-{trim}.bb'
     shell:
-        """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {input.fai} {output.bb}"""
+        """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {REF_FAI} {output.bb}"""
 
 # Alignment tracks.
 rule tracks_align:
     input:
-        bed=_get_align_bed
+        bed_h1='results/{asm_name}/align/trim-{trim}/aligned_tig_h1.bed.gz',
+        bed_h2='results/{asm_name}/align/trim-{trim}/aligned_tig_h2.bed.gz'
     output:
-        bed=temp('temp/{asm_name}/tracks/align/{align_stage}.bed'),
-        asfile=temp('temp/{asm_name}/tracks/align/{align_stage}.as')
+        bed=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.bed'),
+        asfile=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.as')
     wildcard_constraints:
-        align_stage='(pre|post)-cut'
+        trim='none|tig|tigref'
     run:
 
         # Get track description
-        if wildcards.align_stage == 'pre-cut':
+        if wildcards.trim == 'none':
             track_desc_short = 'PreTrim'
             track_description = 'Pre-trimmed alignments'
 
-        elif wildcards.align_stage == 'post-cut':
-            track_desc_short = 'PostTrim'
-            track_description = 'Post-trimmed alignments'
+        elif wildcards.trim == 'tig':
+            track_desc_short = 'TrimTig'
+            track_description = 'Alignments (contig trimmed)'
+
+        elif wildcards.trim == 'tigref':
+            track_desc_short = 'TrimTigRef'
+            track_description = 'Alignments (contig & ref trimmed)'
 
         else:
-            raise RuntimeError('Unknown align_stage wildcard: '.format(wildcards.align_stage))
+            raise RuntimeError('Unknown trim wildcard: '.format(wildcards.trim))
 
         # Read field table
         df_as = pd.read_csv(
@@ -201,7 +190,7 @@ rule tracks_align:
 
         # Read variants
         df = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
+            [pd.read_csv(file_name, sep='\t') for file_name in [input.bed_h1, input.bed_h2]],
             axis=0
         ).sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'])
 

@@ -1,7 +1,8 @@
 # PAV changes
 
-## 2.3.5
+## 2.4.0
 * Split alignment trimming into distinct "tig" and "ref" phases (BED for each).
+* Keeping dropped variants and writing to VCF.
 * Added ".fna" and ".fnq" to recognized file types.
 * Moving to Snakemake profile. Removed threading parameters from config (map_threads, inv_threads_lg, inv_threads)
   Configure in the profile instead of parameters.

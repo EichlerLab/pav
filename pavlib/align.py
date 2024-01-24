@@ -29,6 +29,236 @@ TC_CLIPS_BP = 9
 TC_CLIPH_BP = 10
 
 
+def align_bed_to_depth_bed(df, df_fai=None):
+    """
+    Get a BED file of alignment depth from an alignment BED.
+
+    Output columns:
+    * #CHROM: Reference chromosome.
+    * POS: Reference start position (BED coordinates).
+    * END: Reference end position (BED coordinates).
+    * DEPTH: Number of alignment records. Integer, may be 0.
+    * QUERY: Query names. Comma-separated list if multiple queries.
+    * INDEX: Query indexes in the same order as QUERIES (corresponding INDEX column in df).
+
+    If `df_fai` is not 'None', then depth records extend from 0 to the end of the chromosome. If the first record does
+    not reach position 0, a 0-depth record is added over that region. Similarly, if the last record does not reach the
+    end of the chromosome, a 0-depth record is added over that region. If `df_fai` is `None`, then no padding is done
+    to the start or end of the chromosome and 0-depth records only appear between alignment records.
+
+    :param df: Alignment BED file.
+    :param df_fai: FAI series (keys = reference contigs, values = contig length).
+
+    :return: A Pandas DataTable with depth across all reference loci.
+    """
+
+    # Get a list of alignment events (start and end alignment record)
+
+    # Build an ordered list of alignments.
+    # align_list is a list of tuples:
+    #  0) Chromosome
+    #  1) Event position
+    #  2) Event type (1 is align start, 0 is align end)
+    #  3) Align record index. Removes the correct alignment from the aligned contig list when an alignment record ends.
+    #  4) Contig ID: List of contig IDs in the aligned region (comma-sepaated list). Each alignment start goes to the
+    #     end of the list, and each alignment end removes the element from the list that it added even if the contig
+    #     ID is the same.
+
+    align_list = list()
+
+    for index, row in df.iterrows():
+        align_list.append(
+            (str(row['#CHROM']), row['POS'], 1, row['INDEX'], row['QUERY_ID'], row['INDEX'])
+        )
+
+        align_list.append(
+            (str(row['#CHROM']), row['END'], 0, row['INDEX'], row['QUERY_ID'], row['INDEX'])
+        )
+
+    if not align_list:
+        raise RuntimeError('No alignments to process')
+
+    align_list = sorted(align_list)
+
+    if align_list[0][2] != 1:
+        raise RuntimeError(f'First alignment is not a record start: {",".join([str(val) for val in align_list[0]])}')
+
+    # Setup to process BED records
+    df_bed_list = list()
+
+    last_chrom = None
+    last_pos = None
+    qry_list = list()
+
+    # Write empty records for reference contigs with no alignments
+    if df_fai is not None:
+        tig_fai_list = list(sorted(df_fai.index.astype(str)))
+
+        while len(tig_fai_list) > 0 and tig_fai_list[0] < align_list[0][0]:
+            df_bed_list.append(
+                pd.Series(
+                    [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                    index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                )
+            )
+
+            tig_fai_list = tig_fai_list[1:]
+
+        if len(tig_fai_list) == 0 or tig_fai_list[0] != align_list[0][0]:
+            raise RuntimeError(f'Missing {align_list[0][0]} in FAI or out of order')
+
+    else:
+        tig_fai_list = None
+
+    # Process BED records
+    for chrom, pos, event, index, qry, row_index in align_list:
+
+        # Chromosome change
+        if chrom != last_chrom:
+
+            # Check sanity
+            if qry_list:
+                raise RuntimeError(f'Switched chromosome ({last_chrom} > {chrom}) with open queries: {", ".join(qry_list)}')
+
+            # Check chromosome order
+            if df_fai is not None:
+
+                # Check chromosome in FAI
+                if chrom not in df_fai.index:
+                    raise RuntimeError(f'Missing chromosome in reference FAI index: {chrom}')
+
+                # Write empty records for reference contigs with no alignments
+                while len(tig_fai_list) > 0 and tig_fai_list[0] < chrom:
+                    df_bed_list.append(
+                        pd.Series(
+                            [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                            index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                        )
+                    )
+
+                    tig_fai_list = tig_fai_list[1:]
+
+                if len(tig_fai_list) == 0 or tig_fai_list[0] != chrom:
+                    raise RuntimeError(f'Missing {chrom} in FAI or out of order')
+
+                tig_fai_list = tig_fai_list[1:]
+
+                # Add record up to end of chromosome
+                if last_chrom is not None:
+                    if last_pos > df_fai[last_chrom]:
+                        raise RuntimeError(f'Last END position for chromosome {last_chrom} is greater than chromosome length: {last_pos} > {df_fai[last_chrom]}')
+
+                    if last_pos < df_fai[last_chrom]:
+                        df_bed_list.append(
+                            pd.Series(
+                                [
+                                    last_chrom, last_pos, df_fai[last_chrom], len(qry_list),
+                                    ','.join([val[1] for val in qry_list]),
+                                    ','.join([str(val[0]) for val in qry_list])
+                                ],
+                                index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                            )
+                        )
+
+            # Add chrom:0-pos record
+            if df_fai is not None and pos > 0:
+                df_bed_list.append(
+                    pd.Series(
+                        [
+                            chrom, 0, pos, len(qry_list),
+                            ','.join([val[1] for val in qry_list]),
+                            ','.join([str(val[0]) for val in qry_list])
+                        ],
+                        index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                    )
+                )
+
+            # Set state for the next alignment
+            last_chrom = chrom
+            last_pos = pos
+
+        # Check position sanity
+        if last_pos > pos:
+            raise RuntimeError(f'Position out of order: {last_chrom}:{last_pos} > {chrom}:{pos}')
+
+        # Write last record
+        if pos > last_pos:
+            df_bed_list.append(
+                pd.Series(
+                    [
+                        chrom, last_pos, pos, len(qry_list),
+                        ','.join([val[1] for val in qry_list]),
+                        ','.join([str(val[0]) for val in qry_list])
+                    ],
+                    index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                )
+            )
+
+            last_pos = pos
+
+        # Process event
+        if event == 1:
+            qry_list.append((index, qry))
+
+        elif event == 0:
+            n = len(qry_list)
+
+            if n == 0:
+                raise RuntimeError(f'Got END event with no queries in the list: {chrom},{pos},{event},{index},{qry}')
+
+            qry_list = [val for val in qry_list if val != (index, qry)]
+
+            if len(qry_list) == n:
+                raise RuntimeError(f'Could not find query to END in query list: {chrom},{pos},{event},{index},{qry}')
+
+            if len(qry_list) < n - 1:
+                raise RuntimeError(f'END removed multiple queries: {chrom},{pos},{event},{index},{qry}')
+
+        else:
+            raise RuntimeError(f'Unknown event type {event}: {chrom},{pos},{event},{index},{qry}')
+
+    # Check final state
+    if qry_list:
+        raise RuntimeError(f'Ended alignment records with open queries: {", ".join(qry_list)}')
+
+    if df_fai is not None:
+        if last_chrom not in df_fai.index:
+            raise RuntimeError(f'Missing chromosomem in reference FAI index: {chrom}')
+
+        # Add final record up to end of chromosome
+        if last_pos > df_fai[last_chrom]:
+            raise RuntimeError(f'Last END position for chromosome {last_chrom} is greater than chromosome length: {last_pos} > {df_fai[last_chrom]}')
+
+        if last_pos < df_fai[last_chrom]:
+            df_bed_list.append(
+                pd.Series(
+                    [
+                        last_chrom, last_pos, df_fai[last_chrom], len(qry_list),
+                        ','.join([val[1] for val in qry_list]),
+                        ','.join([str(val[0]) for val in qry_list])
+                    ],
+                    index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                )
+            )
+
+        # Write empty records for reference contigs with no alignments
+        while len(tig_fai_list) > 0:
+
+            df_bed_list.append(
+                pd.Series(
+                    [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                    index=['#CHROM', 'POS', 'END', 'DEPTH', 'QUERY', 'INDEX']
+                )
+            )
+
+            tig_fai_list = tig_fai_list[1:]
+
+    # Create BED file
+    df_bed = pd.concat(df_bed_list, axis=1).T
+
+    return df_bed
+
+
 def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both'):
     """
     Do alignment trimming from prepared alignment BED file. This BED contains information about reference and

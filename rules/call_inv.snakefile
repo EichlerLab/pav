@@ -98,7 +98,7 @@ rule call_inv_batch_merge:
 rule call_inv_batch:
     input:
         bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
-        bed_aln='results/{asm_name}/align/aligned_tig_{hap}.bed.gz',
+        bed_aln='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
         tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
@@ -625,7 +625,7 @@ rule call_inv_cluster:
         # Read
         df = pd.concat(
             [pd.read_csv(
-                input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN'),
+                input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN', 'FILTER'),
                 low_memory=False, dtype={'#CHROM': str}
             ) for input_file_name in input.bed],
             axis=0
