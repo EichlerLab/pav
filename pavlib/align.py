@@ -2105,7 +2105,7 @@ def get_align_bed(align_file, df_tig_fai, hap, chrom_cluster=False, min_mapq=0):
                     '0x{:04x}'.format(record.flag),
 
                     hap,
-                    record.cigarstring
+                    strip_cigar(record.cigarstring)
                 ],
                 index=[
                     '#CHROM', 'POS', 'END',
@@ -2158,3 +2158,35 @@ def get_align_bed(align_file, df_tig_fai, hap, chrom_cluster=False, min_mapq=0):
 
     # Return BED
     return df
+
+
+def strip_cigar(cigar, strip_op={'S', 'H'}, front=True, back=True):
+    """
+    Strip CIGAR clipping.
+
+    :param cigar: Cigar string or a list of cigar tuples (cigar_len, cigar_op).
+    :param strip_op: Operations to strip from each end of the cigar string. Defaults to clipping operations.
+    :param front: Strip from the front end of the CIGAR string.
+    :param back: Strip from the back end of the CIGAR string.
+
+    :return: A stripped CIGAR string either as a string (if `cigar` is not a list) or a list of CIGAR operation
+        tuples (if `cigar` is a list of operations).
+    """
+
+    is_list = type(cigar) == list
+
+    if not is_list:
+        cigar = cigar_str_to_tuples(row)
+
+    if front:
+        while len(cigar) > 0 and cigar[0][1] in strip_op:
+            cigar = cigar[1:]
+
+    if back:
+        while len(cigar) > 0 and cigar[-1][1] in strip_op:
+            cigar = cigar[:-1]
+
+    if not is_list:
+        cigar = ''.join([''.join([str(cigar_len), cigar_op]) for cigar_len, cigar_op in cigar])
+
+    return cigar
