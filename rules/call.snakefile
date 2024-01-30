@@ -123,12 +123,16 @@ rule call_merge_haplotypes:
 rule call_merge_haplotypes_batch:
     input:
         tsv='data/ref/merge_batch.tsv.gz',
-        bed_var_h1='results/{asm_name}/bed/{stage}/h1/{vartype_svtype}.bed.gz',
-        bed_var_h2='results/{asm_name}/bed/{stage}/h2/{vartype_svtype}.bed.gz',
-        callable_h1='results/{asm_name}/callable/callable_regions_h1_500.bed.gz',
-        callable_h2='results/{asm_name}/callable/callable_regions_h2_500.bed.gz'
+        bed_var=lambda wildcards: [
+            'results/{asm_name}/bed/{filter}/{hap}/{vartype_svtype}.bed.gz'.format(hap=hap, **wildcards)
+                for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+        ],
+        bed_callable=lambda wildcards: [
+            'results/{asm_name}/callable/callable_regions_{hap}_500.bed.gz'.format(hap=hap, **wildcards)
+                for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+        ]
     output:
-        bed='temp/{asm_name}/bed/batch/{stage}/{vartype_svtype}/{batch}.bed.gz'
+        bed='temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{batch}.bed.gz'
     wildcard_constraints:
         stage='pass|fail'
     threads: 12
@@ -156,8 +160,9 @@ rule call_merge_haplotypes_batch:
         for chrom in df_batch['CHROM']:
             df_list.append(
                 pavlib.call.merge_haplotypes(
-                    input.bed_var_h1, input.bed_var_h2,
-                    input.callable_h1, input.callable_h2,
+                    input.bed_var,
+                    input.bed_callable,
+                    pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE),
                     config_def,
                     threads=threads,
                     chrom=chrom,

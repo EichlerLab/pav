@@ -15,6 +15,43 @@ from Bio import SeqIO
 import Bio.bgzf
 
 
+def get_hap_list(asm_name, asm_table):
+    """
+    Get a list of haplotypes for an assembly name.
+
+    :param asm_name: Assembly name.
+    :param asm_table: Assembly table (assemblies.tsv) as a Pandas DataFrame.
+    :param config: Pipeline config dictionary.
+    """
+
+    # Check values
+    if asm_name is None or asm_name.strip() == '':
+        raise RuntimeError('Cannot get assembly config: "asm_name" is missing')
+
+    asm_name = asm_name.strip()
+
+    # Get assembly table entry
+    if asm_name not in asm_table.index:
+        raise RuntimeError(f'Assembly name not found in the sample config: {asm_name}')
+
+    asm_table_entry = asm_table.loc[asm_name]
+
+    # Find haplotypes for a table entry
+    hap_list = list()
+
+    for col in asm_table_entry.index:
+        match = re.search(f'^HAP(\d+)', col)
+
+        if match:
+            if not pd.isnull(asm_table_entry[col]) and asm_table_entry[col].strip() != '':
+                hap_list.append(f'h{match[1]}')
+
+    if len(hap_list) == 0:
+        raise RuntimeError(f'No haplotypes found for assembly {asm_name}: All hap columns are missing or empty')
+
+    return hap_list
+
+
 def get_asm_config(asm_name, hap, asm_table, config):
     """
     Get a dictionary of parameters and paths for one assembly.
@@ -41,17 +78,15 @@ def get_asm_config(asm_name, hap, asm_table, config):
     hap = hap.strip()
 
     # Get assembly table entry
-    if asm_name in asm_table.index:
-        asm_source = 'table'
-        asm_table_entry = asm_table.loc[asm_name]
-    else:
-        asm_source = 'config'
-        asm_table_entry = None
+    if asm_name not in asm_table.index:
+        raise RuntimeError(f'No assembly table entry: {asm_name}')
+
+    asm_table_entry = asm_table.loc[asm_name]
 
     # Get config override
     config_string = None
 
-    if asm_table_entry is not None and 'CONFIG' in asm_table_entry:
+    if 'CONFIG' in asm_table_entry:
         config_string = asm_table_entry['CONFIG']
 
         if not pd.isnull(config_string) and config_string is not None:
@@ -65,41 +100,26 @@ def get_asm_config(asm_name, hap, asm_table, config):
     config_override = get_config_override_dict(config_string)
     config = get_config_with_override(config, config_override)
 
-    # Get input filename pattern (table takes precedence over config)
-    if asm_source == 'table':
+    # Get input filename pattern
+    haplotype_col = re.sub('^h', 'HAP', hap)
 
-        # Get haplotype
-        haplotype_col = re.sub('^h', 'HAP', hap)
-
-        if haplotype_col not in asm_table_entry:
-            raise RuntimeError(
-                'Cannot get assembly config: No haplotype column "{}" in assembly table for haplotype "{}"'.format(
-                    haplotype_col, hap
-                )
+    if haplotype_col not in asm_table_entry:
+        raise RuntimeError(
+            'Cannot get assembly config: No haplotype column "{}" in assembly table for haplotype "{}"'.format(
+                haplotype_col, hap
             )
+        )
 
-        filename_pattern = asm_table_entry[haplotype_col]
+    filename_pattern = asm_table_entry[haplotype_col]
 
-        if not pd.isnull(filename_pattern):
-            filename_pattern = filename_pattern.strip()
+    if not pd.isnull(filename_pattern):
+        filename_pattern = filename_pattern.strip()
 
-            if not filename_pattern:
-                filename_pattern = None
-        else:
+        if not filename_pattern:
             filename_pattern = None
-
     else:
-        # Get from config pattern
-        filename_pattern = config.get('asm_pattern', None)
+        filename_pattern = None
 
-        if filename_pattern is None:
-            raise RuntimeError('Cannot get assembly config: {}: No assembly table entry and no "asm_pattern" in config and no matching assembly table entry'.format(asm_name))
-
-        if '{asm_name}' not in filename_pattern:
-            raise RuntimeError('Cannot get contig filter BED: {}: Missing {{asm_name}} wildcard in config["asm_pattern"]: {}'.format(asm_name, filename_pattern))
-
-        if '{hap}' not in filename_pattern and hap != 'h1':
-            filname_pattern = None
 
     # Get filter
     tig_filter_pattern = None
@@ -147,7 +167,6 @@ def get_asm_config(asm_name, hap, asm_table, config):
     return {
         'asm_name': asm_name,
         'hap': hap,
-        'asm_source': asm_source,
         'filename_pattern': filename_pattern,
         'tig_filter_bed': tig_filter_bed,
         'tig_filter_source': tig_filter_source,
@@ -172,8 +191,6 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
     asm_config = get_asm_config(asm_name, hap, asm_table, config)
     config = get_config_with_override(config, asm_config['config_override'])
 
-    record_source = asm_config['asm_source']
-
     filename_pattern = asm_config['filename_pattern']
 
     # Return empty list if there are no paths
@@ -190,52 +207,10 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
         if not file_name:
             continue
 
-        # Check for "parent" wildcard (hifiasm-trio)
-        if '{parent}' in file_name:
-
-            if hap == 'h1':
-                parent = 'mat'
-            elif hap == 'h2':
-                parent = 'pat'
-            else:
-                raise RuntimeError('"Cannot get input file for {asm_name} with "{{parent}}" pattern: Haplotype must be "h1" or "h2": Found {hap}: {file_name}'.format(asm_name=asm_name, file_name=file_name, hap=hap))
-
-        else:
-            parent = None
-
-        # Check for required fields if the record comes from a config entry (must have asm_name and hap or parent)
-        if record_source == 'config':
-
-            if '{asm_name}' not in file_name:
-                raise RuntimeError('Cannot get input file for {asm_name}: Path from config "asm_name" must have {{asm_name}} wildcard: {file_name}'.format(asm_name=asm_name, file_name=file_name))
-
-            if '{hap}' not in file_name and parent is None and hap != 'h1':
-                return list()
-
-        if '{sample}' in file_name:
-            delim = config.get('sample_delimiter', '_')
-
-            if delim == '.':
-                delim = '\.'
-
-            elif delim not in {'_', '-', '+', '#'}:
-                raise RuntimeError('Sample delimiter in config ("sample_delimiter") must be one of "_", ".", "-", "+", "#": {}'.format(delim))
-
-            re_match = re.match('^([^{delim}]+){delim}.*'.format(delim=delim), asm_name)
-
-            if re_match is None:
-                raise RuntimeError('"Cannot get input fasta for {asm_name}: "asm_pattern" contains wildcard {{sample}}, but sample cannot be extracted from the assembly name (expected to be at the start of the assembly name and separated by an underscore): {file_name}'.format(asm_name=asm_name, file_name=file_name))
-
-            sample = re_match[1]
-        else:
-            sample = None
-
         # Create filename
         file_name_parsed = file_name.format(
-            sample=sample,
             asm_name=asm_name,
             hap=hap,
-            parent=parent
         )
 
         if not os.path.isfile(file_name_parsed):
@@ -246,10 +221,8 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
                 alt_hap = re.sub('^h', 'hap', hap)
 
                 file_name_parsed_alt = file_name.format(
-                    sample=sample,
                     asm_name=asm_name,
                     hap=alt_hap,
-                    parent=parent
                 )
 
                 if os.path.isfile(file_name_parsed_alt):
@@ -435,7 +408,7 @@ def input_tuples_to_fasta(file_name_tuples, out_file_name):
                 for record in svpoplib.seq.gfa_to_record_iter(file_name):
 
                     if record.id in record_id_set:
-                        raise RuntimeError(f'Duplicate record ID in input: {record_id}')
+                        raise RuntimeError(f'Duplicate record ID in input: {record.id}')
 
                     record_id_set.add(record.id)
 

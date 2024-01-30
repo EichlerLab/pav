@@ -14,29 +14,18 @@ plotted with rules in this file. These may be useful for reporting results or tr
 ### Input functions ###
 #######################
 
-def fig_input_inv_tuples(asm_name):
+def fig_input_inv_tuples(asm_name, filter, hap_list):
 
-    # Read variants
-    df = pd.read_csv(f'results/{asm_name}/bed/sv_inv.bed.gz', sep='\t')
-
-    # Sort variant IDs into lists by original haplotype
-    hap_list = collections.defaultdict(list)
-
-    for index, row in df.iterrows():
-        for inv_id, hap in zip(row['HAP_VARIANTS'].split(';'), row['HAP'].split(';')):
-            hap_list[hap].append(inv_id)
-
-    # Get tuples
     tuple_list = list()
 
-    for hap in hap_list.keys():
-        df_inv = pd.read_csv(f'results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz', sep='\t')
-
-        for index, row in df_inv.iterrows():
+    for hap in hap_list:
+        for index, row in pd.read_csv(
+            f'results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz', sep='\t', usecols=('ID', 'CALL_SOURCE')
+        ).iterrows():
             call_source, den_flag = row['CALL_SOURCE'].split('-')
 
             tuple_list.append((
-                row['ID'], row['HAP'], call_source, den_flag
+                row['ID'], hap, call_source, den_flag
             ))
 
     return tuple_list
@@ -45,16 +34,24 @@ def fig_input_inv_all_dot(wildcards):
     """
     Get an iterator for all dotplot output file names for an assembly.
     """
-    for inv_id, hap, call_source, den_flag in fig_input_inv_tuples(wildcards.asm_name):
-        yield f'figures/inv/{wildcards.asm_name}/{inv_id}_{hap}_dot.{wildcards.ext}'
+
+    for inv_id, hap, call_source, den_flag in fig_input_inv_tuples(
+        wildcards.asm_name, wildcards.filter,
+        pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+    ):
+        yield f'figures/inv/{wildcards.asm_name}/{wildcards.filter}/{inv_id}_{hap}_dot.{wildcards.ext}'
 
 def fig_input_inv_all_den(wildcards):
     """
     Get an iterator for all dotplot output file names for an assembly.
     """
-    for inv_id, hap, call_source, den_flag in fig_input_inv_tuples(wildcards.asm_name):
-        if den_flag == 'DEN':
-            yield f'figures/inv/{wildcards.asm_name}/{inv_id}_{hap}_den.{wildcards.ext}'
+
+    for inv_id, hap, call_source, den_flag in fig_input_inv_tuples(
+        wildcards.asm_name, wildcards.filter,
+        pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+    ):
+        if den_flag != 'NODEN':
+            yield f'figures/inv/{wildcards.asm_name}/{wildcards.filter}/{inv_id}_{hap}_den.{wildcards.ext}'
 
 
 
@@ -70,7 +67,7 @@ rule figures_inv_all:
         fig_dot=fig_input_inv_all_dot,
         fig_den=fig_input_inv_all_den
     output:
-        flag=touch('temp/flag/fig/all_{asm_name}_{ext}.flag')
+        flag=touch('temp/flag/fig/{asm_name}_{filter}_{ext}.flag')
 
 
 ###############
@@ -83,9 +80,9 @@ rule figures_inv_all:
 rule figures_inv_den:  # Replacing with one rule per dot or density
     input:
         tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        bed_inv='results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz'
+        bed_inv='results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz'
     output:
-        fig_den='figures/inv/{asm_name}/{inv_id}_{hap}_den.{ext}'
+        fig_den='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_den.{ext}'
     run:
 
         # Read inversion calls and get record
@@ -152,11 +149,11 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
 # Inversion dotplot.
 rule figures_inv_dot:
     input:
-        bed_inv='results/{asm_name}/bed/pre_merge/{hap}/sv_inv.bed.gz',
+        bed_inv='results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz',
         tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:
-        fig_dot='figures/inv/{asm_name}/{inv_id}_{hap}_dot.{ext}'
+        fig_dot='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_dot.{ext}'
     run:
 
         pad_region = 0.20  # Pad each end by this proportion when extracting regions.

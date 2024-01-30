@@ -47,7 +47,7 @@ rule call_lg_discover:
         # Read
         df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM":str,"QUERY_ID":str}) # changed by Peng Jia
         df_tig_fai = svpoplib.ref.get_df_fai(input.fai)
-        df_tig_fai.index=[f"{i}" for i in  df_tig_fai.index] # added by Peng Jia
+        df_tig_fai.index = [f"{i}" for i in  df_tig_fai.index] # added by Peng Jia
 
         # Subset to alignment records in this batch
         df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM":str,"TIG": str})  # changed by Peng Jia

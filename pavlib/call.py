@@ -259,14 +259,13 @@ def right_homology(pos_tig, seq_tig, seq_sv):
     return hom_len
 
 
-def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, config_def, threads=1, chrom=None, is_inv=None):
+def merge_haplotypes(bed_list, callable_list, hap_list, config_def, threads=1, chrom=None, is_inv=None):
     """
     Merge haplotypes for one variant type.
 
-    :param h1_file_name: h1 variant call BED file name.
-    :param h2_file_name: h2 variant call BED file name.
-    :param h1_callable: h1 callable region BED file name.
-    :param h2_callable: h2 callable region BED file name.
+    :param bed_list: List of input BED files.
+    :param callable_list: List of callable reference loci in BED files.
+    :param hap_list: List of haplotypes.
     :param config_def: Merge definition.
     :param threads: Number of threads for each merge.
     :param chrom: Chromosome to merge or `None` to merge all chromosomes in one step.
@@ -275,16 +274,22 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
     :return: A dataframe of variant calls.
     """
 
+    # Check input
+    if len(bed_list) != len(callable_list):
+        raise RuntimeError(f'Input BED list length ({len(bed_list)}) does not match callable BED list length: ({len(callable_list)})')
+
+    if len(bed_list) != len(hap_list):
+        raise RuntimeError(f'Input BED list length ({len(bed_list)}) does not match the haplotype name list length: ({len(hap_list)})')
+
     # Merge
     df = svpoplib.svmerge.merge_variants(
-        bed_list=[h1_file_name, h2_file_name],
-        sample_names=['h1', 'h2'],
+        bed_list=bed_list,
+        sample_names=hap_list,
         strategy=config_def,
         threads=threads,
         subset_chrom=chrom
     )
 
-    #df.set_index(df['ID'].apply(lambda val: val.rsplit('.', 1)[0]), inplace=True, drop=False)
     df.set_index('ID', inplace=True, drop=False)
     df.index.name = 'INDEX'
 
@@ -338,15 +343,13 @@ def merge_haplotypes(h1_file_name, h2_file_name, h1_callable, h2_callable, confi
             df['HAP_MATCH'] = df['HAP_MATCH'].apply(lambda val: ';'.join(val.split(',')))
 
         # Add h1 and h2 to columns
-        df_h1 = svpoplib.pd.read_csv_chrom(h1_file_name, chrom=chrom, sep='\t', low_memory=False)
-        df_h1.set_index('ID', inplace=True, drop=False)
-        df_h1['CLUSTER_MATCH'].fillna('NA', inplace=True)
-        df_h1 = df_h1.astype(str)
+        for index in range(len(bed_list)):
+            hap = hap_list[index]
 
-        df_h2 = svpoplib.pd.read_csv_chrom(h2_file_name, chrom=chrom, sep='\t', low_memory=False)
-        df_h2.set_index('ID', inplace=True, drop=False)
-        df_h2['CLUSTER_MATCH'].fillna('NA', inplace=True)
-        df_h2 = df_h2.astype(str)
+            df_bed = svpoplib.pd.read_csv_chrom(bed_list[index], chrom=chrom, sep='\t', low_memory=False)
+            df_bed.set_index('ID', inplace=True, drop=False)
+            df_bed['CLUSTER_MATCH'].fillna('NA', inplace=True)
+            df_bed = df_bed.astype(str)
 
         df['TIG_REGION'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
         df['QUERY_STRAND'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
