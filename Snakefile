@@ -70,39 +70,18 @@ import kanapy
 # Read sample config
 #
 
-ASM_TABLE_FILE_NAME = config.get('assembly_table', None)
+ASM_TABLE_FILENAME = config.get('assembly_table', None)
 
-if ASM_TABLE_FILE_NAME is None and os.path.isfile('assemblies.tsv'):
-    ASM_TABLE_FILE_NAME = 'assemblies.tsv'
+if ASM_TABLE_FILENAME is None and os.path.isfile('assemblies.tsv'):
+    ASM_TABLE_FILENAME = 'assemblies.tsv'
 
-if ASM_TABLE_FILE_NAME is None:
-    # Empty table
-    ASM_TABLE = pd.DataFrame([], columns=('NAME', 'HAP1', 'HAP2'))
+if ASM_TABLE_FILENAME is None and os.path.isfile('assemblies.xlsx'):
+    ASM_TABLE_FILENAME = 'assemblies.xlsx'
 
-else:
-    # Read table
+if ASM_TABLE_FILENAME is None:
+    raise RuntimeError('No input assembly table in config ("assembly_table") and the default table filename was not found ("assemblies.tsv")')
 
-    if not os.path.isfile(ASM_TABLE_FILE_NAME):
-        raise RuntimeError('Missing assembly table: {}'.format(ASM_TABLE_FILE_NAME))
-
-    ASM_TABLE = pd.read_csv(ASM_TABLE_FILE_NAME, sep='\t', header=0)
-
-    if 'NAME' not in ASM_TABLE.columns:
-        raise RuntimeError('Missing assembly table column: NAME')
-
-    if ('HAP1' not in ASM_TABLE.columns or 'HAP2' not in ASM_TABLE.columns) and 'HAP0' not in ASM_TABLE.columns:
-        raise RuntimeError('Assembly table must contain both "HAP1" and "HAP2" columns, or the "HAP0" column: {}'.format(', '.join(ASM_TABLE.columns)))
-
-    DUP_ASM_LIST = [assembly_name for assembly_name, count in collections.Counter(ASM_TABLE['NAME']).items() if count > 1]
-
-    if DUP_ASM_LIST:
-        raise RuntimeError('Found {} duplicate assembly names in table "{}": {}'.format(
-            len(DUP_ASM_LIST), ASM_TABLE_FILE_NAME, ', '.join(DUP_ASM_LIST)
-        ))
-
-    del(DUP_ASM_LIST)
-
-    ASM_TABLE.set_index('NAME', inplace=True, drop=False)
+ASM_TABLE = pavlib.pipeline.read_assembly_table(ASM_TABLE_FILENAME, config)
 
 
 #

@@ -1191,12 +1191,15 @@ def cigar_str_to_tuples(record):
     """
     Get an iterator for cigar operation tuples. Each tuple is (cigar-len, cigar-op).
 
-    :param record: Alignment record.
+    :param record: Alignment record or a CIGAR string.
 
     :return: Iterator of CIGAR operation tuples.
     """
 
-    cigar = record['CIGAR']
+    if type(record) == pd.Series:
+        cigar = record['CIGAR']
+    else:
+        cigar = record
 
     pos = 0
     max_pos = len(cigar)
@@ -2176,7 +2179,7 @@ def strip_cigar(cigar, strip_op={'S', 'H'}, front=True, back=True):
     is_list = type(cigar) == list
 
     if not is_list:
-        cigar = cigar_str_to_tuples(row)
+        cigar = list(cigar_str_to_tuples(cigar))
 
     if front:
         while len(cigar) > 0 and cigar[0][1] in strip_op:

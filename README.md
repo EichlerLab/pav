@@ -86,45 +86,6 @@ is adjust to look for it).
 If you have one assembly per sample (unphased), then leave HAP2 blank for those samples or give it a path to a 0-byte
 file.
 
-#### asm_pattern in config.json
-
-Use this method if you have multiple assemblies in a consistent path structure. With this method, it is possible to
-process hundreds of assemblies without creating an entry in `assembly_table.tsv` for each one.
-
-Two wildcards will need to be inserted into the path, "asm_name" and "hap". "asm_name" can be any name for the assembly
-or sample. "hap" must be "h1" and "h2". The input path goes into `config.json` parameter `asm_pattern`.
-
-For example:
-
-```
-{
-  "reference": "/path/to/hg38.no_alt.fa.gz",
-  "asm_pattern": "/path/to/assemblies/{asm_name}/{hap}.fa.gz"
-}
-```
-
-In this example, if an assembly with `asm_name` "HG00733" is run, then PAV will expect to find two files:
-
-1. /path/to/assemblies/HG00733_CCS_SS_PG_PRR/h1.fa.gz
-1. /path/to/assemblies/HG00733_CCS_SS_PG_PRR/h2.fa.gz
-
-If there is no "hap" or "parent" (see below) wildcard in the path, it is treated as an unphased assembly by PAV and
-PAV inputs the assembly into `h1` and never tries to read `h2`.
-
-##### hifiasm-trio
-
-To support hifiasm-trio, you may substitute the "parent" wildcard for "hap" (do not include both "hap" and "parent"
-wildcards). In this case, "mat" becomes and alias for "h1", and "pat" becomes an alias for "h2" when searching for
-files. The PAV output will still contain "h1" and "h2" for the maternal and paternal haplotypes, respectively.
-
-##### sample wildcard
-
-Optionally, "sample" may be a wildcard in the path. When PAV sees this, it assumes the sample name is the first part of
-"asm_name" delimited by underscores. For example, if "asm_name" is "HG00733_CCS_SS_PG_PRR", then "sample" is "HG00733".
-This was a feature used mainly for HGSVC where we used a "sample/assembly" directory structure (e.g.
-`assemblies/HG00733/HG00733_CCS_SS_PG_PRR_h1.fa.gz` from pattern `assemblies/{sample}/{asm_name}_{hap}.fa.gz`).
-This may be useful for consorita with several assemblies per sample.
-
 ### Additional configuration parameters
 
 Additional information about configuration parameters for `config.json` can be found in `CONFIG.md`.

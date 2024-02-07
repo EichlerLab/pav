@@ -640,7 +640,7 @@ class SeqCache:
         retrieved, cached, and returned.
 
         :param sequence_id: Sequence ID string or Region.
-        :param is_rev: `True` if the sequence is reverse-complemeted. Retrieving the same sequence ID as the cached
+        :param is_rev: `True` if the sequence is reverse-complemented. Retrieving the same sequence ID as the cached
             sequence with `is_rev` mismatch will reload the sequence in the requested orientation.
 
         :return: Sequence.

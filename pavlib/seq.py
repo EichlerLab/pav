@@ -76,15 +76,22 @@ class Region:
 
     def __repr__(self):
         """
-        :return: Coordinate string in 0-based half-open coordinates (BED).
+        :return: Coordinate string in 1-based closed coordinates (Samtools, UCSC browser).
         """
-        return '{}:{}-{}'.format(self.chrom, self.pos, self.end)
+
+        return self.to_base1_string()
 
     def to_base1_string(self):
         """
         :return: Coordinate string in 1-based closed coordinates (Samtools, UCSC browser).
         """
         return '{}:{}-{}'.format(self.chrom, self.pos + 1, self.end)
+
+    def to_bed_string(self):
+        """
+        :return: Coordinate string in 0-based closed coordinates (BED).
+        """
+        return '{}\t{}\t{}'.format(self.chrom, self.pos + 1, self.end)
 
     def __len__(self):
         """

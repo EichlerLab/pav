@@ -4,6 +4,7 @@ PAV pipeline utilities.
 Functions for finding data.
 """
 
+import collections
 import numpy as np
 import os
 import pandas as pd
@@ -37,14 +38,11 @@ def get_hap_list(asm_name, asm_table):
     asm_table_entry = asm_table.loc[asm_name]
 
     # Find haplotypes for a table entry
-    hap_list = list()
-
-    for col in asm_table_entry.index:
-        match = re.search(f'^HAP(\d+)', col)
-
-        if match:
-            if not pd.isnull(asm_table_entry[col]) and asm_table_entry[col].strip() != '':
-                hap_list.append(f'h{match[1]}')
+    hap_list = [
+        col[len('HAP_'):]
+            for col in asm_table_entry[~ pd.isnull(asm_table_entry)].index
+            if col.startswith('HAP_')
+    ]
 
     if len(hap_list) == 0:
         raise RuntimeError(f'No haplotypes found for assembly {asm_name}: All hap columns are missing or empty')
@@ -52,14 +50,15 @@ def get_hap_list(asm_name, asm_table):
     return hap_list
 
 
-def get_asm_config(asm_name, hap, asm_table, config):
+def get_asm_config(asm_name, hap, asm_table, config, asm_config):
     """
     Get a dictionary of parameters and paths for one assembly.
 
     :param asm_name: Assembly name.
-    :param hap: Haplotype (h1, h2).
-    :param asm_table: Assembly table (assemblies.tsv) as a Pandas DataFrame.
+    :param hap: Haplotype name (e.g. "h1", "h2").
+    :param asm_table: Assembly table.
     :param config: Pipeline config dictionary.
+    :param asm_config: Assembly configuration column extracted from the assembly input table.
     """
 
     config = config.copy()  # Altered by overridden configuration options
@@ -68,49 +67,37 @@ def get_asm_config(asm_name, hap, asm_table, config):
     if hap is None or hap.strip() == '':
         raise RuntimeError('Cannot get assembly config: "hap" is missing')
 
-    if not re.match('^h\d+$', hap):
-        raise RuntimeError('Cannot get assembly config: "hap" is malformed: Expected "h" followed by an integer: {hap}'.format(hap=hap))
-
     if asm_name is None or asm_name.strip() == '':
         raise RuntimeError('Cannot get assembly config: "asm_name" is missing')
 
     asm_name = asm_name.strip()
     hap = hap.strip()
 
-    # Get assembly table entry
     if asm_name not in asm_table.index:
         raise RuntimeError(f'No assembly table entry: {asm_name}')
 
+    if hap not in asm_table.columns:
+        raise RuntimeError(f'No haplotype in assembly table columns: {hap}')
+
+    # Get assembly table entry
     asm_table_entry = asm_table.loc[asm_name]
 
     # Get config override
-    config_string = None
+    if asm_config is not None:
+        config_string = asm_config.get(asm_name, '')
+    else:
+        config_string = ''
 
-    if 'CONFIG' in asm_table_entry:
-        config_string = asm_table_entry['CONFIG']
-
-        if not pd.isnull(config_string) and config_string is not None:
-            config_string = config_string.strip()
-
-            if not config_string:
-                config_string = None
-        else:
-            config_string = None
+    if not pd.isnull(config_string) and len(config_string.strip()) > 0:
+        config_string = config_string.strip()
+    else:
+        config_string = None
 
     config_override = get_config_override_dict(config_string)
     config = get_config_with_override(config, config_override)
 
-    # Get input filename pattern
-    haplotype_col = re.sub('^h', 'HAP', hap)
-
-    if haplotype_col not in asm_table_entry:
-        raise RuntimeError(
-            'Cannot get assembly config: No haplotype column "{}" in assembly table for haplotype "{}"'.format(
-                haplotype_col, hap
-            )
-        )
-
-    filename_pattern = asm_table_entry[haplotype_col]
+    # Get filename pattern
+    filename_pattern = asm_table_entry[hap]
 
     if not pd.isnull(filename_pattern):
         filename_pattern = filename_pattern.strip()
@@ -119,7 +106,6 @@ def get_asm_config(asm_name, hap, asm_table, config):
             filename_pattern = None
     else:
         filename_pattern = None
-
 
     # Get filter
     tig_filter_pattern = None
@@ -529,3 +515,134 @@ def get_override_config(config, asm_name, asm_table):
         return config
 
     return get_config_with_override(config, get_config_override_dict(asm_table_entry['CONFIG']))
+
+
+def read_assembly_table(asm_table_filename, config):
+    """
+    Read assembly table.
+
+    Returns a tuple of 3 elements:
+        0) Assembly input table with asm_name (sample) as the key and haplotype names as the columns [pandas.DataFrame].
+        1) The configuration column from the input (all NaN/NA if the config column was not present) [pandas.Series].
+        3) A map from haplotype names to original column names for generating errors and information related to the
+           original input table [dict].
+
+    The table returned by this function renames the input columns (e.g. "HAP1" or "HAP_h1") to the haplotype name (e.g.
+    "h1") and keeps them in the order they were found in the input table. All other columns are removed.
+
+    :param asm_table_filename: Input filename to read. If None, produce an empty table.
+    :param config: Pipeline configuration.
+
+    :return: A tuple of the haplotype input table, configuration column (Series), and hap to column name map.
+    """
+
+    if asm_table_filename is None:
+        raise RuntimeError('Cannot read assembly table: None')
+
+    asm_table_filename = asm_table_filename.strip()
+
+    if not os.path.isfile(asm_table_filename):
+        raise RuntimeError(f'Assembly table file missing or is not a regular file: {asm_table_filename}')
+
+    if config is None:
+        config = dict()
+
+    ignore_cols = set(config.get('ignore_cols', set())) | {'CONFIG'}
+
+    # Read table
+    if not os.path.isfile(asm_table_filename):
+        raise RuntimeError('Missing assembly table: {}'.format(asm_table_filename))
+
+    filename_lower = asm_table_filename.lower()
+
+    if filename_lower.endswith(('.tsv', '.tsv.gz', '.tsv.txt', 'tsv.txt.gz')):
+        df = pd.read_csv(asm_table_filename, sep='\t', header=0)
+    elif filename_lower.endswith('.xlsx'):
+        df = pd.read_excel(asm_table_filename, header=0)
+    elif filename_lower.endswith(('.csv', '.csv.gz', '.csv.txt', '.csv.txt.gz')):
+        df = pd.read_csv(asm_table_filename, header=0)
+    else:
+        raise RuntimeError(f'Unrecoginized table file type (expected ".tsv", ".tsv.gz", ".xlsx", ".csv", ".csv.gz"): {asm_table_filename}')
+
+    # Check for required columns
+    if 'NAME' not in df.columns:
+        raise RuntimeError('Missing assembly table column: NAME')
+
+    df.set_index('NAME', inplace=True)
+
+    if 'CONFIG' not in df.columns:
+        df['CONFIG'] = np.nan
+
+    # Map haplotype names to column names
+    hap_list = list()
+    hap_col_map = dict()
+    filter_list = list()
+    unknown_cols = list()
+
+    col_set = set()
+
+    for col in df.columns:
+
+        if col in ignore_cols:
+            continue
+
+        if col in col_set:
+            raise RuntimeError(f'Duplicate column name "{col}" found in assembly table: {asm_table_filename}')
+
+        match_hap_named = re.search(r'^HAP_(\w+)$', col)
+        match_hap_num = re.search(r'^HAP(\d+)$', col)
+        match_filter = re.search(r'^FILTER_(\w+)$', col)
+
+        if match_hap_named:
+            hap = match_hap_named[1]
+        elif match_hap_num:
+            hap = f'h{match_hap_num[1]}'
+        elif match_filter:
+            filter_list.append(col)
+            continue
+        else:
+            unknown_cols.append(col)
+            continue
+
+        hap_list.append(hap)
+
+        if hap in hap_col_map:
+            if col != hap_col_map[hap]:
+                dup_source = f'(duplicate column {col})'
+            else:
+                dup_source = f'(derived from columns {hap_col_map[hap]} and {col})'
+
+            raise RuntimeError(f'Duplicate haplotype name "{hap}" found in assembly table {dup_source}: {asm_table_filename}')
+
+        hap_col_map[hap] = col
+
+    if unknown_cols:
+        col_list = ', '.join(unknown_cols[:5]) + '...' if len(unknown_cols) > 5 else ''
+        raise RuntimeError(f'Unknown columns in assembly table: {col_list}: {asm_table_filename}')
+
+    # Check for duplicate assemblies
+    dup_asm_list = [assembly_name for assembly_name, count in collections.Counter(df.index).items() if count > 1]
+
+    if dup_asm_list:
+        raise RuntimeError(f'Found {len(dup_asm_list)} duplicate assembly names "{", ".join(dup_asm_list)}": {asm_table_filename}')
+
+    # Set index and column names
+    df_hap = df[[hap_col_map[hap] for hap in hap_list]]
+    df_hap.columns = [f'HAP_{hap}' for hap in hap_list]
+
+    df_filter = df[filter_list]
+
+    filter_hap_map = {
+        'FILTER_' + (val[len('HAP_'):] if val.startswith('HAP_') else val): 'FILTER_' + key
+            for key, val in hap_col_map.items()
+    }
+
+    missing_set = {col for col in df_filter.columns if col not in filter_hap_map}
+
+    if missing_set:
+        missing_str = ', '.join(sorted(missing_set)[:3]) + ('...' if len(missing_set) > 3 else '')
+        raise RuntimeError(f'Found {len(missing_set)} filter columns that do not match haplotype input columns: {missing_str}: {asm_table_filename}')
+
+    df_filter.columns = [filter_hap_map[col] for col in df_filter.columns]
+
+    return pd.concat([df_hap, df_filter, df[['CONFIG']]], axis=1)
