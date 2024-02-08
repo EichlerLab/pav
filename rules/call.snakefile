@@ -2,6 +2,26 @@
 Call variants from aligned contigs.
 """
 
+import collections
+import numpy as np
+import os
+import pandas as pd
+import sys
+
+import Bio.bgzf
+import Bio.SeqIO
+
+import pavlib
+import svpoplib
+
+global ASM_TABLE
+global MERGE_BATCH_COUNT
+global REF_FA
+global get_config
+
+global expand
+global intervaltree
+global temp
 
 #
 # Finalize variant calls
@@ -59,7 +79,7 @@ rule call_final_bed:
 
             # Write FASTA
             with Bio.bgzf.BgzfWriter(fa_file_name, 'wb') as out_file:
-                SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
+                Bio.SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
 
             del(df['SEQ'])
 
@@ -69,8 +89,8 @@ rule call_final_bed:
                 head_cols=[
                     '#CHROM', 'POS', 'END', 'ID',
                     'SVTYPE', 'SVLEN', 'REF', 'ALT',
-                    'HAP', 'GT', 'CLUSTER_MATCH', 'CALL_SOURCE',
-                    'TIG_REGION', 'QUERY_STRAND', 'ALIGN_INDEX'
+                    'HAP', 'GT', 'CALL_SOURCE',
+                    'TIG_REGION', 'QRY_STRAND', 'ALIGN_INDEX'
                     'CI',
                 ],
                 tail_cols=[
@@ -255,7 +275,7 @@ rule call_mappable_bed:
 
         # Get flank param
         try:
-            flank = np.int32(wildcards.flank)
+            flank = int(wildcards.flank)
 
         except ValueError:
             raise RuntimeError('Flank parameter is not an integer: {flank}'.format(**wildcards))
@@ -282,7 +302,10 @@ rule call_integrate_sources:
         bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
         bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
-        bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz'
+        bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz',
+        bed_filter=lambda wildcards: pavlib.pipeline.get_asm_config(
+            wildcards.asm_name, wildcards.hap, ASM_TABLE, config
+        )['filter_input']
     output:
         bed_ins='results/{asm_name}/bed/pass/{hap}/svindel_ins.bed.gz',
         bed_del='results/{asm_name}/bed/pass/{hap}/svindel_del.bed.gz',
@@ -320,13 +343,11 @@ rule call_integrate_sources:
         # Read tig filter (if present)
         tig_filter_tree = None
 
-        if 'tig_filter_pattern' in local_config:
+        if len(input.bed_filter) > 0:
+            tig_filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-            tig_filter_file = local_config['tig_filter_pattern'].format(**wildcards)
-
-            if os.path.isfile(tig_filter_file):
-                tig_filter_tree = collections.defaultdict(intervaltree.IntervalTree)
-                df_filter = pd.read_csv(tig_filter_file, sep='\t', header=None, comment='#', usecols=(0, 1, 2))
+            for filter_filename in input.bed_filter:
+                df_filter = pd.read_csv(filter_filename, sep='\t', header=None, comment='#', usecols=(0, 1, 2))
                 df_filter.columns = ['#CHROM', 'POS', 'END']
 
                 for index, row in df_filter.iterrows():

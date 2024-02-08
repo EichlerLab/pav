@@ -5,10 +5,18 @@ The rules in this snakefile may not generate variant calls. The pipeline should 
 plotted with rules in this file. These may be useful for reporting results or troubleshooting.
 """
 
-#
-# Inversions
-#
+import numpy as np
+import os
+import pandas as pd
+import pysam
 
+import pavlib
+import svpoplib
+
+global ASM_TABLE
+global REF_FA
+global REF_FAI
+global touch
 
 #######################
 ### Input functions ###

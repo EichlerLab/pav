@@ -2,6 +2,21 @@
 Call alignment-truncating events (large SVs).
 """
 
+import collections
+import intervaltree
+import os
+import pandas as pd
+
+import pavlib
+import svpoplib
+
+global REF_FA
+global get_config
+
+global expand
+global temp
+
+
 # Merge variant calls from large SVs.
 rule call_merge_lg:
     input:
@@ -45,23 +60,22 @@ rule call_lg_discover:
         srs_tree = pavlib.inv.get_srs_tree(get_config(wildcards, 'srs_list', None, True))  # If none, tree contains a default for all region sizes
 
         # Read
-        df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM":str,"QUERY_ID":str}) # changed by Peng Jia
+        df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM": str, "QRY_ID": str})
         df_tig_fai = svpoplib.ref.get_df_fai(input.fai)
-        df_tig_fai.index = [f"{i}" for i in  df_tig_fai.index] # added by Peng Jia
 
         # Subset to alignment records in this batch
-        df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM":str,"TIG": str})  # changed by Peng Jia
+        df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM": str, "TIG": str})
         df_group = df_group.loc[df_group['BATCH'] == int(wildcards.batch)]
 
         group_set = set(df_group[['CHROM', 'TIG']].apply(tuple, axis=1))
 
         if df.shape[0] > 0:
-            df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QUERY_ID']) in group_set, axis=1)]
+            df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QRY_ID']) in group_set, axis=1)]
 
         # Get trees of N bases
         n_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        df_n = pd.read_csv(input.bed_n, sep='\t', dtype={"#CHROM":str})  # changed by Peng Jia
+        df_n = pd.read_csv(input.bed_n, sep='\t', dtype={"#CHROM": str})
 
         for index, row in df_n.iterrows():
             n_tree[row['#CHROM']][row['POS']:row['END']] = True
@@ -103,7 +117,7 @@ rule call_lg_split:
         df = pd.read_csv(input.bed, sep='\t')
 
         # Get ref/tig pairs with multiple mappings
-        tig_map_count = collections.Counter(df[['#CHROM', 'QUERY_ID']].apply(tuple, axis=1))
+        tig_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
 
         df_group_list = list()
 

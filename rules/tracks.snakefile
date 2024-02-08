@@ -2,6 +2,17 @@
 Prepare UCSC tracks for data.
 """
 
+import os
+import pandas as pd
+
+import svpoplib
+
+global PIPELINE_DIR
+global REF_FAI
+
+global temp
+
+
 #
 # Definitions
 #
@@ -105,20 +116,9 @@ rule tracks_hap_call:
         df.sort_values(['#CHROM', 'POS', 'END'], inplace=True)
 
         # Select table columns
-        if 'QUERY_ID' in df.columns:
-            del(df['QUERY_ID'])
-
-        if 'QUERY_POS' in df.columns:
-            del(df['QUERY_POS'])
-
-        if 'QUERY_END' in df.columns:
-            del(df['QUERY_END'])
-
-        if 'QUERY_STRAND' in df.columns:
-            del(df['QUERY_STRAND'])
-
-        if 'SEQ' in df.columns:
-            del(df['SEQ'])
+        for col in ('QRY_ID', 'QRY_POS', 'QRY_END', 'QRY_MAPPED', 'QRY_STRAND', 'SEQ'):
+            if col in df.columns:
+                del(df[col])
 
         # Read FAI and table columns
         df_fai = svpoplib.ref.get_df_fai(input.fai)
@@ -192,12 +192,12 @@ rule tracks_align:
         df = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in [input.bed_h1, input.bed_h2]],
             axis=0
-        ).sort_values(['#CHROM', 'POS', 'END', 'QUERY_ID'])
+        ).sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'])
 
         # Add BED fields
         df['POS_THICK'] = df['POS']
         df['END_THICK'] = df['END']
-        df['ID'] = df['QUERY_ID']
+        df['ID'] = df['QRY_ID']
         df['SCORE'] = 1000
         df['COL'] = df['HAP'].apply(lambda val: ALIGN_COLOR.get(val, '0,0,0'))
         df['STRAND'] = df['REV'].apply(lambda val: '-' if val else '+')

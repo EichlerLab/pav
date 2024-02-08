@@ -2,6 +2,13 @@
 Data files including reference and data tables for the reference.
 """
 
+import gzip
+import os
+
+import Bio.SeqIO
+
+import pavlib
+import svpoplib
 
 #
 # Reference contig data table

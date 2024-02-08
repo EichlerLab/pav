@@ -2,12 +2,28 @@
 Rules for writing VCF output.
 """
 
+import gzip
+import numpy as np
+import os
+import pandas as pd
+
+import Bio.SeqIO
+
+import pavlib
+import svpoplib
+
+global FILTER_REASON
+global VCF_PATTERN
+global get_config
+
+global shell
+
+
 _VCF_SVTYPE = {
     'sv': ('ins', 'del', 'inv'),
     'indel': ('ins', 'del'),
     'snv': ('snv', )
 }
-
 
 # Make VCF file.
 rule vcf_write_vcf:
@@ -36,7 +52,7 @@ rule vcf_write_vcf:
         fa_sv_inv_fail='results/{asm_name}/bed/fail/fa/sv_inv.fa.gz',
         ref_tsv='data/ref/contig_info.tsv.gz'
     output:
-        vcf='pav_{asm_name}.vcf.gz'
+        vcf=VCF_PATTERN
     run:
 
         # Check assembly name
@@ -96,7 +112,7 @@ rule vcf_write_vcf:
                         fa_file_name = input[f'fa_{vartype}_{svtype}']
                         with gzip.open(fa_file_name, 'rt') as fa_in:
                             df_seq_dict = {
-                                record.name: str(record.seq) for record in SeqIO.parse(fa_in, 'fasta')
+                                record.name: str(record.seq) for record in Bio.SeqIO.parse(fa_in, 'fasta')
                             }
 
                         df['SEQ'] = pd.Series(df_seq_dict)
@@ -122,7 +138,7 @@ rule vcf_write_vcf:
                             )
 
                     # Reformat fields for INFO
-                    for col in ('CALL_SOURCE', 'TIG_REGION', 'QUERY_STRAND', 'RGN_REF_INNER', 'RGN_TIG_INNER'):
+                    for col in ('CALL_SOURCE', 'TIG_REGION', 'QRY_STRAND', 'RGN_REF_INNER', 'RGN_TIG_INNER'):
                         if col in df.columns:
                             df[col] = df[col].apply(lambda val: val.replace(';', ','))
 
@@ -137,7 +153,7 @@ rule vcf_write_vcf:
                         df['INFO'] = df.apply(lambda row: row['INFO'] + ';SVLEN={SVLEN}'.format(**row), axis=1)
 
                     # INFO: Add contig placement info
-                    df['INFO'] = df.apply(lambda row: row['INFO'] + ';TIG_REGION={TIG_REGION};QUERY_STRAND={QUERY_STRAND}'.format(**row), axis=1)
+                    df['INFO'] = df.apply(lambda row: row['INFO'] + ';TIG_REGION={TIG_REGION};QRY_STRAND={QRY_STRAND}'.format(**row), axis=1)
 
                     # INFO: Add INV
                     if svtype == 'inv':
@@ -212,7 +228,7 @@ rule vcf_write_vcf:
         info_header_list.append(('SVTYPE', '1', 'String', 'Variant type'))
         info_header_list.append(('SVLEN', '.', 'Integer', 'Variant length'))
         info_header_list.append(('TIG_REGION', '.', 'String', 'Contig region where variant was found (one per alt with h1 before h2 for homozygous calls)'))
-        info_header_list.append(('QUERY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows TIG_REGION)'))
+        info_header_list.append(('QRY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows TIG_REGION)'))
         info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (order follows TIG_REGION)'))
         info_header_list.append(('INNER_TIG', '.', 'String', 'Inversion inner breakpoint in contig coordinates (order follows TIG_REGION)'))
         info_header_list.append(('HOM_REF', '.', 'String', 'Perfect breakpoint homology (SV sequence vs reference). Format \'X,Y\' where X homology upstream, and Y is homology downstream. Homology vs reference is often better for DEL.'))

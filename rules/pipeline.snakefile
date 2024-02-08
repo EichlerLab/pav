@@ -2,6 +2,10 @@
 Pipeline control functions.
 """
 
+import pavlib
+
+global ASM_TABLE
+
 def get_config(wildcards, key=None, default_val=None, default_none=False):
     """
     Get a config object that might be modified by CONFIG parameters in the assembly table.

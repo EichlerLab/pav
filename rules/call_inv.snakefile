@@ -7,6 +7,23 @@ Inversion calling has two key steps:
    finds the full inversion including unique reference sequence on each flank.
 """
 
+import collections
+import intervaltree
+import gc
+import numpy as np
+import os
+import pandas as pd
+
+import pavlib
+import svpoplib
+import kanapy
+
+global expand
+global temp
+global get_config
+global REF_FA
+
+
 ###################
 ### Definitions ###
 ###################
@@ -136,12 +153,12 @@ rule call_inv_batch:
                     '#CHROM', 'POS', 'END',
                     'ID', 'SVTYPE', 'SVLEN',
                     'HAP',
-                    'TIG_REGION', 'QUERY_STRAND',
+                    'TIG_REGION', 'QRY_STRAND',
                     'CI',
                     'RGN_REF_INNER', 'RGN_TIG_INNER',
                     'RGN_REF_DISC', 'RGN_TIG_DISC',
                     'FLAG_ID', 'FLAG_TYPE',
-                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                    'ALIGN_INDEX',
                     'CALL_SOURCE',
                     'SEQ'
                 ]
@@ -155,14 +172,6 @@ rule call_inv_batch:
             align_lift = pavlib.align.AlignLift(
                 pd.read_csv(input.bed_aln, sep='\t'),
                 svpoplib.ref.get_df_fai(input.fai)
-            )
-
-            # Read alignment BED
-            df_aln = pd.read_csv(
-                input.bed_aln,
-                sep='\t',
-                usecols=('INDEX', 'CLUSTER_MATCH'),
-                index_col='INDEX'
             )
 
             # Call inversions
@@ -207,22 +216,6 @@ rule call_inv_batch:
                             ] for val in val_list
                         }
 
-                        cluster_match_set = {df_aln.loc[index, 'CLUSTER_MATCH'] for index_tuple in aln_index_set for index in index_tuple}
-
-                        if False in cluster_match_set:
-                            cluster_match = False
-                        elif np.any(pd.isnull(list(cluster_match_set))):
-                            cluster_match = np.nan
-                        else:
-                            if cluster_match_set != {True}:
-                                raise RuntimeError(
-                                    'Found unexpected values in cluster_match: Expected True, False, and np.nan: {}'.format(
-                                        ', '.join([str(val) for val in cluster_match_set])
-                                    )
-                                )
-
-                            cluster_match = True
-
                         # Save call
                         call_list.append(pd.Series(
                             [
@@ -250,7 +243,7 @@ rule call_inv_batch:
                                 inv_call.region_flag.region_id(),
                                 row['TYPE'],
 
-                                ','.join([str(val) for val in sorted(aln_index_set)]), cluster_match,
+                                ','.join([str(val) for val in sorted(aln_index_set)]),
 
                                 pavlib.inv.CALL_SOURCE,
 
@@ -260,12 +253,12 @@ rule call_inv_batch:
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QUERY_STRAND',
+                                'TIG_REGION', 'QRY_STRAND',
                                 'CI',
                                 'RGN_REF_INNER', 'RGN_TIG_INNER',
                                 'RGN_REF_DISC', 'RGN_TIG_DISC',
                                 'FLAG_ID', 'FLAG_TYPE',
-                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'ALIGN_INDEX',
                                 'CALL_SOURCE',
                                 'SEQ'
                             ]
@@ -292,12 +285,12 @@ rule call_inv_batch:
                         '#CHROM', 'POS', 'END',
                         'ID', 'SVTYPE', 'SVLEN',
                         'HAP',
-                        'TIG_REGION', 'QUERY_STRAND',
+                        'TIG_REGION', 'QRY_STRAND',
                         'CI',
                         'RGN_REF_INNER', 'RGN_TIG_INNER',
                         'RGN_REF_DISC', 'RGN_TIG_DISC',
                         'FLAG_ID', 'FLAG_TYPE',
-                        'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'ALIGN_INDEX',
                         'CALL_SOURCE',
                         'SEQ'
                     ]
@@ -353,7 +346,6 @@ rule call_inv_merge_flagged_loci:
         df_indsdel_indel = pd.read_csv(input.bed_insdel_indel, sep='\t')
         df_cluster_indel = pd.read_csv(input.bed_cluster_indel, sep='\t')
         df_cluster_snv = pd.read_csv(input.bed_cluster_snv, sep='\t')
-
 
         # Annotate counts
         df_indsdel_sv['COUNT_INDEL'] = 0

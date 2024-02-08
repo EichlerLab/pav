@@ -3,6 +3,25 @@ Process alignments and alignment tiling paths.
 """
 
 
+import gzip
+import numpy as np
+import os
+import pandas as pd
+
+import pavlib
+import svpoplib
+
+
+global config
+global expand
+global shell
+global temp
+global get_config
+global ASM_TABLE
+global REF_FA
+global REF_FAI
+
+
 #
 # Rules
 #
@@ -30,7 +49,7 @@ rule align_trim_tigref:
     output:
         bed='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz'
     params:
-        min_trim_tig_len=lambda wildcards: np.int32(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
+        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
 
@@ -54,7 +73,7 @@ rule align_trim_tig:
     output:
         bed='results/{asm_name}/align/trim-tig/aligned_tig_{hap}.bed.gz'
     params:
-        min_trim_tig_len=lambda wildcards: np.int32(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
+        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
 
@@ -78,10 +97,6 @@ rule align_get_read_bed:
     output:
         bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
         align_head='results/{asm_name}/align/trim-none/aligned_tig_{hap}.headers.gz'
-    params:
-        chrom_cluster=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'chrom_cluster', False))  # Assembly was clustered by chromosome and first part of chromosome name before "_" is the cluster name.
-    wildcard_constraints:
-        hap='h(0|1|2)'
     run:
 
         # Write an empty file if SAM is emtpy
@@ -92,8 +107,8 @@ rule align_get_read_bed:
                 columns=[
                     '#CHROM', 'POS', 'END',
                     'INDEX',
-                    'QUERY_ID', 'QUERY_POS', 'QUERY_END',
-                    'QUERY_TIG_POS', 'QUERY_TIG_END',
+                    'QRY_ID', 'QRY_POS', 'QRY_END',
+                    'QRY_MAPPED',
                     'RG', 'AO',
                     'MAPQ',
                     'REV', 'FLAGS', 'HAP',
@@ -113,7 +128,7 @@ rule align_get_read_bed:
         df_tig_fai.index = df_tig_fai.index.astype(str)
 
         # Read alignments as a BED file.
-        df = pavlib.align.get_align_bed(input.sam, df_tig_fai, wildcards.hap, params.chrom_cluster)
+        df = pavlib.align.get_align_bed(input.sam, df_tig_fai, wildcards.hap)
 
         # Write SAM headers
         with gzip.open(input.sam, 'rt') as in_file:
@@ -155,7 +170,7 @@ rule align_map:
     params:
         aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2'),
         minimap2_params=lambda wildcards: get_config(wildcards, 'minimap2_params', '-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5')
-    threads: 12
+    threads: 24
     run:
 
         # Get aligner
