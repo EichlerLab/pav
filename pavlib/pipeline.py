@@ -50,7 +50,7 @@ def get_hap_list(asm_name, asm_table):
     return hap_list
 
 
-def get_asm_config(asm_name, hap, asm_table, config, asm_config):
+def get_asm_config(asm_name, hap, asm_table, config):
     """
     Get a dictionary of parameters and paths for one assembly.
 
@@ -58,7 +58,6 @@ def get_asm_config(asm_name, hap, asm_table, config, asm_config):
     :param hap: Haplotype name (e.g. "h1", "h2").
     :param asm_table: Assembly table.
     :param config: Pipeline config dictionary.
-    :param asm_config: Assembly configuration column extracted from the assembly input table.
     """
 
     config = config.copy()  # Altered by overridden configuration options
@@ -76,86 +75,57 @@ def get_asm_config(asm_name, hap, asm_table, config, asm_config):
     if asm_name not in asm_table.index:
         raise RuntimeError(f'No assembly table entry: {asm_name}')
 
-    if hap not in asm_table.columns:
+    if f'HAP_{hap}' not in asm_table.columns:
         raise RuntimeError(f'No haplotype in assembly table columns: {hap}')
 
     # Get assembly table entry
     asm_table_entry = asm_table.loc[asm_name]
 
     # Get config override
-    if asm_config is not None:
-        config_string = asm_config.get(asm_name, '')
+    config_string = asm_table_entry['CONFIG']
+
+    if not pd.isnull(config_string):
+        config_string = config_string.strip()
     else:
         config_string = ''
 
-    if not pd.isnull(config_string) and len(config_string.strip()) > 0:
-        config_string = config_string.strip()
-    else:
+    if not config_string:
         config_string = None
 
     config_override = get_config_override_dict(config_string)
-    config = get_config_with_override(config, config_override)
 
     # Get filename pattern
-    filename_pattern = asm_table_entry[hap]
+    assembly_input = asm_table_entry[f'HAP_{hap}']
 
-    if not pd.isnull(filename_pattern):
-        filename_pattern = filename_pattern.strip()
+    if not pd.isnull(assembly_input):
+        assembly_input = assembly_input.strip().format(asm_name=asm_name, sample=asm_name, hap=hap)
 
-        if not filename_pattern:
-            filename_pattern = None
+        if not assembly_input:
+            assembly_input = None
     else:
-        filename_pattern = None
+        assembly_input = None
+
+    if assembly_input is not None:
+        assembly_input = [val.strip() for val in assembly_input.split(';') if val.strip()]
+    else:
+        assembly_input = list()
 
     # Get filter
-    tig_filter_pattern = None
-    tig_filter_source = None
+    filter_col = f'FILTER_{hap}'
 
-    filter_col = re.sub('^h', 'FILTER_HAP', hap)
+    if filter_col in asm_table_entry and not pd.isnull(asm_table_entry[filter_col]):
+        filter_input = asm_table_entry[filter_col].strip().format(asm_name=asm_name, sample=asm_name, hap=hap)
+        filter_input = [val.strip() for val in filter_input.split(';') if val.strip()]
 
-    if asm_table_entry is not None and filter_col in asm_table_entry:
-        tig_filter_pattern = asm_table_entry[filter_col]
-        tig_filter_source = 'table'
-
-    elif 'tig_filter_pattern' in config:
-        tig_filter_pattern = config['tig_filter_pattern']
-        tig_filter_source = 'config'
-
-        if not pd.isnull(tig_filter_pattern) and tig_filter_pattern is not None:
-
-            if '{asm_name}' not in tig_filter_pattern:
-                raise RuntimeError('Cannot get contig filter BED: {}: Missing {{asm_name}} wildcard in config["tig_filter_pattern"]: {}'.format(asm_name, tig_filter_pattern))
-
-            if '{hap}' not in tig_filter_pattern:
-                raise RuntimeError('Cannot get contig filter BED: {}: Missing {{hap}} wildcard in config["tig_filter_pattern"]: {}'.format(asm_name, tig_filter_pattern))
-
-        else:
-            tig_filter_pattern = None
-
-    if pd.isnull(tig_filter_pattern):
-        tig_filter_pattern = None
-
-    if tig_filter_pattern is not None:
-        tig_filter_pattern = tig_filter_pattern.strip()
-
-        if not tig_filter_pattern:
-            tig_filter_pattern = None
-
-    if tig_filter_pattern is not None:
-        try:
-            tig_filter_bed = tig_filter_pattern.format(asm_name=asm_name, hap=hap)
-        except KeyError as e:
-            raise RuntimeError('Cannot get contig filter BED: {}: Unknown wildcard in contig filter filename pattern: {}: {}'.format(asm_name, e, tig_filter_pattern))
     else:
-        tig_filter_bed = None
+        filter_input = list()
 
     # Return config dictionary
     return {
         'asm_name': asm_name,
         'hap': hap,
-        'filename_pattern': filename_pattern,
-        'tig_filter_bed': tig_filter_bed,
-        'tig_filter_source': tig_filter_source,
+        'assembly_input': assembly_input,
+        'filter_input': filter_input,
         'config_override_string': config_string,
         'config_override': config_override
     }
@@ -169,56 +139,31 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
     :param hap: Haplotype.
     :param asm_table: Assembly table (assemblies.tsv).
     :param config: Pipeline config.
+    :param config_param: Configuration parameter (returned by get_asm_config()) to get the list of files from.
 
     :return: A list of input files.
     """
 
     # Get config
     asm_config = get_asm_config(asm_name, hap, asm_table, config)
-    config = get_config_with_override(config, asm_config['config_override'])
 
-    filename_pattern = asm_config['filename_pattern']
+    assembly_input = asm_config['assembly_input']
 
     # Return empty list if there are no paths
-    if filename_pattern is None:
+    if assembly_input is None or len(assembly_input) == 0:
         return list()
 
     # Separate semi-colon-delimited paths and fit wildcards
     path_list = list()
 
-    for file_name in filename_pattern.split(';'):
-
-        file_name = file_name.strip()
-
-        if not file_name:
-            continue
+    for file_name in assembly_input:
 
         # Create filename
-        file_name_parsed = file_name.format(
-            asm_name=asm_name,
-            hap=hap,
-        )
+        if os.stat(file_name).st_size > 0:
+            path_list.append(file_name)
 
-        if not os.path.isfile(file_name_parsed):
-            # Try substituting "hap1" for "h1" and "hap2" for "h2" if h1/h2 is not found.
-            # Return this version of the file if it exists, let the pipeline fail on the h1/h2 filename if neither exists.
-
-            if re.match('^h\d+$', hap):
-                alt_hap = re.sub('^h', 'hap', hap)
-
-                file_name_parsed_alt = file_name.format(
-                    asm_name=asm_name,
-                    hap=alt_hap,
-                )
-
-                if os.path.isfile(file_name_parsed_alt):
-                    file_name_parsed = file_name_parsed_alt
-
-        if file_name_parsed is not None and os.stat(file_name_parsed).st_size > 0:
-            path_list.append(file_name_parsed)
-
-        # Return paths
-        return path_list
+    # Return paths
+    return path_list
 
 
 def expand_input(file_name_list):
@@ -556,11 +501,11 @@ def read_assembly_table(asm_table_filename, config):
     filename_lower = asm_table_filename.lower()
 
     if filename_lower.endswith(('.tsv', '.tsv.gz', '.tsv.txt', 'tsv.txt.gz')):
-        df = pd.read_csv(asm_table_filename, sep='\t', header=0)
+        df = pd.read_csv(asm_table_filename, sep='\t', header=0, dtype=str)
     elif filename_lower.endswith('.xlsx'):
-        df = pd.read_excel(asm_table_filename, header=0)
+        df = pd.read_excel(asm_table_filename, header=0, dtype=str)
     elif filename_lower.endswith(('.csv', '.csv.gz', '.csv.txt', '.csv.txt.gz')):
-        df = pd.read_csv(asm_table_filename, header=0)
+        df = pd.read_csv(asm_table_filename, header=0, dtype=str)
     else:
         raise RuntimeError(f'Unrecoginized table file type (expected ".tsv", ".tsv.gz", ".xlsx", ".csv", ".csv.gz"): {asm_table_filename}')
 
@@ -568,6 +513,23 @@ def read_assembly_table(asm_table_filename, config):
     if 'NAME' not in df.columns:
         raise RuntimeError('Missing assembly table column: NAME')
 
+    # Check assembly names
+    if np.any(pd.isnull(df['NAME'])):
+        raise RuntimeError(f'Found {sum(pd.isnull(df["NAME"]))} entries in the assembly table with empty NAME values: {asm_table_filename}')
+
+    bad_name = {name for name in df['NAME'] if pd.isnull(name) or re.search(r'^[a-zA-Z0-9_-]+$', name) is None}
+
+    if bad_name:
+        bad_name_str = '"' + '", "'.join(sorted(set(bad_name))[:3]) + '"' + ('...' if len(bad_name) > 3 else '')
+        raise RuntimeError(f'Found {len(bad_name)} column names with non-alphanumeric/underscore/dash characters in the name: {bad_name_str}: {asm_table_filename}')
+
+    dup_asm_list = [assembly_name for assembly_name, count in collections.Counter(df.index).items() if count > 1]
+
+    if dup_asm_list:
+        raise RuntimeError(f'Found {len(dup_asm_list)} duplicate assembly names "{", ".join(dup_asm_list)}": {asm_table_filename}')
+
+
+    # Set index and config
     df.set_index('NAME', inplace=True)
 
     if 'CONFIG' not in df.columns:
@@ -589,9 +551,9 @@ def read_assembly_table(asm_table_filename, config):
         if col in col_set:
             raise RuntimeError(f'Duplicate column name "{col}" found in assembly table: {asm_table_filename}')
 
-        match_hap_named = re.search(r'^HAP_(\w+)$', col)
-        match_hap_num = re.search(r'^HAP(\d+)$', col)
-        match_filter = re.search(r'^FILTER_(\w+)$', col)
+        match_hap_named = re.search(r'^HAP_([a-zA-Z0-9_-]+)$', col)
+        match_hap_num = re.search(r'^HAP([a-zA-Z0-9_-]+)$', col)
+        match_filter = re.search(r'^FILTER_([a-zA-Z0-9_-]+)$', col)
 
         if match_hap_named:
             hap = match_hap_named[1]
@@ -619,12 +581,6 @@ def read_assembly_table(asm_table_filename, config):
     if unknown_cols:
         col_list = ', '.join(unknown_cols[:5]) + '...' if len(unknown_cols) > 5 else ''
         raise RuntimeError(f'Unknown columns in assembly table: {col_list}: {asm_table_filename}')
-
-    # Check for duplicate assemblies
-    dup_asm_list = [assembly_name for assembly_name, count in collections.Counter(df.index).items() if count > 1]
-
-    if dup_asm_list:
-        raise RuntimeError(f'Found {len(dup_asm_list)} duplicate assembly names "{", ".join(dup_asm_list)}": {asm_table_filename}')
 
     # Set index and column names
     df_hap = df[[hap_col_map[hap] for hap in hap_list]]

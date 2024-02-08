@@ -348,14 +348,12 @@ def merge_haplotypes(bed_list, callable_list, hap_list, config_def, threads=1, c
 
             df_bed = svpoplib.pd.read_csv_chrom(bed_list[index], chrom=chrom, sep='\t', low_memory=False)
             df_bed.set_index('ID', inplace=True, drop=False)
-            df_bed['CLUSTER_MATCH'].fillna('NA', inplace=True)
             df_bed = df_bed.astype(str)
 
         df['TIG_REGION'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'TIG_REGION')
         df['QUERY_STRAND'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'QUERY_STRAND')
         df['CI'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CI')
         df['ALIGN_INDEX'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'ALIGN_INDEX')
-        df['CLUSTER_MATCH'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CLUSTER_MATCH')
         df['CALL_SOURCE'] = pavlib.call.val_per_hap(df, df_h1, df_h2, 'CALL_SOURCE')
 
         # Set inversion columns
@@ -399,7 +397,6 @@ def merge_haplotypes(bed_list, callable_list, hap_list, config_def, threads=1, c
         df['QUERY_STRAND'] = np.nan
         df['CI'] = np.nan
         df['ALIGN_INDEX'] = np.nan
-        df['CLUSTER_MATCH'] = np.nan
         df['CALL_SOURCE'] = np.nan
 
         if is_inv:

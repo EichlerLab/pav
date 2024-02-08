@@ -82,7 +82,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     inv_list = list()
 
     # Get tig/chromosome combinations that appear more than once
-    tig_map_count = collections.Counter(df[['#CHROM', 'QUERY_ID']].apply(tuple, axis=1))
+    tig_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
     tig_map_count = [(chrom, tig_id) for (chrom, tig_id), count in tig_map_count.items() if count > 1]
 
     # Cache reference sequence (upper-case for homology searches)
@@ -92,7 +92,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     for chrom, tig_id in tig_map_count:
 
         # Get a list of df indices with alignments for this contig
-        tig_index_list = list(df.loc[(df['#CHROM'] == chrom) & (df['QUERY_ID'] == tig_id)].index)
+        tig_index_list = list(df.loc[(df['#CHROM'] == chrom) & (df['QRY_ID'] == tig_id)].index)
         tig_index_list_len = len(tig_index_list)
 
         # subindex1 is an index to tig_index_list. Traverse from first element to second from last
@@ -116,27 +116,27 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                     # In reference orientation, the left-most alignment record on the reference (row1) is also
                     # left-most in the contig sequence. If the contig is reversed, then row1 comes before row2 on the
                     # reference, but row1 comes after row2 on the contig.
-                    if row1['QUERY_TIG_POS'] < row2['QUERY_TIG_POS']:
-                        if row2['QUERY_TIG_POS'] < row1['QUERY_TIG_END']:
+                    if row1['QRY_POS'] < row2['QRY_POS']:
+                        if row2['QRY_POS'] < row1['QRY_END']:
                             raise RuntimeError(
                                 'Contig ranges overlap for two alignment records (should not occur after alignment trimming): '
-                                f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
-                                f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                                f'Index {row1["INDEX"]} ({row1["QRY_ID"]}:{row1["QRY_POS"]}-{row1["QRY_END"]}) and '
+                                f'Index {row2["INDEX"]} ({row2["QRY_ID"]}:{row2["QRY_POS"]}-{row2["QRY_END"]})'
                             )
 
-                        query_pos = row1['QUERY_TIG_END']
-                        query_end = row2['QUERY_TIG_POS']
+                        query_pos = row1['QRY_END']
+                        query_end = row2['QRY_POS']
 
                     else:
-                        if row1['QUERY_TIG_POS'] < row2['QUERY_TIG_END']:
+                        if row1['QRY_POS'] < row2['QRY_END']:
                             raise RuntimeError(
                                 'Contig ranges overlap for two alignment records (should not occur after alignment trimming): '
-                                f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
-                                f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                                f'Index {row1["INDEX"]} ({row1["QRY_ID"]}:{row1["QRY_POS"]}-{row1["QRY_END"]}) and '
+                                f'Index {row2["INDEX"]} ({row2["QRY_ID"]}:{row2["QRY_POS"]}-{row2["QRY_END"]})'
                             )
 
-                        query_pos = row2['QUERY_TIG_END']
-                        query_end = row1['QUERY_TIG_POS']
+                        query_pos = row2['QRY_END']
+                        query_end = row1['QRY_POS']
 
                     dist_tig = query_end - query_pos
                     dist_ref = row2['POS'] - row1['END']
@@ -144,8 +144,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                     if dist_tig < 0:
                         raise RuntimeError(
                             f'Contig query positions are out of order (program bug): Contig distance is negative ({dist_tig}): '
-                            f'Index {row1["INDEX"]} ({row1["QUERY_ID"]}:{row1["QUERY_TIG_POS"]}-{row1["QUERY_TIG_END"]}) and '
-                            f'Index {row2["INDEX"]} ({row2["QUERY_ID"]}:{row2["QUERY_TIG_POS"]}-{row2["QUERY_TIG_END"]})'
+                            f'Index {row1["INDEX"]} ({row1["QRY_ID"]}:{row1["QRY_POS"]}-{row1["QRY_END"]}) and '
+                            f'Index {row2["INDEX"]} ({row2["QRY_ID"]}:{row2["QRY_POS"]}-{row2["QRY_END"]})'
                         )
 
                     min_aln_len = np.min([row1['QRY_LEN'], row2['QRY_LEN']])
@@ -221,7 +221,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 hap,
                                 f'{tig_id}:{pos_tig + 1}-{end_tig}', '-' if row1['REV'] else '+',
                                 dist_tig,
-                                '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                 left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                 CALL_SOURCE,
                                 seq
@@ -230,9 +230,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QUERY_STRAND',
+                                'TIG_REGION', 'QRY_STRAND',
                                 'CI',
-                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'ALIGN_INDEX',
                                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                 'CALL_SOURCE',
                                 'SEQ'
@@ -309,7 +309,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 hap,
                                 tig_region.to_base1_string(), '-' if is_rev else '+',
                                 dist_ref,
-                                '{},{}'.format(row1['INDEX'], row2['INDEX']), row1['CLUSTER_MATCH'],
+                                '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                 left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                 CALL_SOURCE,
                                 seq
@@ -318,9 +318,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QUERY_STRAND',
+                                'TIG_REGION', 'QRY_STRAND',
                                 'CI',
-                                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                'ALIGN_INDEX',
                                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                 'CALL_SOURCE',
                                 'SEQ'
@@ -385,7 +385,6 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     'ALNTRUNC',
 
                                     '{},{}'.format(row1['INDEX'], row2['INDEX']),
-                                    row1['CLUSTER_MATCH'],
 
                                     CALL_SOURCE_INV_DENSITY,
 
@@ -395,12 +394,12 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     '#CHROM', 'POS', 'END',
                                     'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'TIG_REGION', 'QUERY_STRAND',
+                                    'TIG_REGION', 'QRY_STRAND',
                                     'CI',
                                     'RGN_REF_INNER', 'RGN_TIG_INNER',
                                     'RGN_REF_DISC', 'RGN_TIG_DISC',
                                     'FLAG_ID', 'FLAG_TYPE',
-                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'ALIGN_INDEX',
                                     'CALL_SOURCE',
                                     'SEQ'
                                 ]
@@ -434,9 +433,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                         row3['REV'] == row1['REV']
                     ) and ( # Middle alignment record must be between the flanking alignment records on tnhe contig
                         (
-                            not row1['REV'] and (row1['QUERY_TIG_END'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_END']) // 2 < row3['QUERY_TIG_POS'])
+                            not row1['REV'] and (row1['QRY_END'] < (row2['QRY_POS'] + row2['QRY_END']) // 2 < row3['QRY_POS'])
                         ) or (
-                            row1['REV'] and (row3['QUERY_TIG_POS'] < (row2['QUERY_TIG_POS'] + row2['QUERY_TIG_END']) // 2 < row1['QUERY_TIG_END'])
+                            row1['REV'] and (row3['QRY_POS'] < (row2['QRY_POS'] + row2['QRY_END']) // 2 < row1['QRY_END'])
                         )
                     ):
 
@@ -462,7 +461,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                         # Recover inversion if alignment supports and density fails.
                         if inv_call is None and subindex2 == subindex1 + 1 and subindex3 == subindex1 + 2:
                             region_ref = pavlib.seq.Region(chrom, row2['POS'], row2['END'])
-                            region_tig = pavlib.seq.Region(row2['QUERY_ID'], row2['QUERY_TIG_POS'], row2['QUERY_TIG_END'])
+                            region_tig = pavlib.seq.Region(row2['QRY_ID'], row2['QRY_POS'], row2['QRY_END'])
 
                             inv_call = pavlib.inv.InvCall(
                                 region_ref, region_ref,
@@ -514,7 +513,6 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     'ALNTRUNC',
 
                                     '{},{},{}'.format(row1['INDEX'], row2['INDEX'], row3['INDEX']),
-                                    row1['CLUSTER_MATCH'],
 
                                     call_source,
 
@@ -524,12 +522,12 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                     '#CHROM', 'POS', 'END',
                                     'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'TIG_REGION', 'QUERY_STRAND',
+                                    'TIG_REGION', 'QRY_STRAND',
                                     'CI',
                                     'RGN_REF_INNER', 'RGN_TIG_INNER',
                                     'RGN_REF_DISC', 'RGN_TIG_DISC',
                                     'FLAG_ID', 'FLAG_TYPE',
-                                    'ALIGN_INDEX', 'CLUSTER_MATCH',
+                                    'ALIGN_INDEX',
                                     'CALL_SOURCE',
                                     'SEQ'
                                 ]
@@ -563,9 +561,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QUERY_STRAND',
+            'TIG_REGION', 'QRY_STRAND',
             'CI',
-            'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'ALIGN_INDEX',
             'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
             'SEQ'
@@ -581,9 +579,9 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QUERY_STRAND',
+            'TIG_REGION', 'QRY_STRAND',
             'CI',
-            'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'ALIGN_INDEX',
             'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
             'SEQ'
@@ -599,12 +597,12 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QUERY_STRAND',
+            'TIG_REGION', 'QRY_STRAND',
             'CI',
             'RGN_REF_INNER', 'RGN_TIG_INNER',
             'RGN_REF_DISC', 'RGN_TIG_DISC',
             'FLAG_ID', 'FLAG_TYPE',
-            'ALIGN_INDEX', 'CLUSTER_MATCH',
+            'ALIGN_INDEX',
             'CALL_SOURCE',
             'SEQ'
         ])

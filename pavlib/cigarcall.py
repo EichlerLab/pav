@@ -50,7 +50,6 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
         # Get strand
         is_rev = row['REV']
         strand = '-' if is_rev else '+'
-        cluster_match = row['CLUSTER_MATCH']
         align_index = row['INDEX']
 
         # Load reference and tig sequences
@@ -118,7 +117,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                             hap,
                             f'{seq_tig_name}:{pos_tig_snv + 1}-{pos_tig_snv + 1}', strand,
                             0,
-                            align_index, cluster_match,
+                            align_index,
                             CALL_SOURCE
                         ],
                         index=[
@@ -128,7 +127,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                             'HAP',
                             'TIG_REGION', 'QUERY_STRAND',
                             'CI',
-                            'ALIGN_INDEX', 'CLUSTER_MATCH',
+                            'ALIGN_INDEX',
                             'CALL_SOURCE'
                         ]
                     ))
@@ -190,7 +189,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         hap,
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{end_tig_insdel}', strand,
                         0,
-                        align_index, cluster_match,
+                        align_index,
                         left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                         CALL_SOURCE,
                         seq
@@ -201,7 +200,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'HAP',
                         'TIG_REGION', 'QUERY_STRAND',
                         'CI',
-                        'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'ALIGN_INDEX',
                         'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                         'CALL_SOURCE',
                         'SEQ'
@@ -259,7 +258,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         hap,
                         f'{seq_tig_name}:{pos_tig_insdel + 1}-{pos_tig_insdel + 1}', strand,
                         0,
-                        align_index, cluster_match,
+                        align_index,
                         left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                         CALL_SOURCE,
                         seq
@@ -270,7 +269,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         'HAP',
                         'TIG_REGION', 'QUERY_STRAND',
                         'CI',
-                        'ALIGN_INDEX', 'CLUSTER_MATCH',
+                        'ALIGN_INDEX',
                         'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                         'CALL_SOURCE',
                         'SEQ'
@@ -325,7 +324,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 'HAP',
                 'TIG_REGION', 'QUERY_STRAND',
                 'CI',
-                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                'ALIGN_INDEX',
                 'CALL_SOURCE'
             ]
         )
@@ -344,7 +343,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 'HAP',
                 'TIG_REGION', 'QUERY_STRAND',
                 'CI',
-                'ALIGN_INDEX', 'CLUSTER_MATCH',
+                'ALIGN_INDEX',
                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                 'CALL_SOURCE',
                 'SEQ'

@@ -1,9 +1,10 @@
 # PAV Configuration Options
 
-Additional PAV configuration options for `config.json` in the PAV run directory or command-line
-(e.g. `--config config_file="..."`).
+PAV configuration options are found in `config.json` in the PAV run directory, on the command-line after `--config`
+(e.g. `--config config_file="..."`), or in the `CONFIG` column in the assembly input table (as key=value pairs, see
+`README.md`).
 
-The configuration parameter the expected type are given in brackets after the
+The expected type for each parameter is given in brackets after the
 parameter name. For example, type `int` would expect to take a string representation of a number (e.g. "12") and
 translate it to an integer.
 
@@ -32,51 +33,10 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 
 ### Alignments
 
-* chrom_cluster [False; bool]: Use only if contigs are clustered by chromosome and if everything before the first "_" is
-  the cluster name (e.g. "chr1_tig00001"). This feature was develoed to incoroprate QC information from PGAS
-  (Porubski 2020, https://doi.org/10.1126/science.abf7117; Ebert 2021, https://doi.org/10.1126/science.abf7117), which
-  clusters contigs by chromosome and haplotype, although the chromosome name is not known during the assembly (it is
-  reference-free). If this option is set, PAV will fill the "CLUSTER_MATCH" field (variant call BED file). Each
-  variant is called from a contig, and each contig is assinged a cluster. The cluster is assigned to a reference
-  chromosome if 85% of the cluster maps to that single chromosome (not counting alignments less than 1 kbp in
-  reference space). If the cluster is assigned to a chromosome, then a True/False value is given to this field if the
-  chromosome and cluster match. If This feature is disabled (default) or the cluster was not assigned, the
-  "CLUSTER_MATCH" field for the variant call will be empty (NA).
 * min_trim_tig_len [1000, int]: Ignore contig alignments shorter than this size. This is the number of reference bases
   the contig covers.
 * aligner [minimap2; string]: PAV supports minimap2 (aligner: minimap2) and LRA (aligner: lra). LRA is under development
   with the Chaisson lab (USC).
-
-## Misassembly filter
-
-PAV can ignore variants over known misassemblies. Annotation tools, such as Flagger and NucFreq, can be used to flag
-problematic assembly locations, and PAV can exclude any variants that intersect those assembly coordinates.
-
-To setup the filter, create a BED file for each assembly with the assembly name and haplotype ("h1" or "h2") as part
-of the filename or path to the filename; these will be made into wildcards so PAV can locate the right BAM for each
-assembly. The BED file will be in contig (assembly) coordinates, have three column (chromosome, start, and stop), and
-contain no header line. If there are no regions to filter for an assembly, no file needs to be created for it (PAV will
-assume that a missing file means no regions to filter).
-
-Add "tig_filter_pattern" to the config file (`config.json`) with the filter BED pattern, which is the path to the
-filter BED with the assembly name replaced by "{asm_name}" and the haplotype replaced by "{hap}".
-
-Example:
-```
-{
-    "reference": "/path/to/ref.fa.gz",
-    "tig_filter_pattern": "/path/to/filter/{asm_name}_{hap}.bed"
-}
-```
-
-If a PAV callset was already created and you wish to re-filter it with updated filter BED files (or if you just added
-the filter BED files), force-rerun "results/{asm_name}/bed/pre_merge/{hap}/svindel_del.bed.gz" (substituting the
-wildcards) for the actual assembly name and haplotype), then force-rerun "pav_{asm_name}.vcf.gz".
-
-Example:
-```
-singularity run --bind "$(pwd):$(pwd)" library://becklab/pav/pav:latest -c 16 -f results/SAMPLE/bed/pre_merge/HAP/svindel_del.bed.gz pav_SAMPLE.vcf.gz
-```
 
 
 ## Inversions
@@ -224,7 +184,6 @@ for the second parameter will give diminishing returns.
   from alignments unless two alignment records are from the same contig. Can increase false calls, especially for small
   variants, but should not eliminate haplotypic variation in an assembly that is not separated into two FASTA files.
 * chrom_cluster [False]
-* sample_delimiter [_]: For extracting sample from assembly name ("{sample}" wildcard in input path patterns). May be one of "_", ".", "-", "+", "#".
 * minimap2_params [-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5]: Alignment parameters used to run minimap2
 
 ### Call

@@ -1,5 +1,10 @@
+"""
+PAV Python library routines.
+"""
+
 __all__ = []
 
+from . import align
 from . import asmstat
 from . import density
 from . import inv

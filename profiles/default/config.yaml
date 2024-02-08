@@ -16,7 +16,7 @@ default-resources:
   - runtime=240
 
 set-threads:
-  - align_map=12
+  - align_map=24
   - call_inv_batch=4
   - call_lg_discover=12
   - call_merge_haplotypes_batch=12

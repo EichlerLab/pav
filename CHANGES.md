@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.5.0 [Unreleased]
+* Arbitrary number of named haplotypes and new assembly table format (old format supported).
+* No support for "asm_pattern" in config (was removed before this version but was left in documentation).
+* Removed "chrom_cluster" from configuration options.
+
 ## 2.4.0
 * Split alignment trimming into distinct "tig" and "ref" phases (BED for each).
 * Keeping dropped variants and writing to VCF.
