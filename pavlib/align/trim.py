@@ -48,12 +48,6 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
     else:
         raise RuntimeError(f'Unrecognized trimming mode "{mode}": Expected "tig", "ref", or "both"')
 
-    # Add fields for the number of bases that are removed from each end
-    df['CUT_REF_L'] = 0
-    df['CUT_REF_R'] = 0
-    df['CUT_TIG_L'] = 0
-    df['CUT_TIG_R'] = 0
-
     # Remove short alignments
     for index in df.index:
         if df.loc[index, 'QRY_END'] - df.loc[index, 'QRY_POS'] < min_trim_tig_len:
@@ -70,9 +64,6 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
     if do_trim_tig:
 
         # Sort by alignment lengths in contig space
-        df['QRY_LEN'] = df['QRY_END'] - df['QRY_POS']
-        df['SUB_LEN'] = df['END'] - df['POS']
-
         df.sort_values(['QRY_ID', 'QRY_LEN'], ascending=(True, False), inplace=True)
 
         df.reset_index(inplace=True, drop=True)
@@ -253,10 +244,6 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
             # Next l record
             iter_index_l += 1
 
-        # Clean temporary columns
-        del(df['QRY_LEN'])
-        del(df['SUB_LEN'])
-
         # Discard fully trimmed records
         df = df.loc[df['INDEX'] >= 0].copy()
 
@@ -269,12 +256,14 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
     if do_trim_ref:
 
         # Sort by contig alignment length in reference space
-        df['QRY_LEN'] = df['QRY_END'] - df['QRY_POS']
-        df['SUB_LEN'] = df['END'] - df['POS']
-
-        df.sort_values(['#CHROM', 'SUB_LEN'], ascending=(True, False), inplace=True)
-
-        df.reset_index(inplace=True, drop=True)
+        df = df.loc[
+            pd.concat(
+                [df['#CHROM'], df['END'] - df['POS']], axis=1
+            ).sort_values(
+                ['#CHROM', 0],
+                ascending=(True, False)
+            ).index
+        ].reset_index(drop=True)
 
         # Do trim in reference space
         iter_index_l = 0
@@ -337,10 +326,6 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
             # Next l record
             iter_index_l += 1
-
-        # Clean temporary columns
-        del(df['QRY_LEN'])
-        del(df['SUB_LEN'])
 
         # Discard fully trimmed records
         df = df.loc[df['INDEX'] >= 0].copy()
@@ -537,8 +522,8 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
             record_l_mod['QRY_END'] -= cut_qry_l
 
         # Track cut bases
-        record_l_mod['CUT_REF_R'] += cut_sub_l
-        record_l_mod['CUT_TIG_R'] += cut_qry_l
+        record_l_mod['TRIM_REF_R'] += cut_sub_l
+        record_l_mod['TRIM_QRY_R'] += cut_qry_l
 
     else:
         record_l_mod['POS'] += cut_sub_l
@@ -550,8 +535,8 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
             record_l_mod['QRY_POS'] += cut_qry_l
 
         # Track cut bases
-        record_l_mod['CUT_REF_L'] += cut_sub_l
-        record_l_mod['CUT_TIG_L'] += cut_qry_l
+        record_l_mod['TRIM_REF_L'] += cut_sub_l
+        record_l_mod['TRIM_QRY_L'] += cut_qry_l
 
     if rev_r:
         record_r_mod['END'] -= cut_sub_r
@@ -563,8 +548,8 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
             record_r_mod['QRY_END'] -= cut_qry_r
 
         # Track cut bases
-        record_r_mod['CUT_REF_R'] += cut_sub_r
-        record_r_mod['CUT_TIG_R'] += cut_qry_r
+        record_r_mod['TRIM_REF_R'] += cut_sub_r
+        record_r_mod['TRIM_QRY_R'] += cut_qry_r
 
     else:
         record_r_mod['POS'] += cut_sub_r
@@ -576,8 +561,8 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
             record_r_mod['QRY_POS'] += cut_qry_r
 
         # Track cut bases
-        record_r_mod['CUT_REF_L'] += cut_sub_r
-        record_r_mod['CUT_TIG_L'] += cut_qry_r
+        record_r_mod['TRIM_REF_L'] += cut_sub_r
+        record_r_mod['TRIM_QRY_L'] += cut_qry_r
 
     # Add clipped bases to CIGAR
     if cut_l[TC_CLIPH_BP] > 0:

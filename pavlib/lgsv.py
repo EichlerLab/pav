@@ -16,11 +16,11 @@ import svpoplib
 import Bio.Seq
 
 # Default parameters
-MAX_TIG_DIST_PROP = 1  # Max allowed tig gap as a factor of the minimum alignment length of two records
+MAX_QRY_DIST_PROP = 1  # Max allowed tig gap as a factor of the minimum alignment length of two records
 MAX_REF_DIST_PROP = 3  # Max allowed ref gap as a factor of the minimum alignment length of two records
 
 DIST_PROP_LEN_MAPQ = (20000, 40)  # If a flanking alignment is at least as long as the first element and MAPQ is at
-# least the second element, ignore MAX_TIG_DIST_PROP and MAX_REF_DIST_PROP and accept the alignments.
+# least the second element, ignore MAX_QRY_DIST_PROP and MAX_REF_DIST_PROP and accept the alignments.
 
 CALL_SOURCE = 'ALNTRUNC'  # Call source annotation for alignment-truncating events
 
@@ -30,7 +30,8 @@ CALL_SOURCE_INV_NO_DENSITY = 'ALNTRUNC-NODEN'
 
 def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tree=None,
                     threads=1, log=sys.stdout, density_out_dir=None, max_tig_dist_prop=None, max_ref_dist_prop=None,
-                    srs_tree=None, max_region_size=None
+                    srs_tree=None, max_region_size=None,
+                    version_id=True
     ):
     """
     Scan trimmed alignments for alignment-truncating SV events.
@@ -54,12 +55,14 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
         limits, or `None` to use the default for all sizes. See `inv.scan_for_inv()` for details.
     :param max_region_size: Max region size for inversion scanning. Value 0 disables the limit, and `None` sets the
         default limit, `inv.MAX_REGION_SIZE`. See `inv.scan_for_inv()` for details.
+    :param version_id: Version duplicate variant IDs if `True`. If `False`, duplicate IDs may be written, and a
+        subsequent step should apply versioning.
 
     :return: A tuple of dataframes for SV calls: (INS, DEL, INV).
     """
 
     # Get parameters
-    max_tig_dist_prop = max_tig_dist_prop if max_tig_dist_prop is not None else MAX_TIG_DIST_PROP
+    max_tig_dist_prop = max_tig_dist_prop if max_tig_dist_prop is not None else MAX_QRY_DIST_PROP
     max_ref_dist_prop = max_ref_dist_prop if max_ref_dist_prop is not None else MAX_REF_DIST_PROP
 
     # Copy df so it can be safely manipulated
@@ -80,6 +83,8 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     ins_list = list()
     del_list = list()
     inv_list = list()
+
+    inv_id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
 
     # Get tig/chromosome combinations that appear more than once
     tig_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
@@ -224,17 +229,19 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                 left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                 CALL_SOURCE,
+                                'PASS',
                                 seq
                             ],
                             index=[
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QRY_STRAND',
+                                'QRY_REGION', 'QRY_STRAND',
                                 'CI',
                                 'ALIGN_INDEX',
                                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                 'CALL_SOURCE',
+                                'FILTER',
                                 'SEQ'
                             ]
                         ))
@@ -312,17 +319,19 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                                 '{},{}'.format(row1['INDEX'], row2['INDEX']),
                                 left_shift, f'{hom_ref_l},{hom_ref_r}', f'{hom_tig_l},{hom_tig_r}',
                                 CALL_SOURCE,
+                                'PASS',
                                 seq
                             ],
                             index=[
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QRY_STRAND',
+                                'QRY_REGION', 'QRY_STRAND',
                                 'CI',
                                 'ALIGN_INDEX',
                                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
                                 'CALL_SOURCE',
+                                'FILTER',
                                 'SEQ'
                             ]
                         ))
@@ -348,7 +357,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                             min_exp_count=1  # If alignment truncation does not contain inverted k-mers at sufficient density, stop searching
                         )
 
-                        if inv_call is not None:
+                        if inv_call is not None and inv_call.id not in inv_id_set:
                             log.write('INV (2-tig): {}\n'.format(inv_call))
                             log.flush()
 
@@ -388,22 +397,27 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                                     CALL_SOURCE_INV_DENSITY,
 
+                                    'PASS',
+
                                     seq
                                 ],
                                 index=[
                                     '#CHROM', 'POS', 'END',
                                     'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'TIG_REGION', 'QRY_STRAND',
+                                    'QRY_REGION', 'QRY_STRAND',
                                     'CI',
-                                    'RGN_REF_INNER', 'RGN_TIG_INNER',
-                                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                    'RGN_REF_INNER', 'RGN_QRY_INNER',
+                                    'RGN_REF_DISC', 'RGN_QRY_DISC',
                                     'FLAG_ID', 'FLAG_TYPE',
                                     'ALIGN_INDEX',
                                     'CALL_SOURCE',
+                                    'FILTER',
                                     'SEQ'
                                 ]
                             ))
+
+                            inv_id_set.add(inv_call.id)
 
                             # Save density table
                             if density_out_dir is not None:
@@ -476,7 +490,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
                         else:
                             call_source = CALL_SOURCE_INV_DENSITY
 
-                        if inv_call is not None:
+                        if inv_call is not None and inv_call.id not in inv_id_set:
                             log.write('INV (3-tig): {}\n'.format(inv_call))
                             log.flush()
 
@@ -516,22 +530,27 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                                     call_source,
 
+                                    'PASS',
+
                                     seq
                                 ],
                                 index=[
                                     '#CHROM', 'POS', 'END',
                                     'ID', 'SVTYPE', 'SVLEN',
                                     'HAP',
-                                    'TIG_REGION', 'QRY_STRAND',
+                                    'QRY_REGION', 'QRY_STRAND',
                                     'CI',
-                                    'RGN_REF_INNER', 'RGN_TIG_INNER',
-                                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                    'RGN_REF_INNER', 'RGN_QRY_INNER',
+                                    'RGN_REF_DISC', 'RGN_QRY_DISC',
                                     'FLAG_ID', 'FLAG_TYPE',
                                     'ALIGN_INDEX',
                                     'CALL_SOURCE',
+                                    'FILTER',
                                     'SEQ'
                                 ]
                             ))
+
+                            inv_id_set.add(inv_call.id)
 
                             # Save density table
                             if density_out_dir is not None and inv_call.df is not None:
@@ -553,7 +572,10 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     # Concat records
     if len(ins_list) > 0:
         df_ins = pd.concat(ins_list, axis=1).T
-        df_ins['ID'] = svpoplib.variant.version_id(df_ins['ID'])
+
+        if version_id:
+            df_ins['ID'] = svpoplib.variant.version_id(df_ins['ID'])
+
         df_ins.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
 
     else:
@@ -561,17 +583,21 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QRY_STRAND',
+            'QRY_REGION', 'QRY_STRAND',
             'CI',
             'ALIGN_INDEX',
             'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
+            'FILTER',
             'SEQ'
         ])
 
     if len(del_list) > 0:
         df_del = pd.concat(del_list, axis=1).T
-        df_del['ID'] = svpoplib.variant.version_id(df_del['ID'])
+
+        if version_id:
+            df_del['ID'] = svpoplib.variant.version_id(df_del['ID'])
+
         df_del.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
 
     else:
@@ -579,17 +605,21 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QRY_STRAND',
+            'QRY_REGION', 'QRY_STRAND',
             'CI',
             'ALIGN_INDEX',
             'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
             'CALL_SOURCE',
+            'FILTER',
             'SEQ'
         ])
 
     if len(inv_list) > 0:
         df_inv = pd.concat(inv_list, axis=1).T
-        df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+
+        if version_id:
+            df_inv['ID'] = svpoplib.variant.version_id(df_inv['ID'])
+
         df_inv.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
 
     else:
@@ -597,13 +627,14 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
             '#CHROM', 'POS', 'END',
             'ID', 'SVTYPE', 'SVLEN',
             'HAP',
-            'TIG_REGION', 'QRY_STRAND',
+            'QRY_REGION', 'QRY_STRAND',
             'CI',
-            'RGN_REF_INNER', 'RGN_TIG_INNER',
-            'RGN_REF_DISC', 'RGN_TIG_DISC',
+            'RGN_REF_INNER', 'RGN_QRY_INNER',
+            'RGN_REF_DISC', 'RGN_QRY_DISC',
             'FLAG_ID', 'FLAG_TYPE',
             'ALIGN_INDEX',
             'CALL_SOURCE',
+            'FILTER',
             'SEQ'
         ])
 

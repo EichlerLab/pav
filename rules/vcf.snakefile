@@ -12,7 +12,6 @@ import Bio.SeqIO
 import pavlib
 import svpoplib
 
-global FILTER_REASON
 global VCF_PATTERN
 global get_config
 
@@ -60,7 +59,7 @@ rule vcf_write_vcf:
             raise RuntimeError(f'Assembly name conflicts with a VCF header column name: {wildcards.asm_name}')
 
         # Set of known filters
-        known_filter_set = set(FILTER_REASON.keys())
+        known_filter_set = set(pavlib.call.FILTER_REASON.keys())
 
         # Check alt format
         symbolic_alt = False
@@ -138,7 +137,7 @@ rule vcf_write_vcf:
                             )
 
                     # Reformat fields for INFO
-                    for col in ('CALL_SOURCE', 'TIG_REGION', 'QRY_STRAND', 'RGN_REF_INNER', 'RGN_TIG_INNER'):
+                    for col in ('CALL_SOURCE', 'QRY_REGION', 'QRY_STRAND', 'RGN_REF_INNER', 'RGN_QRY_INNER'):
                         if col in df.columns:
                             df[col] = df[col].apply(lambda val: val.replace(';', ','))
 
@@ -153,11 +152,11 @@ rule vcf_write_vcf:
                         df['INFO'] = df.apply(lambda row: row['INFO'] + ';SVLEN={SVLEN}'.format(**row), axis=1)
 
                     # INFO: Add contig placement info
-                    df['INFO'] = df.apply(lambda row: row['INFO'] + ';TIG_REGION={TIG_REGION};QRY_STRAND={QRY_STRAND}'.format(**row), axis=1)
+                    df['INFO'] = df.apply(lambda row: row['INFO'] + ';QRY_REGION={QRY_REGION};QRY_STRAND={QRY_STRAND}'.format(**row), axis=1)
 
                     # INFO: Add INV
                     if svtype == 'inv':
-                        df['INFO'] = df.apply(lambda row: row['INFO'] + ';INNER_REF={RGN_REF_INNER};INNER_TIG={RGN_TIG_INNER}'.format(**row), axis=1)
+                        df['INFO'] = df.apply(lambda row: row['INFO'] + ';INNER_REF={RGN_REF_INNER};INNER_TIG={RGN_QRY_INNER}'.format(**row), axis=1)
 
                     # INFO: Add breakpoint homology
                     if svtype in {'ins', 'del'}:
@@ -218,7 +217,7 @@ rule vcf_write_vcf:
         # FILTER headers
         filter_header_list = [
             (filter, reason)
-                for filter, reason in FILTER_REASON.items()
+                for filter, reason in pavlib.call.FILTER_REASON.items()
         ]
 
         # INFO headers
@@ -227,10 +226,10 @@ rule vcf_write_vcf:
         info_header_list.append(('ID', '1', 'String', 'Variant ID'))
         info_header_list.append(('SVTYPE', '1', 'String', 'Variant type'))
         info_header_list.append(('SVLEN', '.', 'Integer', 'Variant length'))
-        info_header_list.append(('TIG_REGION', '.', 'String', 'Contig region where variant was found (one per alt with h1 before h2 for homozygous calls)'))
-        info_header_list.append(('QRY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows TIG_REGION)'))
-        info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (order follows TIG_REGION)'))
-        info_header_list.append(('INNER_TIG', '.', 'String', 'Inversion inner breakpoint in contig coordinates (order follows TIG_REGION)'))
+        info_header_list.append(('QRY_REGION', '.', 'String', 'Contig region where variant was found (one per alt with h1 before h2 for homozygous calls)'))
+        info_header_list.append(('QRY_STRAND', '.', 'String', 'Strand of variant in the contig relative to the reference (order follows QRY_REGION)'))
+        info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (order follows QRY_REGION)'))
+        info_header_list.append(('INNER_TIG', '.', 'String', 'Inversion inner breakpoint in contig coordinates (order follows QRY_REGION)'))
         info_header_list.append(('HOM_REF', '.', 'String', 'Perfect breakpoint homology (SV sequence vs reference). Format \'X,Y\' where X homology upstream, and Y is homology downstream. Homology vs reference is often better for DEL.'))
         info_header_list.append(('HOM_TIG', '.', 'String', 'Perfect breakpoint homology (SV sequence vs contig). Format \'X,Y\' where X homology upstream, and Y is homology downstream. Homology vs contig is often better for INS.'))
 

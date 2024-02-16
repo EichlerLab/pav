@@ -29,7 +29,7 @@ DENSITY_SMOOTH_FACTOR = 1  # Estimate bandwith on Scott's rule then multiply by 
 
 MIN_INV_KMER_RUN = 100  # States must have a continuous run of this many strictly inverted k-mers
 
-MIN_TIG_REF_PROP = 0.6  # The contig and reference region sizes must be within this factor (reciprocal) or the event
+MIN_QRY_REF_PROP = 0.6  # The contig and reference region sizes must be within this factor (reciprocal) or the event
                         # is likely unbalanced (INS or DEL) and would already be in the callset
 
 DEFAULT_MIN_EXP_COUNT = 1  # The default number of region expansions to try (including the initial expansion) and
@@ -128,17 +128,17 @@ def get_inv_from_record(row, df_density):
     :return: An Inversion object.
     """
 
-    is_rev = row['QUERY_STRAND'] == '-'
+    is_rev = row['QRY_STRAND'] == '-'
 
     return InvCall(
         region_ref_outer=pavlib.seq.Region(row['#CHROM'], row['POS'], row['END']),
         region_ref_inner=pavlib.seq.region_from_string(row['RGN_REF_INNER']),
 
-        region_tig_outer=pavlib.seq.region_from_string(row['TIG_REGION'], is_rev=is_rev),
-        region_tig_inner=pavlib.seq.region_from_string(row['RGN_TIG_INNER'], is_rev=is_rev),
+        region_tig_outer=pavlib.seq.region_from_string(row['QRY_REGION'], is_rev=is_rev),
+        region_tig_inner=pavlib.seq.region_from_string(row['RGN_QRY_INNER'], is_rev=is_rev),
 
         region_ref_discovery=pavlib.seq.region_from_string(row['RGN_REF_DISC']),
-        region_tig_discovery=pavlib.seq.region_from_string(row['RGN_TIG_DISC'], is_rev=is_rev),
+        region_tig_discovery=pavlib.seq.region_from_string(row['RGN_QRY_DISC'], is_rev=is_rev),
 
         region_flag=pavlib.seq.region_from_id(row['FLAG_ID']),
 
@@ -216,7 +216,8 @@ def scan_for_inv(
         srs_tree = get_srs_tree(None)  # Gets default
 
     elif not issubclass(srs_tree.__class__, intervaltree.IntervalTree):
-        srs_tree = get_srs_tree(srs_tuple_list)
+        raise NotImplementedError('Custom state-run-smooth parameters are not currently implemented')
+        #srs_tree = get_srs_tree(srs_tuple_list)
 
     # Scan and expand
     while True:
@@ -410,11 +411,11 @@ def scan_for_inv(
     ))  #
 
     # Check size proportions
-    if len(region_ref_outer) < len(region_tig_outer) * MIN_TIG_REF_PROP:
+    if len(region_ref_outer) < len(region_tig_outer) * MIN_QRY_REF_PROP:
         _write_log(
             'Reference region too short: Reference region length ({:,d}) is not within {:.2f}% of the contig region length ({:,d})'.format(
                 len(region_ref_outer),
-                MIN_TIG_REF_PROP * 100,
+                MIN_QRY_REF_PROP * 100,
                 len(region_tig_outer)
             ),
             log
@@ -422,11 +423,11 @@ def scan_for_inv(
 
         return None
 
-    if len(region_tig_outer) < len(region_ref_outer) * MIN_TIG_REF_PROP:
+    if len(region_tig_outer) < len(region_ref_outer) * MIN_QRY_REF_PROP:
         _write_log(
             'Contig region too short: Contig region length ({:,d}) is not within {:.2f}% of the reference region length ({:,d})'.format(
                 len(region_tig_outer),
-                MIN_TIG_REF_PROP * 100,
+                MIN_QRY_REF_PROP * 100,
                 len(region_ref_outer)
             ),
             log
@@ -515,23 +516,23 @@ def annotate_inv_dup_mers(
     df['KMER_CAN'] = df['KMER'].apply(lambda kmer: k_util.canonical_complement(kmer))
 
     # Add contig index
-    df['TIG_INDEX'] = df['INDEX'] + region_tig_discovery.pos
+    df['QRY_INDEX'] = df['INDEX'] + region_tig_discovery.pos
 
     # Annotate upstream and downstream inverted duplications
-    df['FLANK'] = np.nan
+    df['FLANK'] = ''
 
     df.loc[
-        (df['TIG_INDEX'] >= region_dup_tig_up.pos) & (df['TIG_INDEX'] < region_dup_tig_up.end - k_util.k_size),
+        (df['QRY_INDEX'] >= region_dup_tig_up.pos) & (df['QRY_INDEX'] < region_dup_tig_up.end - k_util.k_size),
         'FLANK'
     ] = 'UP'
 
     df.loc[
-        (df['TIG_INDEX'] >= region_dup_tig_dn.pos) & (df['TIG_INDEX'] < region_dup_tig_dn.end - k_util.k_size),
+        (df['QRY_INDEX'] >= region_dup_tig_dn.pos) & (df['QRY_INDEX'] < region_dup_tig_dn.end - k_util.k_size),
         'FLANK'
     ] = 'DN'
 
     # Annotate upstream/downstream k-mer matches
-    df['MATCH'] = np.nan
+    df['MATCH'] = ''
 
     df.loc[df['FLANK'] == 'UP', 'MATCH'] = df.loc[
         df['FLANK'] == 'UP', 'KMER'
@@ -555,7 +556,7 @@ def annotate_inv_dup_mers(
 
     # Return updated DataFrame
     del(df['KMER_CAN'])
-    del(df['TIG_INDEX'])
+    del(df['QRY_INDEX'])
 
     return df
 

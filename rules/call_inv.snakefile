@@ -40,12 +40,12 @@ def _input_call_inv_cluster(wildcards):
 
     if wildcards.vartype == 'indel':
         return [
-            'temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'.format(**wildcards),
+            'temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'.format(**wildcards),
         ]
 
     elif wildcards.vartype == 'snv':
         return [
-            'temp/{asm_name}/cigar/pre_inv/snv_snv_{hap}.bed.gz'.format(**wildcards),
+            'temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz'.format(**wildcards),
         ]
 
 
@@ -103,7 +103,7 @@ rule call_inv_batch_merge:
             axis=0
         )
 
-        df['ID'] = svpoplib.variant.version_id(df['ID'])
+        df.drop_duplicates('ID', inplace=True)
 
         df.sort_values(
             ['#CHROM', 'POS', 'END', 'ID']
@@ -122,16 +122,17 @@ rule call_inv_batch:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:
         log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
-    params:
-        k_size=lambda wildcards: get_config(wildcards, 'inv_k_size', 31),
-        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
-        inv_min_expand=lambda wildcards: get_config(wildcards, 'inv_min_expand', None, True)
     threads: 4
     run:
 
         # Get params
+        local_config = get_config(wildcards)
+
+        k_size = local_config.get('inv_k_size', 31)
+        inv_region_limit = local_config.get('inv_region_limit', None)
+        inv_min_expand = local_config.get('inv_min_expand', None)
+
         batch = int(wildcards.batch)
-        k_size = params.k_size
 
         density_out_dir = 'results/{asm_name}/inv_caller/density_table'.format(**wildcards)
 
@@ -153,13 +154,14 @@ rule call_inv_batch:
                     '#CHROM', 'POS', 'END',
                     'ID', 'SVTYPE', 'SVLEN',
                     'HAP',
-                    'TIG_REGION', 'QRY_STRAND',
+                    'QRY_REGION', 'QRY_STRAND',
                     'CI',
-                    'RGN_REF_INNER', 'RGN_TIG_INNER',
-                    'RGN_REF_DISC', 'RGN_TIG_DISC',
+                    'RGN_REF_INNER', 'RGN_QRY_INNER',
+                    'RGN_REF_DISC', 'RGN_QRY_DISC',
                     'FLAG_ID', 'FLAG_TYPE',
                     'ALIGN_INDEX',
                     'CALL_SOURCE',
+                    'FILTER',
                     'SEQ'
                 ]
             )
@@ -174,6 +176,8 @@ rule call_inv_batch:
                 svpoplib.ref.get_df_fai(input.fai)
             )
 
+            id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
+
             # Call inversions
             call_list = list()
 
@@ -186,9 +190,9 @@ rule call_inv_batch:
                     try:
                         inv_call = pavlib.inv.scan_for_inv(
                             region_flag, REF_FA, input.tig_fa, align_lift, k_util,
-                            max_region_size=params.inv_region_limit,
+                            max_region_size=inv_region_limit,
                             threads=threads, log=log_file, srs_tree=srs_tree,
-                            min_exp_count=params.inv_min_expand
+                            min_exp_count=inv_min_expand
                         )
 
                     except RuntimeError as ex:
@@ -196,7 +200,7 @@ rule call_inv_batch:
                         inv_call = None
 
                     # Save inversion call
-                    if inv_call is not None:
+                    if inv_call is not None and inv_call.id not in id_set:
 
                         # Get seq
                         seq = pavlib.seq.region_seq_fasta(
@@ -206,15 +210,17 @@ rule call_inv_batch:
                         )
 
                         # Get alignment record data
-                        aln_index_set = {
-                            val for val_list in [
-                                inv_call.region_ref_outer.pos_aln_index,
-                                inv_call.region_ref_outer.end_aln_index,
-                                inv_call.region_ref_inner.pos_aln_index,
-                                inv_call.region_ref_inner.end_aln_index
-
-                            ] for val in val_list
-                        }
+                        align_index = ','.join(sorted(
+                            pavlib.util.collapse_to_set(
+                                (
+                                    inv_call.region_ref_outer.pos_aln_index,
+                                    inv_call.region_ref_outer.end_aln_index,
+                                    inv_call.region_ref_inner.pos_aln_index,
+                                    inv_call.region_ref_inner.end_aln_index
+                                ),
+                                to_type=str
+                            )
+                        ))
 
                         # Save call
                         call_list.append(pd.Series(
@@ -243,9 +249,11 @@ rule call_inv_batch:
                                 inv_call.region_flag.region_id(),
                                 row['TYPE'],
 
-                                ','.join([str(val) for val in sorted(aln_index_set)]),
+                                align_index,
 
                                 pavlib.inv.CALL_SOURCE,
+
+                                'PASS',
 
                                 seq
                             ],
@@ -253,16 +261,19 @@ rule call_inv_batch:
                                 '#CHROM', 'POS', 'END',
                                 'ID', 'SVTYPE', 'SVLEN',
                                 'HAP',
-                                'TIG_REGION', 'QRY_STRAND',
+                                'QRY_REGION', 'QRY_STRAND',
                                 'CI',
-                                'RGN_REF_INNER', 'RGN_TIG_INNER',
-                                'RGN_REF_DISC', 'RGN_TIG_DISC',
+                                'RGN_REF_INNER', 'RGN_QRY_INNER',
+                                'RGN_REF_DISC', 'RGN_QRY_DISC',
                                 'FLAG_ID', 'FLAG_TYPE',
                                 'ALIGN_INDEX',
                                 'CALL_SOURCE',
+                                'FILTER',
                                 'SEQ'
                             ]
                         ))
+
+                        id_set.add(inv_call.id)
 
                         # Save density table
                         inv_call.df.to_csv(
@@ -275,7 +286,7 @@ rule call_inv_batch:
 
             # Merge records
             if len(call_list) > 0:
-                df_bed = pd.concat(call_list, axis=1).T
+                df_bed = pd.concat(call_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END', 'ID'])
 
             else:
                 # Create emtpy data frame
@@ -285,10 +296,10 @@ rule call_inv_batch:
                         '#CHROM', 'POS', 'END',
                         'ID', 'SVTYPE', 'SVLEN',
                         'HAP',
-                        'TIG_REGION', 'QRY_STRAND',
+                        'QRY_REGION', 'QRY_STRAND',
                         'CI',
-                        'RGN_REF_INNER', 'RGN_TIG_INNER',
-                        'RGN_REF_DISC', 'RGN_TIG_DISC',
+                        'RGN_REF_INNER', 'RGN_QRY_INNER',
+                        'RGN_REF_DISC', 'RGN_QRY_DISC',
                         'FLAG_ID', 'FLAG_TYPE',
                         'ALIGN_INDEX',
                         'CALL_SOURCE',
@@ -315,61 +326,60 @@ rule call_inv_merge_flagged_loci:
         bed_cluster_snv='temp/{asm_name}/inv_caller/flag/cluster_snv_{hap}.bed.gz'
     output:
         bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz'
-    params:
-        flank=lambda wildcards: get_config(wildcards, 'inv_sig_merge_flank', 500) , # Merge windows within this many bp
-        batch_count=lambda wildcards: int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT)),  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
-        inv_sig_filter=lambda wildcards: get_config(wildcards, 'inv_sig_filter', 'svindel')   # Filter flagged regions
     run:
+
         # Parameters
-        flank = params.flank
+        flank = int(get_config(wildcards, 'inv_sig_merge_flank', 500))  # Merge windows within this many bp
+        batch_count = int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT))  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
+        inv_sig_filter = get_config(wildcards, 'inv_sig_filter', 'svindel')   # Filter flagged regions
 
         # Get region filter parameters
         allow_single_cluster = False
         match_any = set()
 
-        if params.inv_sig_filter is not None:
-            if params.inv_sig_filter == 'single_cluster':
+        if inv_sig_filter is not None:
+            if inv_sig_filter == 'single_cluster':
                 allow_single_cluster = True
 
-            elif params.inv_sig_filter == 'svindel':
+            elif inv_sig_filter == 'svindel':
                 match_any.add('MATCH_SV')
                 match_any.add('MATCH_INDEL')
 
-            elif params.inv_sig_filter == 'sv':
+            elif inv_sig_filter == 'sv':
                 match_any.add('MATCH_SV')
 
             else:
-                raise RuntimeError(f'Unrecognized region filter: {params.inv_sig_filter} (must be "single_cluster", "svindel", or "sv")')
+                raise RuntimeError(f'Unrecognized region filter: {inv_sig_filter} (must be "single_cluster", "svindel", or "sv")')
 
         # Read
-        df_indsdel_sv = pd.read_csv(input.bed_insdel_sv, sep='\t')
-        df_indsdel_indel = pd.read_csv(input.bed_insdel_indel, sep='\t')
+        df_insdel_sv = pd.read_csv(input.bed_insdel_sv, sep='\t')
+        df_insdel_indel = pd.read_csv(input.bed_insdel_indel, sep='\t')
         df_cluster_indel = pd.read_csv(input.bed_cluster_indel, sep='\t')
         df_cluster_snv = pd.read_csv(input.bed_cluster_snv, sep='\t')
 
         # Annotate counts
-        df_indsdel_sv['COUNT_INDEL'] = 0
-        df_indsdel_sv['COUNT_SNV'] = 0
-        df_indsdel_sv['TYPE'] = 'MATCH_SV'
+        df_insdel_sv['COUNT_INDEL'] = 0
+        df_insdel_sv['COUNT_SNV'] = 0
+        df_insdel_sv['TYPE'] = [{'MATCH_SV'} for index in range(df_insdel_sv.shape[0])]
 
-        df_indsdel_indel['COUNT_INDEL'] = 0
-        df_indsdel_indel['COUNT_SNV'] = 0
-        df_indsdel_indel['TYPE'] = 'MATCH_INDEL'
+        df_insdel_indel['COUNT_INDEL'] = 0
+        df_insdel_indel['COUNT_SNV'] = 0
+        df_insdel_indel['TYPE'] = [{'MATCH_INDEL'} for index in range(df_insdel_indel.shape[0])]
 
         df_cluster_indel['COUNT_INDEL'] = df_cluster_indel['COUNT']
         df_cluster_indel['COUNT_SNV'] = 0
-        df_cluster_indel['TYPE'] = 'CLUSTER_INDEL'
+        df_cluster_indel['TYPE'] = [{'CLUSTER_INDEL'} for index in range(df_cluster_indel.shape[0])]
         del(df_cluster_indel['COUNT'])
 
         df_cluster_snv['COUNT_INDEL'] = 0
         df_cluster_snv['COUNT_SNV'] = df_cluster_snv['COUNT']
-        df_cluster_snv['TYPE'] = 'CLUSTER_SNV'
+        df_cluster_snv['TYPE'] = [{'CLUSTER_SNV'} for index in range(df_cluster_snv.shape[0])]
         del(df_cluster_snv['COUNT'])
 
         # Merge
         df = pd.concat([
-            df_indsdel_sv,
-            df_indsdel_indel,
+            df_insdel_sv,
+            df_insdel_indel,
             df_cluster_indel,
             df_cluster_snv
         ], axis=0).sort_values(['#CHROM', 'POS'])
@@ -391,7 +401,7 @@ rule call_inv_merge_flagged_loci:
             if (row['POS'] < end + flank) and (row['#CHROM'] == chrom):
 
                 # Add to existing region
-                type_set.add(row['TYPE'])
+                type_set |= row['TYPE']
                 end = row['END']
 
                 indel_count += row['COUNT_INDEL']
@@ -407,14 +417,13 @@ rule call_inv_merge_flagged_loci:
                             '{}-{}-RGN-{}'.format(chrom, pos, end - pos),
                             'RGN', end - pos,
                             type_set,
-                            #','.join(sorted(type_set)),
                             indel_count, snv_count
                         ],
                         index=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV']
                     ))
 
                 # Start new region
-                type_set = {row['TYPE']}
+                type_set = row['TYPE'].copy()
                 pos = row['POS']
                 end = row['END']
                 chrom = row['#CHROM']
@@ -454,10 +463,12 @@ rule call_inv_merge_flagged_loci:
             for index, row in df_merged.iterrows():
                 if row['TRY_INV']:
                     df_merged.loc[index, 'BATCH'] = batch
-                    batch = (batch + 1) % params.batch_count
+                    batch = (batch + 1) % batch_count
 
         else:
             df_merged = pd.DataFrame([], columns=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV', 'TRY_INV', 'BATCH'])
+
+        df_merged['TYPE'] = df_merged['TYPE'].apply(lambda vals: ','.join(sorted(vals)))
 
         # Write
         df_merged.to_csv(output.bed, sep='\t', index=False, compression='gzip')
@@ -468,7 +479,7 @@ rule call_inv_merge_flagged_loci:
 # sequence.
 rule call_inv_flag_insdel_cluster:
     input:
-        bed='temp/{asm_name}/cigar/pre_inv/svindel_insdel_{hap}.bed.gz'
+        bed='temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'
     output:
         bed=temp('temp/{asm_name}/inv_caller/flag/insdel_{vartype}_{hap}.bed.gz')
     params:
@@ -616,10 +627,12 @@ rule call_inv_cluster:
 
         # Read
         df = pd.concat(
-            [pd.read_csv(
+            [
+                pd.read_csv(
                 input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN', 'FILTER'),
                 low_memory=False, dtype={'#CHROM': str}
-            ) for input_file_name in input.bed],
+                ) for input_file_name in input.bed
+            ],
             axis=0
         ).sort_values(['#CHROM', 'POS'])
 

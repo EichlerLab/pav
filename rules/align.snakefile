@@ -26,6 +26,16 @@ global REF_FAI
 # Rules
 #
 
+# Run all alignments
+localrules: align_all
+
+rule align_all:
+    input:
+        bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/align/trim-{trim}/depth_tig_{hap}.bed.gz', ASM_TABLE,
+            trim=('none', 'tig', 'tigref')
+        )
+
 # Create a depth BED file for alignments.
 rule align_depth_bed:
     input:
@@ -73,8 +83,7 @@ rule align_trim_tig:
     output:
         bed='results/{asm_name}/align/trim-tig/aligned_tig_{hap}.bed.gz'
     params:
-        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
-        redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
+        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000))  # Minimum aligned tig length
     run:
 
         # Trim alignments
@@ -153,6 +162,12 @@ rule align_get_read_bed:
 
         # Add batch ID for CIGAR calling (calls in batches)
         df['CALL_BATCH'] = df['INDEX'].apply(lambda val: val % pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)
+
+        # Add trimming fields
+        df['TRIM_REF_L'] = 0
+        df['TRIM_REF_R'] = 0
+        df['TRIM_QRY_L'] = 0
+        df['TRIM_QRY_R'] = 0
 
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')

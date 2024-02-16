@@ -94,7 +94,8 @@ rule call_lg_discover:
                 threads=threads,
                 log=log_file,
                 density_out_dir=density_out_dir,
-                max_region_size=params.inv_region_limit
+                max_region_size=params.inv_region_limit,
+                version_id=False
             )
 
         # Write

@@ -21,7 +21,7 @@ CALL_SOURCE = 'CIGAR'
 CALL_CIGAR_BATCH_COUNT = 10
 
 
-def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
+def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap, version_id=True):
     """
     Parse variants from CIGAR strings.
 
@@ -29,6 +29,8 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
     :param ref_fa_name: Reference FASTA file name.
     :param tig_fa_name: Contig FASTA file name.
     :param hap: String identifying the haplotype ("h1", "h2").
+    :param version_id: Version duplicate variant IDs if `True`. If `False`, duplicate IDs may be written, and a
+        subsequent step should apply versioning.
 
     :return: A tuple of two dataframes, one for insertions and deletions (SV and indel), and one for SNVs.
     """
@@ -58,9 +60,9 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 seq_ref_name = row['#CHROM']
                 seq_ref = ref_fa.fetch(str(seq_ref_name))
 
-        if seq_tig_name is None or row['QUERY_ID'] != seq_tig_name or is_rev != seq_tig_rev:
+        if seq_tig_name is None or row['QRY_ID'] != seq_tig_name or is_rev != seq_tig_rev:
             with pysam.FastaFile(tig_fa_name) as tig_fa:
-                seq_tig_name = row['QUERY_ID']
+                seq_tig_name = row['QRY_ID']
                 seq_tig = tig_fa.fetch(str(seq_tig_name))
                 seq_tig_len = len(seq_tig)
 
@@ -125,7 +127,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                             'ID', 'SVTYPE', 'SVLEN',
                             'REF', 'ALT',
                             'HAP',
-                            'TIG_REGION', 'QUERY_STRAND',
+                            'QRY_REGION', 'QRY_STRAND',
                             'CI',
                             'ALIGN_INDEX',
                             'CALL_SOURCE'
@@ -198,7 +200,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         '#CHROM', 'POS', 'END',
                         'ID', 'SVTYPE', 'SVLEN',
                         'HAP',
-                        'TIG_REGION', 'QUERY_STRAND',
+                        'QRY_REGION', 'QRY_STRAND',
                         'CI',
                         'ALIGN_INDEX',
                         'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
@@ -267,7 +269,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                         '#CHROM', 'POS', 'END',
                         'ID', 'SVTYPE', 'SVLEN',
                         'HAP',
-                        'TIG_REGION', 'QUERY_STRAND',
+                        'QRY_REGION', 'QRY_STRAND',
                         'CI',
                         'ALIGN_INDEX',
                         'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',
@@ -311,7 +313,10 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
     # Merge tables
     if len(df_snv_list) > 0:
         df_snv = pd.concat(df_snv_list, axis=1).T
-        df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
+
+        if version_id:
+            df_snv['ID'] = svpoplib.variant.version_id(df_snv['ID'])
+
         df_snv.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
 
     else:
@@ -322,7 +327,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 'ID', 'SVTYPE', 'SVLEN',
                 'REF', 'ALT',
                 'HAP',
-                'TIG_REGION', 'QUERY_STRAND',
+                'QRY_REGION', 'QRY_STRAND',
                 'CI',
                 'ALIGN_INDEX',
                 'CALL_SOURCE'
@@ -331,7 +336,10 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
 
     if len(df_insdel_list) > 0:
         df_insdel = pd.concat(df_insdel_list, axis=1).T
-        df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+
+        if version_id:
+            df_insdel['ID'] = svpoplib.variant.version_id(df_insdel['ID'])
+
         df_insdel.sort_values(['#CHROM', 'POS', 'END', 'ID'], inplace=True)
 
     else:
@@ -341,7 +349,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap):
                 '#CHROM', 'POS', 'END',
                 'ID', 'SVTYPE', 'SVLEN',
                 'HAP',
-                'TIG_REGION', 'QUERY_STRAND',
+                'QRY_REGION', 'QRY_STRAND',
                 'CI',
                 'ALIGN_INDEX',
                 'LEFT_SHIFT', 'HOM_REF', 'HOM_TIG',

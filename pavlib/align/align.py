@@ -272,6 +272,8 @@ def align_bed_to_depth_bed(df, df_fai=None):
     # Create BED file
     df_bed = pd.concat(df_bed_list, axis=1).T
 
+    df_bed.sort_values(['#CHROM', 'POS'], inplace=True)
+
     return df_bed
 
 
@@ -375,7 +377,13 @@ def check_record(row, df_tig_fai):
 
     tig_len = df_tig_fai[row['QRY_ID']]
 
-    qry_map_rgn = pavlib.seq.region_from_string(row['QRY_MAP_RGN'])
+    if row['QRY_LEN'] != tig_len:
+        raise RuntimeError('QRY_LEN != length from FAI ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+            row['QRY_LEN'], tig_len,
+            row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+        ))
+
+    # qry_map_rgn = pavlib.seq.region_from_string(row['QRY_MAP_RGN'])
 
     # Query and reference positions are in the right order
     if row['QRY_POS'] >= row['QRY_END']:
@@ -403,11 +411,11 @@ def check_record(row, df_tig_fai):
             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
         ))
 
-    if qry_map_rgn.pos < 0:
-        raise RuntimeError('QRY_MAP_RGN.pos ({}) < 0 (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-            qry_map_rgn.pos,
-            row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-        ))
+    # if qry_map_rgn.pos < 0:
+    #     raise RuntimeError('QRY_MAP_RGN.pos ({}) < 0 (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #         qry_map_rgn.pos,
+    #         row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #     ))
 
     # POS and END agree with length
     if row['POS'] + ref_bp != row['END']:
@@ -429,47 +437,47 @@ def check_record(row, df_tig_fai):
         )
 
     # Check length of the mapped query position (may be reverse complemented)
-    if len(qry_map_rgn) != tig_bp:
-        raise RuntimeError(
-            'len(QRY_MAP_RGN) != tig_bp: {} != {} (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                len(qry_map_rgn), tig_bp,
-                row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-            )
-        )
+    # if len(qry_map_rgn) != tig_bp:
+    #     raise RuntimeError(
+    #         'len(QRY_MAP_RGN) != tig_bp: {} != {} (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #             len(qry_map_rgn), tig_bp,
+    #             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #         )
+    #     )
 
     # Check concordance against aligned query coordinates (coordinates translated if reverse-complemented)
-    if row['REV']:
-        if row['QRY_POS'] != tig_len - qry_map_rgn.end:
-            raise RuntimeError(
-                'QRY_POS != tig_len - QRY_MAP_REGION.end (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                    row['QRY_POS'], tig_len - qry_map_rgn.end,
-                    row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-                )
-            )
-
-        if row['QRY_END'] != tig_len - qry_map_rgn.pos:
-            raise RuntimeError(
-                'QRY_END != tig_len - QRY_MAP_REGION.pos (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                    row['QRY_END'], tig_len - qry_map_rgn.pos,
-                    row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-                )
-            )
-    else:
-        if row['QRY_POS'] != qry_map_rgn.pos:
-            raise RuntimeError(
-                'QRY_POS != QRY_MAP_REGION.pos (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                    row['QRY_POS'], tig_len - qry_map_rgn.pos,
-                    row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-                )
-            )
-
-        if row['QRY_END'] != qry_map_rgn.end:
-            raise RuntimeError(
-                'QRY_END != QRY_MAP_REGION.end (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                    row['QRY_POS'], tig_len - qry_map_rgn.pos,
-                    row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-                )
-            )
+    # if row['REV']:
+    #     if row['QRY_POS'] != tig_len - qry_map_rgn.end:
+    #         raise RuntimeError(
+    #             'QRY_POS != tig_len - QRY_MAP_REGION.end (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #                 row['QRY_POS'], tig_len - qry_map_rgn.end,
+    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #             )
+    #         )
+    #
+    #     if row['QRY_END'] != tig_len - qry_map_rgn.pos:
+    #         raise RuntimeError(
+    #             'QRY_END != tig_len - QRY_MAP_REGION.pos (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #                 row['QRY_END'], tig_len - qry_map_rgn.pos,
+    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #             )
+    #         )
+    # else:
+    #     if row['QRY_POS'] != qry_map_rgn.pos:
+    #         raise RuntimeError(
+    #             'QRY_POS != QRY_MAP_REGION.pos (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #                 row['QRY_POS'], tig_len - qry_map_rgn.pos,
+    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #             )
+    #         )
+    #
+    #     if row['QRY_END'] != qry_map_rgn.end:
+    #         raise RuntimeError(
+    #             'QRY_END != QRY_MAP_REGION.end (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #                 row['QRY_POS'], tig_len - qry_map_rgn.pos,
+    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #             )
+    #         )
 
     # Contig ends are not longer than contig length
     if row['QRY_END'] > tig_len:
@@ -478,20 +486,20 @@ def check_record(row, df_tig_fai):
             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
         ))
 
-    if qry_map_rgn.end > tig_len:
-        raise RuntimeError('QRY_MAP_RGN.end > tig_len ({} > {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-            row['QUERY_END'], tig_len,
-            row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-        ))
-
-    # Clipping agrees with contig starts
-    if qry_map_rgn.pos != clip_h_l + clip_s_l:
-        raise RuntimeError(
-            'QRY_MAP_RGN.pos != clip_h_l + clip_s_l ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                qry_map_rgn.pos, clip_h_l + clip_s_l,
-                row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-            )
-        )
+    # if qry_map_rgn.end > tig_len:
+    #     raise RuntimeError('QRY_MAP_RGN.end > tig_len ({} > {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #         row['QUERY_END'], tig_len,
+    #         row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #     ))
+    #
+    # # Clipping agrees with contig starts
+    # if qry_map_rgn.pos != clip_h_l + clip_s_l:
+    #     raise RuntimeError(
+    #         'QRY_MAP_RGN.pos != clip_h_l + clip_s_l ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #             qry_map_rgn.pos, clip_h_l + clip_s_l,
+    #             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #         )
+    #     )
 
 
 def check_record_err_string(df, df_tig_fai):
@@ -687,13 +695,18 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
             # pysam query alignment functions are relative to the sequence in the alignment record, not the original
             # sequence. The left-most hard-clipped bases must be added to the query positions to translate to the
             # correct contig coordinates (https://github.com/pysam-developers/pysam/issues/1017).
+            if len(record.cigartuples) > 0:
+                clip_h = record.cigartuples[0][1] if record.cigartuples[0][0] == CIGAR_H else 0
+            else:
+                clip_h = 0
+
             cigar_tuples = clip_soft_to_hard(record.cigartuples.copy())
 
             tig_map_pos = cigar_tuples[0][1] if cigar_tuples[0][0] == CIGAR_H else 0
             tig_map_len = record.query_alignment_end - record.query_alignment_start
             tig_map_end = tig_map_pos + tig_map_len
 
-            if record.query_alignment_start != tig_map_pos:
+            if record.query_alignment_start + clip_h != tig_map_pos:
                 raise RuntimeError(f'First aligned based from pysam ({record.query_alignment_start}) does not match clipping ({tig_map_pos}) at alignment record {align_index}')
 
             cigar_string = ''.join(f'{op_len}{CIGAR_CODE_TO_CHAR[op_code]}' for op_code, op_len in cigar_tuples)
@@ -757,6 +770,7 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
                 '#CHROM', 'POS', 'END',
                 'INDEX',
                 'QRY_ID', 'QRY_POS', 'QRY_END',
+                'QRY_LEN',
                 # 'QRY_MAP_RGN',
                 'RG', 'AO',
                 'MAPQ',

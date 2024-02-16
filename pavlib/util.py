@@ -98,3 +98,21 @@ def region_merge(file_list, pad=500):
         return pd.concat(df_list, axis=1).T
     else:
         return pd.DataFrame([], columns=['#CHROM', 'POS', 'END'])
+
+
+def collapse_to_set(l, to_type=None):
+    l = list(l)  # Copy so the original list is not modified
+    s = set()
+
+    while len(l) > 0:
+        v = l.pop()
+
+        if isinstance(v, (tuple, list)):
+            l.extend(v)
+        else:
+            if to_type is not None:
+                s.add(to_type(v))
+            else:
+                s.add(v)
+
+    return s

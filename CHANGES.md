@@ -1,13 +1,14 @@
 # PAV changes
 
-## 2.5.0 [Unreleased]
+## 2.4.0.1 [To be released as 3.0]
 * Arbitrary number of named haplotypes and new assembly table format (old format supported).
 * No support for "asm_pattern" in config (was removed before this version but was left in documentation).
 * Removed "chrom_cluster" from configuration options.
-
-## 2.4.0
 * Split alignment trimming into distinct "tig" and "ref" phases (BED for each).
-* Keeping dropped variants and writing to VCF.
+* Keeping dropped variants and adding FILTER column with PASS and non-PASS values. Added COMPOUND field (and filter name
+  called COMPOUND) to annotate variants that are dropped because they are inside another variant (i.e. small variant in
+  a large DEL, COMPOUND field points to the accepted variant covering the dropped one). Makes it easier to recover
+  variants if a large false-SV is removed.
 * Added ".fna" and ".fnq" to recognized file types.
 * Moving to Snakemake profile. Removed threading parameters from config (map_threads, inv_threads_lg, inv_threads)
   Configure in the profile instead of parameters.

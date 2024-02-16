@@ -31,19 +31,35 @@ rarely appears in PAV, but some library routines output it.
 ## Alignment table
 
 The alignment tables in "results/{asm_name}/align" in BED format have these fields:
-* #CHROM
-* POS
-* END
-* INDEX
-* QRY_ID
-* QRY_POS
-* QRY_END
+* #CHROM: Subject (reference) name.
+* POS: Aligned subject (reference) start position in BED coordinates.
+* END: Aligned subject (reference) end position in BED coordinates.
+* INDEX: Index of the alignment record in the original SAM output where the first alignment record is 0. Ordering is
+  preserved for alignment records that were removed (i.e. if record 2 was removed, there will be no INDEX with 2 and 3
+  is still the index of the record that came after 2). Gives a unique ID to each alignment record.
+* QRY_ID: Query name.
+* QRY_POS: Query (contig) start position in BED coordinates in the original assembly coordinates (see note below).
+* QRY_END: Query (contig) end position in BED coordinates in the original assembly coordinates (see note below).
 * QRY_LEN: Length of the full contig (not the aligned part of the contig).
-* RG
-* AO
-* MAPQ
-* REV
-* FLAGS
-* HAP
-* CIGAR
+* RG: RG tag from the alignment.
+* AO: AO tag from LRA alignments. From LRA documentation (https://github.com/ChaissonLab/LRA), "This number shows the
+  order of the aligned segment when a read is split".
+* MAPQ: Mapping quality (PHRED scale).
+* REV: True if alignment was reverse-complemented during alignment.
+* FLAGS: SAM flags in hexadecimal format.
+* HAP: Haplotype.
+* CIGAR: CIGAR string.
+* CALL_BATCH: Batch number for variant calling steps. Alignments are separated by contig IDs into batches of similar
+  sizes and each batch can be run in a separate job.
+* TRIM_REF_L: Number of subject (reference) bases that were trimmed from the left (upstream) side of alignment during alignment trimming.
+* TRIM_REF_R: Number of subject (reference) bases that were trimmed from the right side (downstream) of alignment during alignment trimming.
+* TRIM_QRY_L: Number of query (contig) bases that were trimmed from the left side (upstream) of alignment during alignment trimming. Left and right are relative to the aligned reference orientation.
+* TRIM_QRY_R: Number of query (contig) bases that were trimmed from the right side (downstream) of alignment during alignment trimming. Left and right are relative to the aligned reference orientation.
+
+TRIM fields are added after the initial stages and are not present in the BED before trimming.
+
+QRY_POS and QRY_END are the aligned positions of the contig in the *original* assembly coordinates regardless of the
+contig's orientation with the reference. To extract the sequence for a record, use these coordinates (e.g.
+"QRY_ID:(QRY_POS + 1)-QRY_END" in samtools faidx), and to place it in reference orientation, reverse complement the
+extracted sequence if REV is True.
 

@@ -5,6 +5,7 @@ Functions for finding data.
 """
 
 import collections
+import itertools
 import numpy as np
 import os
 import pandas as pd
@@ -14,6 +15,51 @@ import svpoplib
 
 from Bio import SeqIO
 import Bio.bgzf
+
+
+def expand_pattern(pattern, asm_table, **kwargs):
+
+    # Check kwargs
+    if kwargs is None or len(kwargs) == 0:
+        # Empty kwargs so the kwargs product iterates over one item
+        kwargs = {None: (None)}
+
+    for key, val in kwargs.items():
+        if isinstance(val, str):
+            # Single string value, iterate over one item, not each string character
+            kwargs[key] = (val,)
+
+    kwargs_keys = sorted(kwargs.keys())
+    kwargs_n = len(kwargs_keys)
+
+    sub_dict = dict()  # String substitution dict
+
+    if 'asm_name' in kwargs.keys():
+        asm_list = kwargs['asm_name']
+    else:
+        asm_list = asm_table.index
+
+    if 'hap' in kwargs.keys():
+        hap_set = set(kwargs['hap'])
+    else:
+        hap_set = None
+
+    # Process each assembly
+    for asm_name in asm_list:
+        sub_dict['asm_name'] = asm_name
+
+        for hap in get_hap_list(asm_name, asm_table):
+
+            if hap_set is not None and hap not in hap_set:
+                continue
+
+            sub_dict['hap'] = hap
+
+            for kw_prod in itertools.product(*[kwargs[key] for key in kwargs_keys]):
+                for i in range(kwargs_n):
+                    sub_dict[kwargs_keys[i]] = kw_prod[i]
+
+                    yield pattern.format(**sub_dict)
 
 
 def get_hap_list(asm_name, asm_table):

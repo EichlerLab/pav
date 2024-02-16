@@ -212,14 +212,23 @@ class Region:
 
         :return: `True` if `other` is a `Region` with the same chromosome and coordinates.
         """
-        if not issubclass(other.__class__, Region):
-            return False
 
         return (
             self.chrom == other.chrom and
             self.pos == other.pos and
             self.end == other.end
         )
+
+    def __lt__(self, other):
+        """
+        Determine if this object is less than other.
+
+        :param other: Other object.
+
+        :return: `True` if this object is less than `other`.
+        """
+
+        return (self.chrom, self.pos, self.end) < (other.chrom, other.pos, other.end)
 
     def __add__(self, other):
 
@@ -349,91 +358,3 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
                 return str(Bio.Seq.Seq(sequence).reverse_complement())
 
         return sequence
-
-
-# def copy_fa_to_gz(in_file_name, out_file_name):
-#     """
-#     Copy FASTA file to gzipped FASTA if the file is not already gzipped. If the input file is empty, then write an
-#     empty file.
-#
-#     :param in_file_name: Input FASTA file.
-#     :param out_file_name: Output gzipped FASTA file.
-#     """
-#
-#     # Write empty files in FASTA is empty
-#     if os.stat(in_file_name).st_size == 0:
-#         with open(out_file_name, 'w') as out_file:
-#             pass
-#
-#         return
-#
-#     # Determine if file is BGZF compressed
-#     is_bgzf = False
-#
-#     try:
-#         with Bio.bgzf.open(in_file_name, 'r') as in_file_test:
-#             is_bgzf = True
-#
-#     except ValueError:
-#         pass
-#
-#     # Copy or compress
-#     if is_bgzf:
-#
-#         # Copy file if already compressed
-#         shutil.copyfile(in_file_name, out_file_name)
-#
-#     else:
-#         # Compress to BGZF
-#
-#         is_gz = False
-#
-#         try:
-#             with gzip.open(in_file_name, 'r') as in_file_test:
-#
-#                 line = next(in_file_test)
-#
-#                 is_gz = True
-#
-#         except OSError:
-#             pass
-#
-#         if is_gz:
-#             # Re-compress to BGZF
-#
-#             with gzip.open(in_file_name, 'rb') as in_file:
-#                 with Bio.bgzf.open(out_file_name, 'wb') as out_file:
-#                     for line in in_file:
-#                         out_file.write(line)
-#
-#         else:
-#             # Compress plain text
-#
-#             with open(in_file_name, 'r') as in_file:
-#                 with Bio.bgzf.open(out_file_name, 'wb') as out_file:
-#                     for line in in_file:
-#                         out_file.write(line)
-
-# Some pysam implementations do not d o well with repeated calls against an open pysam.FastaFile, so use
-# region_seq_fasta() for all calls.
-# def region_seq_pysam(region, fa_file, rev_compl=None):
-#     """
-#     Get a region sequence from an open pysam file.
-#
-#     :param region: Region object.
-#     :param fa_file: Open pysam FastaFile
-#     :param rev_compl: Reverse-complement sequence is `True`. If `None`, reverse-complement if `region.is_rev`.
-#
-#     :return: Sequence from `region`
-#     """
-#
-#     sequence = fa_file.fetch(region.chrom, region.pos, region.end)
-#
-#     if rev_compl is None:
-#         if region.is_rev:
-#             return str(Bio.Seq.Seq(sequence).reverse_complement())
-#     else:
-#         if rev_compl:
-#             return str(Bio.Seq.Seq(sequence).reverse_complement())
-#
-#     return sequence
