@@ -63,7 +63,10 @@ underscores, and dashes (A-Z, a-z, 0-9, "_", "-").
 
 PAV accepts an arbitrary number of haplotypes per sample. Each haplotype is a column with one of two name formats:
 * HAP_* (where * is a haplotype name): A named haplotype. For example, "HAP_h1", "HAP_h2" would be typical columns
-  for a phased assembly. Other pseudo-haplotypes may be added, such as "HAP_unphased".
+  for a phased assembly. Other pseudo-haplotypes may be added, such as "HAP_unphased". Haplotypes must only contain
+  alpha-numeric and "-", "+", "." characters. Underscores are not allowed to avoid ambiguity with underscore-separated
+  assembly name and haplotypes (e.g. "a_b_c" could be sample "a_b" with haplotype "c", or sample "a" with haplotype
+info_header_list.append(('HAP_VARIANTS', '.', 'STR', 'List of variant IDs in the order of "HAP" identifiying the variant merged in for each haplotype'))info_header_list.append(('XXX', '.', 'STR', 'XXX (INFO/HAP order)'))  "b_c").
 * HAP* (where * is an integer): Legacy mode supporting tables with "HAP1" and "HAP2" column names. These are translated
   to "HAP_h*" internally.
 

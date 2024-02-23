@@ -4,7 +4,6 @@ Process alignments and alignment tiling paths.
 
 
 import gzip
-import numpy as np
 import os
 import pandas as pd
 
@@ -275,6 +274,25 @@ rule align_get_tig_fa:
 # Not needed for PAV, but useful rules for troubleshooting.
 #
 
+def _align_cram_all(wildcards):
+
+    if 'trim' in config:
+        trim = config['trim'].strip().split(',')
+    else:
+        trim = ('tifref',)
+
+    return pavlib.pipeline.expand_pattern(
+        'results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram', ASM_TABLE, trim=trim
+    )
+
+# Get CRAM files
+localrules: align_cram_all
+
+rule align_cram_all:
+    input:
+        cram=_align_cram_all
+
+
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
 rule align_get_cram:
     input:
@@ -285,8 +303,10 @@ rule align_get_cram:
     output:
         cram='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram',
         crai='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram.crai'
+    params:
+        sam_tag=lambda wildcards: fr'@PG\tID:PAV-{wildcards.trim}\tPN:PAV\tVN:{pavlib.constants.get_version_string()}\tDS:PAV Alignment trimming {pavlib.align.TRIM_DESC[wildcards.trim]}'
     shell:
         """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
-            """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} | """
+            """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} --tag "{params.sam_tag}" | """
         """samtools view -T {input.ref_fa} -O CRAM -o {output.cram} && """
         """samtools index {output.cram}"""

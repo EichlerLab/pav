@@ -44,6 +44,12 @@ TC_QRY_BP = 8
 TC_CLIPS_BP = 9
 TC_CLIPH_BP = 10
 
+TRIM_DESC = {
+    'none': 'No trimming',
+    'tig': 'Query-only trimming',
+    'tigref': 'Query-Reference trimming'
+}
+
 
 def align_bed_to_depth_bed(df, df_fai=None):
     """

@@ -23,98 +23,23 @@ global expand
 global intervaltree
 global temp
 
-#
-# Finalize variant calls
-#
-
-# Separate variants into final BED and FA files and write to results.
-rule call_final_bed:
-    input:
-        bed_ins='temp/{asm_name}/bed_merged/{filter}/svindel_ins.bed.gz',
-        bed_del='temp/{asm_name}/bed_merged/{filter}/svindel_del.bed.gz',
-        bed_inv='temp/{asm_name}/bed_merged/{filter}/sv_inv.bed.gz',
-        bed_snv='temp/{asm_name}/bed_merged/{filter}/snv_snv.bed.gz'
-    output:
-        bed_snv_snv='results/{asm_name}/bed_merged/{filter}/snv_snv.bed.gz',
-        bed_indel_ins='results/{asm_name}/bed_merged/{filter}/indel_ins.bed.gz',
-        bed_indel_del='results/{asm_name}/bed_merged/{filter}/indel_del.bed.gz',
-        bed_sv_ins='results/{asm_name}/bed_merged/{filter}/sv_ins.bed.gz',
-        bed_sv_del='results/{asm_name}/bed_merged/{filter}/sv_del.bed.gz',
-        bed_sv_inv='results/{asm_name}/bed_merged/{filter}/sv_inv.bed.gz',
-        fa_indel_ins='results/{asm_name}/bed_merged/{filter}/fa/indel_ins.fa.gz',
-        fa_indel_del='results/{asm_name}/bed_merged/{filter}/fa/indel_del.fa.gz',
-        fa_sv_ins='results/{asm_name}/bed_merged/{filter}/fa/sv_ins.fa.gz',
-        fa_sv_del='results/{asm_name}/bed_merged/{filter}/fa/sv_del.fa.gz',
-        fa_sv_inv='results/{asm_name}/bed_merged/{filter}/fa/sv_inv.fa.gz'
-    run:
-
-        # Process INS/DEL/INV (SV and indel)
-        df_ins = pd.read_csv(input.bed_ins, sep='\t', low_memory=False, keep_default_na=False)
-        df_del = pd.read_csv(input.bed_del, sep='\t', low_memory=False, keep_default_na=False)
-        df_inv = pd.read_csv(input.bed_inv, sep='\t', low_memory=False, keep_default_na=False)
-
-        df_svtype_dict = {
-            'ins': df_ins,
-            'del': df_del,
-            'inv': df_inv
-        }
-
-        for vartype, svtype in [('sv', 'ins'), ('sv', 'del'), ('sv', 'inv'), ('indel', 'ins'), ('indel', 'del')]:
-
-            df = df_svtype_dict[svtype]
-
-            # Subset
-            if vartype == 'sv':
-                df = df.loc[df['SVLEN'] >= 50]
-
-            elif vartype == 'indel':
-                df = df.loc[df['SVLEN'] < 50]
-
-            else:
-                raise RuntimeError('Program Bug: Unknown variant type: {}'.format(vartype))
-
-            # Get output file names
-            bed_file_name = output[f'bed_{vartype}_{svtype}']
-            fa_file_name = output[f'fa_{vartype}_{svtype}']
-
-            # Write FASTA
-            with Bio.bgzf.BgzfWriter(fa_file_name, 'wb') as out_file:
-                Bio.SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
-
-            del(df['SEQ'])
-
-            # Arrange columns
-            df = svpoplib.variant.order_variant_columns(
-                df,
-                head_cols=[
-                    '#CHROM', 'POS', 'END', 'ID',
-                    'SVTYPE', 'SVLEN', 'REF', 'ALT',
-                    'HAP', 'GT', 'CALL_SOURCE',
-                    'QRY_REGION', 'QRY_STRAND', 'ALIGN_INDEX'
-                    'CI',
-                ],
-                tail_cols=[
-                    'CALL_SOURCE',
-                    'HAP_VARIANTS',
-                    'CI',
-                    'HAP_RO', 'HAP_OFFSET', 'HAP_SZRO', 'HAP_OFFSZ'
-                ],
-                allow_missing=True
-            )
-
-            # Write BED
-            df.to_csv(bed_file_name, sep='\t', index=False, compression='gzip')
-
-        # Process SNVs
-        df = pd.read_csv(input.bed_snv, sep='\t', low_memory=False, keep_default_na=False)
-        df.to_csv(output.bed_snv_snv, sep='\t', index=False, compression='gzip')
-
 
 #
 # Merge haplotypes
 #
 
-# Concatenate variant BED files from batched merges.
+# Generate all BED files
+localrules: call_all_bed
+
+rule call_all_bed:
+    input:
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'sv_inv'), filter=('pass', 'fail')
+        )
+
+
+# Concatenate variant BED files from batched merges - non-SNV (has variant FASTA).
 rule call_merge_haplotypes:
     input:
         bed_batch=lambda wildcards: [
@@ -123,7 +48,40 @@ rule call_merge_haplotypes:
             ) for batch in range(MERGE_BATCH_COUNT)
         ]
     output:
-        bed=temp('temp/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz')
+        bed='results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz',
+        fa='results/{asm_name}/bed_merged/{filter}/fa/{vartype_svtype}.fa.gz'
+    wildcard_constraints:
+        filter='pass|fail',
+        vartype_svtype='svindel_ins|svindel_del|sv_inv'
+    run:
+
+        df_list = [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch if os.stat(file_name).st_size > 0]
+
+        df = pd.concat(
+            df_list, axis=0
+        ).sort_values(
+            ['#CHROM', 'POS', 'END', 'ID']
+        )
+
+        with Bio.bgzf.BgzfWriter(output.fa, 'wb') as out_file:
+            Bio.SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(df), out_file, 'fasta')
+
+        del df['SEQ']
+
+        df.to_csv(
+            output.bed, sep='\t', index=False, compression='gzip'
+        )
+
+# Concatenate variant BED files from batched merges - SNV (no variant FASTA).
+rule call_merge_haplotypes_snv:
+    input:
+        bed_batch=lambda wildcards: [
+            'temp/{asm_name}/bed/batch/{filter}/snv_snv/{batch}.bed.gz'.format(
+                asm_name=wildcards.asm_name, filter=wildcards.filter, vartype_svtype=wildcards.vartype_svtype, batch=batch
+            ) for batch in range(MERGE_BATCH_COUNT)
+        ]
+    output:
+        bed='results/{asm_name}/bed_merged/{filter}/snv_snv.bed.gz'
     wildcard_constraints:
         filter='pass|fail'
     run:
@@ -137,7 +95,6 @@ rule call_merge_haplotypes:
         ).to_csv(
             output.bed, sep='\t', index=False, compression='gzip'
         )
-
 
 # Merge by batches.
 rule call_merge_haplotypes_batch:
@@ -180,12 +137,15 @@ rule call_merge_haplotypes_batch:
         bed_list = list()
 
         for index in range(len(hap_list)):
+
+            # Read variant table
             df = pd.read_csv(input.bed_var[index], sep='\t', dtype={'#CHROM': str}, low_memory=False)
             df = df.loc[df['#CHROM'].isin(subset_chrom)]
 
             df.set_index('ID', inplace=True, drop=False)
             df.index.name = 'INDEX'
 
+            # Read SEQ
             if df.shape[0] > 0 and len(input.fa_var) > 0:
                 df['SEQ'] = pd.Series({
                     record.id: str(record.seq)
@@ -215,63 +175,9 @@ rule call_merge_haplotypes_batch:
 
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# Create a table of merge batch assignments
-localrules: call_merge_batch_table
-
-rule call_merge_batch_table:
-    input:
-        tsv='data/ref/contig_info.tsv.gz'
-    output:
-        tsv='data/ref/merge_batch.tsv.gz'
-    run:
-
-        # Read and sort
-        df = pd.read_csv(
-            input.tsv, sep='\t', dtype={'CHROM': str, 'LEN': int}
-        ).sort_values(
-            'LEN', ascending=False
-        ).set_index(
-            'CHROM'
-        )[['LEN']]
-
-        df['BATCH'] = -1
-
-        # Get a list of assignments for each batch
-        list_chr = collections.defaultdict(list)
-        list_size = collections.Counter()
-
-        def get_smallest():
-            """
-            Get the next smallest bin.
-            """
-
-            min_index = 0
-
-            for i in range(MERGE_BATCH_COUNT):
-
-                if list_size[i] == 0:
-                    return i
-
-                if list_size[i] < list_size[min_index]:
-                    min_index = i
-
-            return min_index
-
-        for chrom in df.index:
-            i = get_smallest()
-            df.loc[chrom, 'BATCH'] = i
-            list_size[i] += df.loc[chrom, 'LEN']
-
-        # Check
-        if np.any(df['BATCH'] < 0):
-            raise RuntimeError('Failed to assign all reference contigs to batches (PROGRAM BUG)')
-
-        # Write
-        df.to_csv(output.tsv, sep='\t', index=True, compression='gzip')
-
 
 #
-# Integrate variant calls
+# Merge support
 #
 
 # Make a table of mappable regions by merging aligned loci with loci covered by alignment-truncating events.
@@ -308,6 +214,267 @@ rule call_callable_regions:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
+
+#
+# Integrate variant calls from multiple sources (per haplotype, pre-merge)
+#
+
+# Run all BED
+localrules: call_all_bed_hap
+
+rule call_all_bed_hap:
+    input:
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/bed_hap/{filter}/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            filter=('pass', 'fail'), vartype_svtype=('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
+        ),
+        fa=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz', ASM_TABLE,
+            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv')
+        ),
+        fa_red=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/bed_hap/fail/{hap}/redundant/fa/{vartype_svtype}.fa.gz', ASM_TABLE,
+            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv')
+        )
+
+
+# Write FASTA files for non-PASS variants (not in the redundant set)
+rule call_integrate_fail_fa:
+    input:
+        bed='results/{asm_name}/bed_hap/fail/{hap}/{vartype_svtype}.bed.gz',
+        fa='temp/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz'
+    output:
+        fa='results/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz'
+    run:
+
+        id_set = set(pd.read_csv(input.bed, sep='\t', usecols=['ID',])['ID'])
+
+        with Bio.bgzf.BgzfWriter(output.fa) as out_file:
+            Bio.SeqIO.write(
+                svpoplib.seq.fa_to_record_iter(input.fa, record_set=id_set),
+                out_file, 'fasta'
+            )
+
+# Write FASTA files for non-PASS variants (not in the redundant set)
+rule call_integrate_fail_redundant_fa:
+    input:
+        bed='results/{asm_name}/bed_hap/fail/{hap}/redundant/{vartype_svtype}.bed.gz',
+        fa='temp/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz'
+    output:
+        fa='results/{asm_name}/bed_hap/fail/{hap}/redundant/fa/{vartype_svtype}.fa.gz'
+    run:
+
+        id_set = set(pd.read_csv(input.bed, sep='\t', usecols=['ID',])['ID'])
+
+        with Bio.bgzf.BgzfWriter(output.fa) as out_file:
+            Bio.SeqIO.write(
+                svpoplib.seq.fa_to_record_iter(input.fa, record_set=id_set),
+                out_file, 'fasta'
+            )
+
+# Separate multiple calls removed by the TRIM filter at the same site. Calls are separated to the "redundant"
+# if they intersect a PASS variant. If there are multiple failed calls that do not intersect a PASS variant, then
+# the one from the best alignment (highest QV, then longest alignment, then earliest start position) is chosen.
+rule call_integrate_filter_redundant:
+    input:
+        bed='temp/{asm_name}/bed_hap/fail/{hap}/{vartype_svtype}.bed.gz',
+        tsv='results/{asm_name}/bed_hap/fail/{hap}/redundant/intersect_{vartype_svtype}.tsv.gz'
+    output:
+        bed_nr='results/{asm_name}/bed_hap/fail/{hap}/{vartype_svtype}.bed.gz',
+        bed_red='results/{asm_name}/bed_hap/fail/{hap}/redundant/{vartype_svtype}.bed.gz'
+    run:
+
+        # Read all FAIL variants
+        df = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, low_memory=False)
+
+        # Initialize IDs acceptned into the NR (nonredundant) set with non-TRIM variants from df
+        id_set = set(df.loc[df['FILTER'].apply(lambda val: 'TRIM' not in val.split(',')), 'ID'])
+
+        # Get lead variant IDs for each set
+        df_int = pd.read_csv(input.tsv, sep='\t', low_memory=False)
+
+        df_int = df_int.loc[df_int['VARIANTS'].apply(lambda val: len(set(val.split(',')) & id_set) == 0)]  # Remove records that were already accepted into the NR set
+
+        df_int = df_int.loc[df_int['SOURCE'].apply(lambda val: not val.startswith('PASS'))]  # Drop PASS records appearing in the PASS set
+
+        id_set |= set(df_int['VARIANTS'].apply(lambda val: val.split(',')[0]))  # Choose the first of the merged set to represent all the other failed variants from other aligned segments at this site
+
+        # Split variants and write
+        df_nr = df.loc[df['ID'].isin(id_set)]
+
+        index_set = set(df_nr.index)
+        df_red = df.loc[[index not in index_set for index in df.index]]
+
+        df_nr.to_csv(output.bed_nr, sep='\t', index=False, compression='gzip')
+        df_red.to_csv(output.bed_red, sep='\t', index=False, compression='gzip')
+
+
+# Concatenate variant BED files from batched merges.
+rule call_intersect_fail:
+    input:
+        tsv=lambda wildcards: [
+            'temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz'.format(
+                asm_name=wildcards.asm_name, hap=wildcards.hap, vartype_svtype=wildcards.vartype_svtype, batch=batch
+            ) for batch in range(MERGE_BATCH_COUNT)
+        ]
+    output:
+        tsv='results/{asm_name}/bed_hap/fail/{hap}/redundant/intersect_{vartype_svtype}.tsv.gz'
+    run:
+
+        df_list = [pd.read_csv(file_name, sep='\t') for file_name in input.tsv if os.stat(file_name).st_size > 0]
+
+        df = pd.concat(
+            df_list, axis=0
+        ).to_csv(
+            output.tsv, sep='\t', index=False, compression='gzip'
+        )
+
+
+# Intersect failed calls with FILTER=PASS calls and other failed calls. Used to eliminate redundant failed call
+# annotations.
+rule call_intersect_fail_batch:
+    input:
+        bed_pass='results/{asm_name}/bed_hap/pass/{hap}/{vartype_svtype}.bed.gz',
+        bed_fail='temp/{asm_name}/bed_hap/fail/{hap}/{vartype_svtype}.bed.gz',
+        fa_pass=lambda wildcards: ['results/{asm_name}/bed_hap/pass/{hap}/fa/{vartype_svtype}.fa.gz']
+            if wildcards.vartype_svtype != 'snv_snv' else [],
+        fa_fail=lambda wildcards: ['temp/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz']
+            if wildcards.vartype_svtype != 'snv_snv' else [],
+        bed_align='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
+        tsv_batch='data/ref/merge_batch.tsv.gz'
+    output:
+        tsv=temp('temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz')
+    threads: 12
+    run:
+
+        # Get chromosome set for this batch
+        df_batch = pd.read_csv(input.tsv_batch, sep='\t', low_memory=False)
+        df_batch = df_batch.loc[df_batch['BATCH'] == int(wildcards.batch)]
+
+        subset_chrom = set(df_batch['CHROM'])
+
+        del df_batch
+
+        if len(subset_chrom) > 0:
+            # Read
+            df_pass = pd.read_csv(
+                input.bed_pass, sep='\t', dtype={'#CHROM': str, 'ALIGN_INDEX': str},
+                usecols=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'ALIGN_INDEX', 'FILTER'] + (['ALT', 'REF'] if wildcards.vartype_svtype == 'snv_snv' else []),
+                low_memory=False
+            )
+
+            df_pass = df_pass.loc[df_pass['#CHROM'].isin(subset_chrom)].copy()
+
+            df_fail = pd.read_csv(
+                input.bed_fail, sep='\t',  dtype={'#CHROM': str, 'ALIGN_INDEX': str},
+                usecols=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'ALIGN_INDEX', 'FILTER'] + (['ALT', 'REF'] if wildcards.vartype_svtype == 'snv_snv' else []),
+                low_memory=False
+            )
+
+            df_fail = df_fail.loc[df_fail['#CHROM'].isin(subset_chrom)].copy()
+
+            # Add SEQ
+            df_pass.set_index('ID', inplace=True, drop=False)
+            df_pass.index.name = 'INDEX'
+
+            if df_pass.shape[0] > 0 and len(input.fa_pass) > 0:
+                df_pass['SEQ'] = pd.Series({
+                    record.id: str(record.seq)
+                        for record in svpoplib.seq.fa_to_record_iter(
+                            input.fa_pass[0], record_set=set(df_pass['ID'])
+                        )
+                })
+            else:
+                df_pass['SEQ'] = np.nan
+
+            df_fail.set_index('ID', inplace=True, drop=False)
+            df_fail.index.name = 'INDEX'
+
+            if df_fail.shape[0] > 0 and len(input.fa_fail) > 0:
+                df_fail['SEQ'] = pd.Series({
+                    record.id: str(record.seq)
+                        for record in svpoplib.seq.fa_to_record_iter(
+                            input.fa_fail[0], record_set=set(df_fail['ID'])
+                        )
+                })
+            else:
+                df_fail['SEQ'] = np.nan
+
+
+            # Split df_fail into TRIM and non-TRIM, append non-TRIM to df_pass
+            df_fail_trim = df_fail.loc[df_fail['FILTER'].apply(lambda filter_val: 'TRIM' in filter_val)]
+            index_set = set(df_fail_trim.index)
+            df_fail_notrim = df_fail.loc[[index not in index_set for index in df_fail.index]]
+
+            if df_fail_notrim.shape[0] > 0:
+                if df_pass.shape[0] > 0:
+                    df_pass = pd.concat([df_pass, df_fail_notrim], axis=0)
+                else:
+                    df_pass = df_fail_notrim
+
+            df_fail = df_fail_trim
+
+            # Prioritize alignments by MAPQ and length
+            df_align = pd.read_csv(
+                input.bed_align, sep='\t',
+                usecols=['INDEX', 'QRY_LEN', 'QRY_POS', 'QRY_END', 'MAPQ'],
+                dtype={'INDEX': int}
+            )
+
+            index_set = {
+                int(val) for val_str in df_fail['ALIGN_INDEX'] for val in str(val_str).split(',')
+            }
+
+            df_align = df_align.loc[df_align['INDEX'].isin(index_set)]
+
+            df_align['LEN'] = df_align['QRY_END'] - df_align['QRY_POS']
+
+            index_list = list(index for index in df_align.sort_values(['MAPQ', 'LEN', 'INDEX'])['INDEX'])
+
+            # For variants with multiple alignment indices, choose the least one.
+            for index_var in df_fail.index:
+                align_index_set = {int(val) for val in df_fail.loc[index_var, 'ALIGN_INDEX'].split(',')}
+                df_fail.loc[index_var, 'ALIGN_INDEX'] = [val for val in index_list if val in align_index_set][-1]
+
+            index_set = set(df_fail['ALIGN_INDEX'])
+            index_list = [val for val in index_list if val in index_set]
+
+            # Separate failed variants on alignment index
+            df_list = [(df_pass, 'PASS')]
+
+            for index in index_list:
+                df_list.append((df_fail.loc[df_fail['ALIGN_INDEX'] == index], f'TRIM_{index}'))
+
+            # Intersect
+            df_intersect = svpoplib.svmerge.merge_variants(
+                bed_list=[val[0] for val in df_list],
+                sample_names=[val[1] for val in df_list],
+                strategy=pavlib.call.get_merge_params(wildcards, get_config(wildcards)),
+                threads=threads
+            )
+
+            # Reshape and write
+            df_intersect = df_intersect[['ID'] + [col for col in df_intersect.columns if col.startswith('MERGE_')]]
+
+            del df_intersect['MERGE_SRC']
+            del df_intersect['MERGE_SRC_ID']
+
+            df_intersect['MERGE_SAMPLES'] = df_intersect['MERGE_SAMPLES'].apply(lambda val_list:
+                ','.join([
+                    (val[5:] if val.startswith('TRIM_') else val) for val in val_list.split(',')
+                ])
+            )
+
+            df_intersect.columns = [col[6:] if col.startswith('MERGE_') else col for col in df_intersect.columns]
+            df_intersect.columns = ['SOURCE' if col == 'SAMPLES' else col for col in df_intersect.columns]
+
+            df_intersect.to_csv(output.tsv, sep='\t', index=False, compression='gzip')
+
+        else:
+            # Write empty file (skipped when batches are concatenated)
+            with open(output.tsv, 'wt') as out_file:
+                pass
+
 # Filter variants from inside inversions
 rule call_integrate_sources:
     input:
@@ -329,13 +496,13 @@ rule call_integrate_sources:
         fa_ins_pass='results/{asm_name}/bed_hap/pass/{hap}/fa/svindel_ins.fa.gz',
         fa_del_pass='results/{asm_name}/bed_hap/pass/{hap}/fa/svindel_del.fa.gz',
         fa_inv_pass='results/{asm_name}/bed_hap/pass/{hap}/fa/sv_inv.fa.gz',
-        bed_ins_fail='results/{asm_name}/bed_hap/fail/{hap}/svindel_ins.bed.gz',
-        bed_del_fail='results/{asm_name}/bed_hap/fail/{hap}/svindel_del.bed.gz',
-        bed_inv_fail='results/{asm_name}/bed_hap/fail/{hap}/sv_inv.bed.gz',
-        bed_snv_fail='results/{asm_name}/bed_hap/fail/{hap}/snv_snv.bed.gz',
-        fa_ins_fail='results/{asm_name}/bed_hap/fail/{hap}/fa/svindel_ins.fa.gz',
-        fa_del_fail='results/{asm_name}/bed_hap/fail/{hap}/fa/svindel_del.fa.gz',
-        fa_inv_fail='results/{asm_name}/bed_hap/fail/{hap}/fa/sv_inv.fa.gz'
+        bed_ins_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/svindel_ins.bed.gz'),
+        bed_del_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/svindel_del.bed.gz'),
+        bed_inv_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/sv_inv.bed.gz'),
+        bed_snv_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/snv_snv.bed.gz'),
+        fa_ins_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/svindel_ins.fa.gz'),
+        fa_del_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/svindel_del.fa.gz'),
+        fa_inv_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/sv_inv.fa.gz')
     run:
 
         # Get parameters
@@ -636,3 +803,62 @@ rule call_cigar:
         # Write
         df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
         df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
+
+
+#
+# Supporting rules
+#
+
+# Create a table of merge batch assignments
+localrules: call_merge_batch_table
+
+rule call_merge_batch_table:
+    input:
+        tsv='data/ref/contig_info.tsv.gz'
+    output:
+        tsv='data/ref/merge_batch.tsv.gz'
+    run:
+
+        # Read and sort
+        df = pd.read_csv(
+            input.tsv, sep='\t', dtype={'CHROM': str, 'LEN': int}
+        ).sort_values(
+            'LEN', ascending=False
+        ).set_index(
+            'CHROM'
+        )[['LEN']]
+
+        df['BATCH'] = -1
+
+        # Get a list of assignments for each batch
+        list_chr = collections.defaultdict(list)
+        list_size = collections.Counter()
+
+        def get_smallest():
+            """
+            Get the next smallest bin.
+            """
+
+            min_index = 0
+
+            for i in range(MERGE_BATCH_COUNT):
+
+                if list_size[i] == 0:
+                    return i
+
+                if list_size[i] < list_size[min_index]:
+                    min_index = i
+
+            return min_index
+
+        for chrom in df.index:
+            i = get_smallest()
+            df.loc[chrom, 'BATCH'] = i
+            list_size[i] += df.loc[chrom, 'LEN']
+
+        # Check
+        if np.any(df['BATCH'] < 0):
+            raise RuntimeError('Failed to assign all reference contigs to batches (PROGRAM BUG)')
+
+        # Write
+        df.to_csv(output.tsv, sep='\t', index=True, compression='gzip')

@@ -22,7 +22,7 @@ def expand_pattern(pattern, asm_table, **kwargs):
     # Check kwargs
     if kwargs is None or len(kwargs) == 0:
         # Empty kwargs so the kwargs product iterates over one item
-        kwargs = {None: (None)}
+        kwargs = {None: (None,)}
 
     for key, val in kwargs.items():
         if isinstance(val, str):
@@ -59,7 +59,7 @@ def expand_pattern(pattern, asm_table, **kwargs):
                 for i in range(kwargs_n):
                     sub_dict[kwargs_keys[i]] = kw_prod[i]
 
-                    yield pattern.format(**sub_dict)
+                yield pattern.format(**sub_dict)
 
 
 def get_hap_list(asm_name, asm_table):
@@ -597,9 +597,9 @@ def read_assembly_table(asm_table_filename, config):
         if col in col_set:
             raise RuntimeError(f'Duplicate column name "{col}" found in assembly table: {asm_table_filename}')
 
-        match_hap_named = re.search(r'^HAP_([a-zA-Z0-9_-]+)$', col)
-        match_hap_num = re.search(r'^HAP([a-zA-Z0-9_-]+)$', col)
-        match_filter = re.search(r'^FILTER_([a-zA-Z0-9_-]+)$', col)
+        match_hap_named = re.search(r'^HAP_([a-zA-Z0-9-+.]+)$', col)
+        match_hap_num = re.search(r'^HAP([0-9]+)$', col)
+        match_filter = re.search(r'^FILTER_([a-zA-Z0-9-+.]+)$', col)
 
         if match_hap_named:
             hap = match_hap_named[1]

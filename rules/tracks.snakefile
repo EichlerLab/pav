@@ -2,15 +2,20 @@
 Prepare UCSC tracks for data.
 """
 
+import matplotlib as mpl
+import numpy as np
 import os
 import pandas as pd
 
+import pavlib
 import svpoplib
 
 global PIPELINE_DIR
 global REF_FAI
 
 global temp
+global ASM_TABLE
+
 
 
 #
@@ -23,10 +28,12 @@ VARTYPE_TO_SVTYPE_TUPLE = {
     'indel': ('ins', 'del')
 }
 
-ALIGN_COLOR = {
-    'h1': '160,00,144', # Pink
-    'h2': '64,00,160'   # Purple
-}
+ALIGN_COLORMAP = 'viridis'
+
+# ALIGN_COLOR = {
+#     'h1': '160,00,144', # Pink
+#     'h2': '64,00,160'   # Purple
+# }
 
 VAR_BED_PREMERGE_PATTERN = 'results/{{asm_name}}/bed/pre_merge/{{hap}}/{vartype}_{svtype}.bed.gz'
 
@@ -188,21 +195,54 @@ rule tracks_align:
             sep='\t'
         ).set_index('FIELD')
 
-        # Read variants
+        # Read alignments
         df = pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in [input.bed_h1, input.bed_h2]],
+            [pd.read_csv(file_name, sep='\t', dtype={'#CHROM': str, 'QRY_ID': str}) for file_name in [input.bed_h1, input.bed_h2]],
             axis=0
-        ).sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'])
+        )
+
+        del df['CIGAR']
+
+        # Set contig order
+        df.sort_values(['QRY_ID', 'QRY_POS', 'QRY_END'], inplace=True)
+        df['QRY_ORDER'] = -1
+
+        last_qry = None
+        qry_order = 0
+
+        for index, row in df.iterrows():
+            if row['QRY_ID'] != last_qry:
+                last_qry = row['QRY_ID']
+                qry_order = 0
+
+            df.loc[index, 'QRY_ORDER'] = qry_order
+            qry_order += 1
+
+        # Sort
+        df.sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'], inplace=True)
 
         # Add BED fields
         df['POS_THICK'] = df['POS']
         df['END_THICK'] = df['END']
-        df['ID'] = df['QRY_ID']
+        df['ID'] = df.apply(lambda row: '{QRY_ID} - {INDEX} ({HAP}-{QRY_ORDER})'.format(**row), axis=1)
         df['SCORE'] = 1000
-        df['COL'] = df['HAP'].apply(lambda val: ALIGN_COLOR.get(val, '0,0,0'))
         df['STRAND'] = df['REV'].apply(lambda val: '-' if val else '+')
 
-        del(df['CIGAR'])
+        # Set Color
+        hap_list = pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+        colormap_index = np.linspace(0, 0.9999, len(hap_list))
+        colormap = mpl.colormaps[ALIGN_COLORMAP]
+
+        hap_color = {  # Color to RGB string (e.g. "(0.267004, 0.004874, 0.329415, 1.0)" from colormap to "68,1,84")
+            hap_list[i]: ','.join([str(int(col * 255)) for col in mpl.colors.to_rgb(colormap(colormap_index[i]))])
+                for i in range(len(hap_list))
+        }
+
+        # hap_color = {
+        #     hap_list[i]: colormap(colormap_index[i]) for i in range(len(hap_list))
+        # }
+
+        df['COL'] = df['HAP'].apply(lambda val: hap_color[val])
 
         # Sort columns
         head_cols = ['#CHROM', 'POS', 'END', 'ID', 'SCORE', 'STRAND', 'POS_THICK', 'END_THICK', 'COL']

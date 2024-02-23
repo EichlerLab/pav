@@ -359,7 +359,9 @@ class DepthContainer:
             self.qry_id = set(self.df_cov.iloc[self.index]['QRY_ID'].split(',')) if not pd.isnull(self.df_cov.iloc[self.index]['QRY_ID']) else set()
 
         # Catch up to the coverage record where this record begins
-        is_ins_end = False
+        #assert False, 'WORKING ON DEPTH CONTAINER'
+
+        is_end_ins = False
 
         while row['POS'] >= self.end:
             self.index += 1
@@ -379,18 +381,18 @@ class DepthContainer:
                     sv_id = row['ID'] if 'ID' in row.index else '<UNKNOWN>'
                     raise RuntimeError(f'Ran out of depth records on "{self.chrom}" to the beginning of variant record {sv_id} (variant row index {row.name})')
 
-                is_ins_end = True
+                self.index -= 1
+                is_end_ins = True
+                break
 
-            else:
+            self.pos = self.df_cov.iloc[self.index]['POS']
+            self.end = self.df_cov.iloc[self.index]['END']
+            self.depth = self.df_cov.iloc[self.index]['DEPTH']
 
-                self.pos = self.df_cov.iloc[self.index]['POS']
-                self.end = self.df_cov.iloc[self.index]['END']
-                self.depth = self.df_cov.iloc[self.index]['DEPTH']
-
-                self.qry_id = set(self.df_cov.iloc[self.index]['QRY_ID'].split(',')) if not pd.isnull(self.df_cov.iloc[self.index]['QRY_ID']) else set()
+            self.qry_id = set(self.df_cov.iloc[self.index]['QRY_ID'].split(',')) if not pd.isnull(self.df_cov.iloc[self.index]['QRY_ID']) else set()
 
         # If the variant fully contained within this coverage record, return stats from this region
-        if row['END'] < self.end or is_ins_end:
+        if row['END'] < self.end or is_end_ins:
             return self.depth, 1 if self.depth > 0 else 0, ','.join(sorted(self.qry_id))
 
         # Get coverage from the variant position to the end of this coverage record

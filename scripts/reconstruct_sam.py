@@ -6,6 +6,7 @@ create CRAM/BAM files from the alignment BAM files.
 """
 
 import argparse
+import codecs
 import gzip
 import os
 import pandas as pd
@@ -40,6 +41,10 @@ if __name__ == '__main__':
                         help='Output troubleshooting information to stderr'
                         )
 
+    parser.add_argument('--tag',
+                        help='PAV program SAM tag to add. String represetns the full line. String should start with "@PG" and include the full tab-delimited line of tag information. Tabs should be escaped in this string (i.e. "\\t" will be translated to an acutal tab character).'
+                        )
+
     args = parser.parse_args()
 
     out_file = sys.stdout
@@ -49,6 +54,8 @@ if __name__ == '__main__':
     with gzip.open(args.headers, 'rt') as header_file:
         for line in header_file:
             out_file.write(line)
+            out_file.write(codecs.getdecoder('unicode_escape')(args.tag)[0])
+            out_file.write('\n')
 
     # Read alignment records
     df = pd.read_csv(args.bed, sep='\t')
@@ -72,7 +79,7 @@ if __name__ == '__main__':
                 clip_l = clip_s_l
 
             # Get sequence
-            seq = fasta_file.fetch(row['QUERY_ID'], row['QUERY_TIG_POS'] - clip_l, row['QUERY_TIG_END'] + clip_r)
+            seq = fasta_file.fetch(row['QRY_ID'], row['QRY_POS'] - clip_l, row['QRY_END'] + clip_r)
 
             # Reverse-complement
             if row['REV']:
@@ -80,7 +87,7 @@ if __name__ == '__main__':
 
             sys.stdout.write(
                 '{query_id:s}\t{flags:s}\t{chrom:s}\t{pos:d}\t{mapq:d}\t{cigar:s}\t{rnext:s}\t{pnext:d}\t{tlen:d}\t{seq:s}\t{qual:s}\n'.format(**{
-                    'query_id': row['QUERY_ID'],
+                    'query_id': row['QRY_ID'],
                     'flags': row['FLAGS'],
                     'chrom': row['#CHROM'],
                     'pos': row['POS'] + 1,
