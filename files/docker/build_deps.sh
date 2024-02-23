@@ -75,7 +75,7 @@ rm -r minimap2-${MINIMAP_VERSION} minimap2-${MINIMAP_VERSION}.tar.bz2
 
 ### LRA ###
 
-git clone --recursive https://github.com/ChaissonLab/LRA.git -b v${LRA_VERSION}
+git clone --recursive https://github.com/ChaissonLab/LRA.git -b ${LRA_VERSION}
 
 pushd LRA
 

@@ -34,7 +34,7 @@ COPY scripts/ ${PAV_BASE}/scripts/
 COPY dep/ ${PAV_BASE}/dep/
 COPY pavlib/ ${PAV_BASE}/pavlib/
 COPY rules/ ${PAV_BASE}/rules/
-COPY Snakefile Dockerfile *.md rundist runlocal ${PAV_BASE}/
+COPY Snakefile Dockerfile *.md ${PAV_BASE}/
 
 
 #
