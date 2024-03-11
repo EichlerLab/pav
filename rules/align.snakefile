@@ -279,7 +279,7 @@ def _align_cram_all(wildcards):
     if 'trim' in config:
         trim = config['trim'].strip().split(',')
     else:
-        trim = ('tifref',)
+        trim = ('tigref',)
 
     return pavlib.pipeline.expand_pattern(
         'results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram', ASM_TABLE, trim=trim

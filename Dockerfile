@@ -63,7 +63,8 @@ RUN pip3 install \
     pandas \
     pysam \
     scipy \
-    snakemake \
+    snakemake==7.20.0 \
+    pulp==2.7.0 \
     drmaa
 
 # Copy from build

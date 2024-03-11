@@ -226,7 +226,7 @@ rule call_all_bed_hap:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
             'results/{asm_name}/bed_hap/{filter}/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE,
-            filter=('pass', 'fail'), vartype_svtype=('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
+            filter=('pass', 'fail'), vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv')
         ),
         fa=lambda wildcards: pavlib.pipeline.expand_pattern(
             'results/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz', ASM_TABLE,
@@ -237,6 +237,15 @@ rule call_all_bed_hap:
             vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv')
         )
 
+# Create PASS BEDs
+localrules: call_all_bed_pass
+
+rule call_all_bed_pass:
+    input:
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'results/{asm_name}/bed_hap/pass/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv')
+        )
 
 # Write FASTA files for non-PASS variants (not in the redundant set)
 rule call_integrate_fail_fa:

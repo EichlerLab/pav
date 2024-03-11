@@ -84,7 +84,7 @@ else:
 ### Wildcard constraints ###
 
 wildcard_constraints:
-    asm_name='[A-Za-z_\-0-9\.]+'
+    asm_name=r'[A-Za-z_\-0-9\.]+'
 
 ### Default rule ###
 
