@@ -35,7 +35,7 @@ rule call_all_bed:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
             'results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz', ASM_TABLE,
-            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'sv_inv'), filter=('pass', 'fail')
+            vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv'), filter=('pass', 'fail')
         )
 
 
@@ -77,7 +77,7 @@ rule call_merge_haplotypes_snv:
     input:
         bed_batch=lambda wildcards: [
             'temp/{asm_name}/bed/batch/{filter}/snv_snv/{batch}.bed.gz'.format(
-                asm_name=wildcards.asm_name, filter=wildcards.filter, vartype_svtype=wildcards.vartype_svtype, batch=batch
+                asm_name=wildcards.asm_name, filter=wildcards.filter, batch=batch
             ) for batch in range(MERGE_BATCH_COUNT)
         ]
     output:
@@ -353,7 +353,7 @@ rule call_intersect_fail_batch:
         tsv_batch='data/ref/merge_batch.tsv.gz'
     output:
         tsv=temp('temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz')
-    threads: 12
+    threads: 1
     run:
 
         # Get chromosome set for this batch

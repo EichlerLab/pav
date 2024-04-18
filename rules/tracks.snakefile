@@ -35,7 +35,7 @@ ALIGN_COLORMAP = 'viridis'
 #     'h2': '64,00,160'   # Purple
 # }
 
-VAR_BED_PREMERGE_PATTERN = 'results/{{asm_name}}/bed/pre_merge/{{hap}}/{vartype}_{svtype}.bed.gz'
+VAR_BED_PREMERGE_PATTERN = 'results/{{asm_name}}/bed_hap/{filter}/{{hap}}/{vartype}_{svtype}.bed.gz'
 
 def _track_get_input_bed(wildcards):
     """
@@ -75,10 +75,20 @@ def _track_get_input_bed(wildcards):
     else:
         raise RuntimeError(f'Unrecognized variant type: {wildcards.vartype}')
 
+    # Get filter list
+    if wildcards.filter == 'pass':
+        input_filter = ['pass']
+    elif wildcards.filter == 'fail':
+        input_filter = ['fail']
+    elif wildcards.filter == 'all':
+        input_filter = ['pass', 'fail']
+    else:
+        raise RuntimeError(f'Unknown input filter (wildcards.filter): "{wildcards.filter}"')
+
     # Return list of input files
     return [
-        VAR_BED_PREMERGE_PATTERN.format(vartype=input_vartype, svtype=svtype)
-            for svtype in input_svtype
+        VAR_BED_PREMERGE_PATTERN.format(vartype=input_vartype, svtype=svtype, filter=filter)
+            for svtype in input_svtype for filter in input_filter
     ]
 
 
@@ -86,14 +96,21 @@ def _track_get_input_bed(wildcards):
 # Variant calls
 #
 
+rule tracks_hap_call_all:
+    input:
+        bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'tracks/{asm_name}/variant/pre_merge/pass/{varsvtype}_{hap}.bb', ASM_TABLE,
+            varsvtype=['sv_insdel', 'sv_inv', 'indel_insdel', 'snv_snv']
+        )
+
 # BigBed for one variant set.
 rule tracks_hap_call_bb:
     input:
-        bed='temp/{asm_name}/tracks/bed_pre_merge/{vartype}_{svtype}_{hap}.bed',
-        asfile='temp/{asm_name}/tracks/bed_pre_merge/{vartype}_{svtype}_{hap}.as',
+        bed='temp/{asm_name}/tracks/bed_pre_merge/{filter}/{vartype}_{svtype}_{hap}.bed',
+        asfile='temp/{asm_name}/tracks/bed_pre_merge/{filter}/{vartype}_{svtype}_{hap}.as',
         fai=REF_FAI
     output:
-        bb='tracks/{asm_name}/variant/pre_merge/{vartype}_{svtype}_{hap}.bb'
+        bb='tracks/{asm_name}/variant/pre_merge/{filter}/{vartype}_{svtype}_{hap}.bb'
     shell:
         """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {input.fai} {output.bb}"""
 
@@ -103,9 +120,14 @@ rule tracks_hap_call:
         bed=_track_get_input_bed,
         fai=REF_FAI
     output:
-        bed=temp('temp/{asm_name}/tracks/bed_pre_merge/{vartype}_{svtype}_{hap}.bed'),
-        asfile=temp('temp/{asm_name}/tracks/bed_pre_merge/{vartype}_{svtype}_{hap}.as')
+        bed=temp('temp/{asm_name}/tracks/bed_pre_merge/{filter}/{vartype}_{svtype}_{hap}.bed'),
+        asfile=temp('temp/{asm_name}/tracks/bed_pre_merge/{filter}/{vartype}_{svtype}_{hap}.as')
+    wildcard_constraints:
+        filter='pass|fail|all'
     run:
+
+        if wildcards.filter != 'pass':
+            raise NotImplementedError(f'Tracks containing non-PASS variants is not yet supported: {wildcards.filter}')
 
         field_table_file_name = os.path.join(PIPELINE_DIR, 'files/tracks/variant_track_fields.tsv')
 
@@ -151,6 +173,14 @@ rule tracks_hap_call:
 # Alignments
 #
 
+# Generate all alignment tracks
+rule tracks_align_all:
+    input:
+        bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'tracks/{asm_name}/align/tig_align_trim-{trim}.bb', ASM_TABLE,
+            trim=('none', 'tig', 'tigref')
+        )
+
 # Alignment track BED to BigBed.
 rule tracks_align_bb:
     input:
@@ -164,8 +194,10 @@ rule tracks_align_bb:
 # Alignment tracks.
 rule tracks_align:
     input:
-        bed_h1='results/{asm_name}/align/trim-{trim}/aligned_tig_h1.bed.gz',
-        bed_h2='results/{asm_name}/align/trim-{trim}/aligned_tig_h2.bed.gz'
+        bed=lambda wildcards: [
+            f'results/{wildcards.asm_name}/align/trim-{wildcards.trim}/aligned_tig_{hap}.bed.gz'
+                for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
+        ]
     output:
         bed=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.bed'),
         asfile=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.as')
@@ -197,7 +229,7 @@ rule tracks_align:
 
         # Read alignments
         df = pd.concat(
-            [pd.read_csv(file_name, sep='\t', dtype={'#CHROM': str, 'QRY_ID': str}) for file_name in [input.bed_h1, input.bed_h2]],
+            [pd.read_csv(file_name, sep='\t', dtype={'#CHROM': str, 'QRY_ID': str}) for file_name in input.bed],
             axis=0
         )
 

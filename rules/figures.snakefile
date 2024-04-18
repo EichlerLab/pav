@@ -28,7 +28,7 @@ def fig_input_inv_tuples(asm_name, filter, hap_list):
 
     for hap in hap_list:
         for index, row in pd.read_csv(
-            f'results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz', sep='\t', usecols=('ID', 'CALL_SOURCE')
+            f'results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz', sep='\t', usecols=('ID', 'CALL_SOURCE')
         ).iterrows():
             call_source, den_flag = row['CALL_SOURCE'].split('-')
 
@@ -67,10 +67,19 @@ def fig_input_inv_all_den(wildcards):
 ### All figures ###
 ###################
 
-# Make density and dotplot figures for all inversions.
-localrules: figures_inv_all
+# Make density and dotplot figures for all inversions in all samples.
+localrules: figures_inv_all_png
 
-rule figures_inv_all:
+rule figures_inv_all_png:
+    input:
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'temp/flag/fig/{asm_name}_pass_png.flag', ASM_TABLE,
+        )
+
+# Make density and dotplot figures for all inversions in one sample.
+localrules: figures_inv_all_sample
+
+rule figures_inv_all_sample:
     input:
         fig_dot=fig_input_inv_all_dot,
         fig_den=fig_input_inv_all_den
@@ -88,7 +97,7 @@ rule figures_inv_all:
 rule figures_inv_den:  # Replacing with one rule per dot or density
     input:
         tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        bed_inv='results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz'
+        bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz'
     output:
         fig_den='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_den.{ext}'
     run:
@@ -157,7 +166,7 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
 # Inversion dotplot.
 rule figures_inv_dot:
     input:
-        bed_inv='results/{asm_name}/bed/{filter}/{hap}/sv_inv.bed.gz',
+        bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz',
         tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
         tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
     output:

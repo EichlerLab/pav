@@ -20,7 +20,6 @@ set-threads:
   - call_inv_batch=4
   - call_lg_discover=12
   - call_merge_haplotypes_batch=12
-  - call_intersect_fail_batch=12
 
 set-resources:
   - align_genomecov:mem_mb=4196
