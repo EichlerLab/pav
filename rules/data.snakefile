@@ -10,18 +10,23 @@ import Bio.SeqIO
 import pavlib
 import svpoplib
 
+global shell
+
+
 #
 # Reference contig data table
 #
 
 # Contig table.
 rule data_ref_contig_table:
+    input:
+        ref_fa='data/ref/ref.fa.gz'
     output:
         tsv='data/ref/contig_info.tsv.gz'
     run:
 
         svpoplib.ref.get_ref_info(
-            config['reference']
+            input.ref_fa
         ).to_csv(
             output.tsv, sep='\t', index=True, compression='gzip'
         )
@@ -73,7 +78,7 @@ rule data_align_ref_anno_n_gap:
 # Index reference for LRA.
 rule data_align_ref_lra_index:
     input:
-        fa='data/ref/ref.fa.gz',
+        fa='data/ref/ref.fa.gz'
     output:
         gli='data/ref/ref.fa.gz.gli',
         mmi='data/ref/ref.fa.gz.mms'
@@ -89,6 +94,11 @@ rule data_align_ref:
         ref_fai='data/ref/ref.fa.gz.fai'
     run:
 
+        is_copy = False
+
+        if os.stat(input.ref_fa).st_size == 0:
+            raise RuntimeError(f'Empty input FASTA file: {input.ref_fa}')
+
         # Link or copy FASTA to FA/GZ
         if os.path.basename(input.ref_fa).endswith('.gz'):
             # Link if gzipped
@@ -97,11 +107,12 @@ rule data_align_ref:
         else:
             # Copy if not gzipped
             pavlib.pipeline.input_tuples_to_fasta([(input.ref_fa, 'fasta')], output.ref_fa)
+            is_copy = True
 
         # Index
-        if os.stat(output.ref_fa).st_size > 0:
-            shell("""samtools faidx {output.ref_fa}""")
+        if not is_copy and os.path.isfile(input.ref_fa + '.fai') and os.path.isfile(input.ref_fa + '.gzi'):
+            os.symlink(os.path.abspath(input.ref_fa + '.fai'), output.ref_fa + '.fai')
+            os.symlink(os.path.abspath(input.ref_fa + '.gzi'), output.ref_fa + '.gzi')
 
         else:
-            with open(output.ref_fai, 'w') as out_file:
-                pass
+            shell("""samtools faidx {output.ref_fa}""")
