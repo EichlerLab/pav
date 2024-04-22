@@ -472,7 +472,7 @@ def update_filter_compound_fields(df, filter_dict, compound_dict):
         )
 
 
-def apply_compound_filter(df, compound_filter_tree, filter_dict, compound_dict, update=True):
+def apply_compound_filter(df, compound_filter_tree, filter_dict, compound_dict, update=True, flag_inv_inner_only=True):
     """
     Apply the compound-variant filter. If a variant intersects one already seen, then "COMPOUND" is added to the filter
     (`filter_dict`) for that variant and the variant it intersected is added to `compound_dict` for that variant. This
@@ -489,17 +489,33 @@ def apply_compound_filter(df, compound_filter_tree, filter_dict, compound_dict, 
     :param update: If `True`, update `compound_filter_tree` if a variant is not filtered and does not intersect another
         variant already in `compound_filter_tree`. Set to `False` if variants in `df` should not be intersected with
         future variants to test for compound filtering.
+    :param flag_inv_inner_only: If `True`, only add an inverted region to the filter if the inversion was detected by
+        flagging loci where sequence alignments passed through the inverted core without breaking into multiple
+        alignment records (do not add a region to the filter for variants not detected by flagging). If `False`, treat
+        inversions like other variants.
     """
 
     for index, row in df.sort_values(['SVLEN', 'POS'], ascending=(False, True)).iterrows():
         intersect_set = compound_filter_tree[row['#CHROM']][row['POS']:row['END']]
 
-        if len(intersect_set) == 0:
-            if update and index not in filter_dict.keys():
-                compound_filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
-        else:
+        if len(intersect_set) > 0:
+            # Filter variant
             filter_dict[index].add('COMPOUND')
             compound_dict[index] |= {val.data for val in intersect_set}
+        else:
+            # Add to filter regions if variant was not filtered
+            if update and index not in filter_dict.keys():
+                if flag_inv_inner_only and row['SVTYPE'] == 'INV':
+                    if 'CALL_SOURCE' not in df.columns:
+                        raise RuntimeError('CALL_SOURCE column missing in variant callset')
+
+                    if row['CALL_SOURCE'].split('-', 1)[0].upper() == 'FLAG':
+                        inner_region = pavlib.seq.region_from_string(row['RGN_REF_INNER'])
+                        compound_filter_tree[inner_region.chrom][inner_region.pos:inner_region.end] = row['ID']
+
+                    # else: Do not add an inverted region to the filter if the inversion was not detected by flagging
+                else:
+                    compound_filter_tree[row['#CHROM']][row['POS']:row['END']] = row['ID']
 
 
 def apply_qry_filter_tree(df, qry_filter_tree, filter_dict):

@@ -7,14 +7,15 @@ import os
 import pandas as pd
 
 
-def as_bool(val):
+def as_bool(val, fail_to_none=False):
     """
     Translate value as a boolean. If `val` is boolean, return `val`. If val is a string, `True` if lower-case string
     is "true", "1", "yes", "t", or "y". `False` if lower-case string is "false", "0", "no", "f", or "n". All other
-    values throw a RuntimeError. If `val` is not bool or string, it is converted to a string and the rules above are
-    applied.
+    values throw a `RuntimeError` unless `fail_to_none` is `True`. If `val` is not bool or string, it is converted to a
+    string and the rules above are applied.
 
     :param val: Value to interpret as a boolean.
+    :param fail_to_none: If `True`, return `None` if `val` is not a recognized boolean value.
 
     :return: `True` or `False` (see above).
     """
@@ -29,6 +30,9 @@ def as_bool(val):
 
     if val in {'false', '0', 'no', 'f', 'n'}:
         return False
+
+    if fail_to_none:
+        return None
 
     raise RuntimeError('Cannot interpret as boolean value: {}'.format(val))
 

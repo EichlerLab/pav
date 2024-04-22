@@ -21,15 +21,4 @@ def get_config(wildcards, key=None, default_val=None, default_none=False):
     :return: Config object. Original global config, if unmodified, or a modified copy of it.
     """
 
-    local_config = pavlib.pipeline.get_override_config(config, wildcards.asm_name, ASM_TABLE)
-
-    if key is None:
-        return local_config
-
-    if key not in local_config:
-        if default_val is None and not default_none:
-            raise RuntimeError('Configuration does not include key "{}" for asm_name "{}" with no default specified'.format(key, wildcards.asm_name))
-
-        return default_val
-
-    return local_config[key]
+    return pavlib.pipeline.get_config(wildcards, config, ASM_TABLE, key=key, default_val=default_val, default_none=default_none)

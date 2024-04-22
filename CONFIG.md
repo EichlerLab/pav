@@ -195,8 +195,16 @@ for the second parameter will give diminishing returns.
 * merge_snv [nrsnv:exact]: Override default merging parameters for SNVs
 * inv_min [300]: Minimum inversion size.
 * inv_max [2000000]: Maximum inversion size.
-* inv_inner [False]: If True, allow small variant calls inside inversions. Variants will be in reference orientation, but some could be the result of poor alignments around inversion breakpoints.
-
+* inv_inner ["filter_core"]: Controls how variants within inversions are filtered. Balanced inversions often generate
+  false variant calls from alignment artifacts (false SNVs, indels, and SVs), especially in the uniquely-inverted core
+  (between inverted repeats). The default value "filter_core" drops all variants in the uniquely-inverted center of
+  inversion calls if the inversion was identified by flagging the site on patterns of false variant calls (not applied
+  if the alignment splits over the inverted site producing Fwd-Rev-Fwd alignment pattern). Value "filter" will drop
+  all variants inside all inversions (including the uniquely-inverted core and inverted repeats), and value "no_filter"
+  will not apply any filtering based on intersections with inversions. To support configurations from before PAV 3.0,
+  this parameter may also be a boolean value where True is interpreted as "no_filter" and False is "filter". If True,
+  allow small variant calls inside inversions. Variants will be in reference orientation, but some could be the result
+  of poor alignments around inversion breakpoints. This parameter is ignored if "redundant_callset" is set.
 
 ### Call - INV
 * inv_k_size [31]: K-mer size for inversion density.

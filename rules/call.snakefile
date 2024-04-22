@@ -519,9 +519,25 @@ rule call_integrate_sources:
 
         inv_min = local_config.get('inv_min', 0)
         inv_max = local_config.get('inv_max', 1e10)
-        inv_inner = local_config.get('inv_inner', False)
+        inv_inner = local_config.get('inv_inner', 'filter_core')
         redundant_callset = pavlib.util.as_bool(local_config.get('redundant_callset', False))
 
+        # Check and set inv_inner
+        inv_inner_bool = pavlib.util.as_bool(inv_inner, True)
+
+        if inv_inner_bool is not None:
+            inv_inner = 'no_filter' if inv_inner_bool else 'filter'
+
+        else:
+            if not isinstance(inv_inner, str):
+                raise RuntimeError(f'Parameter "inv_inner" must be bool or string: "{inv_inner}"')
+
+            inv_inner = inv_inner.lower().strip()
+
+            if inv_inner not in {'all', 'none', 'filter_core'}:
+                raise RuntimeError(f'Parameter "inv_inner" must be bool or string containing "no_core": "{inv_inner}"')
+
+        # Check min/max
         if inv_min is not None and inv_min != 'unlimited':
             inv_min = int(inv_min)
         else:
@@ -548,7 +564,7 @@ rule call_integrate_sources:
         # Create large variant filter tree (for filtering small variants inside larger ones)
         compound_filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-        # Tuple of (pass, drop) filenames for each variant type
+        # Tuple of (pass, drop) filenames for each variant type (variant pass, variant fail, fasta pass, fasta fail)
         out_filename_dict = {
             'inv': (output.bed_inv_pass, output.bed_inv_fail, output.fa_inv_pass, output.fa_inv_fail),
             'ins': (output.bed_ins_pass, output.bed_ins_fail, output.fa_ins_pass, output.fa_ins_fail),
@@ -565,10 +581,12 @@ rule call_integrate_sources:
         for vartype in ('inv', 'lg_del', 'lg_ins', 'insdel', 'snv'):
 
             # Read
-            do_write = True      # Write variant call table. Set to False for INS/DEL variants until they are all collected into df_insdel_list.
-            is_insdel = False    # Variant is an INS/DEL type, append to df_insdel_list (list is merged and written when both is_insdel and do_write are True).
-            is_inv = False       # Variant is an inversion, apply inversion filtering steps.
-            add_compound = True  # Add variant regions to the compound filter if True. Does not need to be set for small variants (just consumes CPU time and memory).
+            do_write = True         # Write variant call table. Set to False for INS/DEL variants until they are all collected into df_insdel_list.
+            is_insdel = False       # Variant is an INS/DEL type, append to df_insdel_list (list is merged and written when both is_insdel and do_write are True).
+            is_inv = False          # Variant is an inversion, apply inversion filtering steps.
+            add_compound = True     # Add variant regions to the compound filter if True. Does not need to be set for small variants (just consumes CPU time and memory).
+            filter_compound = True  # Apply compound filter
+            no_flag_core = False    # Only add inner inversion regions to the filter for inversions detected by flagging loci
 
             if vartype == 'inv':
                 df, filter_dict, compound_dict = pavlib.call.read_variant_table([input.bed_inv, input.bed_lg_inv], True)
@@ -597,6 +615,17 @@ rule call_integrate_sources:
             else:
                 assert False, f'vartype in control loop does not match a known value: {vartype}'
 
+            # Override add_compound
+            if redundant_callset:
+                filter_compound = False
+                add_compound = False
+
+            elif inv_inner == 'no_filter':
+                add_compound = add_compound and not is_inv
+
+            elif inv_inner == 'no_flag_core':
+                no_flag_core = is_inv
+
             # Apply filters
             if df.shape[0] > 0:
 
@@ -614,8 +643,11 @@ rule call_integrate_sources:
                         filter_dict[index].add('SVLEN')
 
                 # Filter compound
-                if not (redundant_callset or is_inv and inv_inner):
-                    pavlib.call.apply_compound_filter(df, compound_filter_tree, filter_dict, compound_dict, add_compound)
+                if filter_compound:
+                    pavlib.call.apply_compound_filter(
+                        df, compound_filter_tree, filter_dict, compound_dict,
+                        add_compound, no_flag_core
+                    )
 
             # Compound filter
             pavlib.call.update_filter_compound_fields(df, filter_dict, compound_dict)
