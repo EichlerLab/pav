@@ -177,6 +177,8 @@ rule align_map:
     input:
         ref_fa='data/ref/ref.fa.gz',
         fa=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
+        fai=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz.fai' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else [],
+        gzi=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz.gzi' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else [],
         gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else [],
         mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else []
     output:
@@ -240,7 +242,8 @@ rule align_get_tig_fa:
         fa=lambda wildcards: pavlib.pipeline.get_rule_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, get_config(wildcards))
     output:
         fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
-        fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai')
+        fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'),
+        gzi=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.gzi')
     run:
 
         # Get input files
@@ -257,16 +260,25 @@ rule align_get_tig_fa:
         else:
             print(f'No input sources: {wildcards.asm_name} {wildcards.hap}')
 
-        # Merge/write FASTA (or empty files if there is no input)
-        pavlib.pipeline.input_tuples_to_fasta(input_tuples, output.fa)
+        # Link or generate FASTA
+        is_link = False
 
-        # Index
-        if os.stat(output.fa).st_size > 0:
-            shell("""samtools faidx {output.fa}""")
+        if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz'):
+            os.symlink(input_tuples[0][0], output.fa)
+            is_link = True
 
         else:
-            with open(output.fai, 'w') as out_file:
-                pass
+            # Merge/write FASTA (or empty files if there is no input)
+            pavlib.pipeline.input_tuples_to_fasta(input_tuples, output.fa)
+            is_link = False
+
+        # Index
+        if is_link and os.path.isfile(input_tuples[0][1] + '.fai') and os.path.isfile(input_tuples[0][1] + '.gzi'):
+            os.symlink(os.path.abspath(input_tuples[0][1] + '.fai'), output.fai)
+            os.symlink(os.path.abspath(input_tuples[0][1] + '.gzi'), output.gzi)
+
+        else:
+            shell("""samtools faidx {output.fa}""")
 
 
 #
