@@ -27,12 +27,14 @@ set-resources:
   - align_get_cram:runtime=580
   - align_get_read_bed:mem_mb=16384
   - align_map:mem_mb=49152
-  - align_map:runtime=120
+  - align_map:runtime=360
   - align_merge_h12_read_bed:mem_mb=4196
   - align_postcut_cram:mem_mb=16384
   - align_postcut_sam:mem_mb=12288
   - align_ref_lra_index:mem_mb=32768
   - align_sort_cram:mem_mb=12288
+  - align_get_tig_fa:mem_mb=1024
+  - align_get_tig_fa:runtime=720
   - call_cigar:mem_mb=12288
   - call_cigar:runtime=120
   - call_cigar_merge:mem_mb=12288

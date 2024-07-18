@@ -1,6 +1,13 @@
 # PAV changes
 
-## 2.4.0.1 [To be released as 3.0]
+## 2.4.0.3 [To be released as 3.0]
+* Avoid FASTA copy to temp (symlink)
+
+## 2.4.0.2
+* Filter variants inside inverted core (uniquely inverted loci, inner INV coordinates). Previous versions filtered all variants inside inversions (outer INV coordinates)
+* Skip input FASTA re-indexing if indexes already exist
+
+## 2.4.0.1
 * Arbitrary number of named haplotypes and new assembly table format (old format supported).
 * No support for "asm_pattern" in config (was removed before this version but was left in documentation).
 * Removed "chrom_cluster" from configuration options.
