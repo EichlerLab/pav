@@ -1,6 +1,6 @@
 # PAV changes
 
-## 2.4.0.3 [To be released as 3.0]
+## 2.4.1
 * Avoid FASTA copy to temp (symlink)
 
 ## 2.4.0.2
