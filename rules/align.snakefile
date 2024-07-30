@@ -202,9 +202,9 @@ rule align_map:
 
         else:
 
-            # Align
+            # Align parameters
             if aligner == 'minimap2':
-                shell(
+                align_cmd = (
                     """minimap2 """
                         """{params.minimap2_params} """
                         """--secondary=no -a -t {threads} --eqx -Y """
@@ -213,12 +213,20 @@ rule align_map:
                         """gzip > {output.sam}"""
                 )
 
-            if aligner == 'lra':
-                shell(
+
+            elif aligner == 'lra':
+                align_cmd = (
                     """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {threads} | """
                     """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
                     """gzip > {output.sam}"""
                 )
+
+            else:
+                raise RuntimeError(f'PROGRAM BUG: Unknown "aligner": {aligner}')
+
+            # Align
+            print(f'Aligning {wildcards.asm_name}-{wildcards.hap}: {align_cmd}', flush=True)
+            shell(align_cmd)
 
 # Uncompress contig for aligners that cannot read gzipped FASTAs.
 rule align_uncompress_tig:
