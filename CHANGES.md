@@ -1,10 +1,16 @@
 # PAV changes
 
-## 2.4.0.3 [To be released as 3.0]
+
+## In development
 * Avoid FASTA copy to temp (symlink)
+* Switched away from query/subject and tig or contig. Using query/reference or qry/ref. Change affects API function
+  names and parameters.
+* Output and temporary directory structure and filenames changed to group items more appropriately.
+* Multi-tiered alignment with different parameters to capture small and large SVs.
 
 ## 2.4.0.2
-* Filter variants inside inverted core (uniquely inverted loci, inner INV coordinates). Previous versions filtered all variants inside inversions (outer INV coordinates)
+* Filter variants inside inverted core (uniquely inverted loci, inner INV coordinates). Previous versions filtered all
+  variants inside inversions (outer INV coordinates)
 * Skip input FASTA re-indexing if indexes already exist
 
 ## 2.4.0.1

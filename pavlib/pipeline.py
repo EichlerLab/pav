@@ -34,12 +34,12 @@ def expand_pattern(pattern, asm_table, **kwargs):
 
     sub_dict = dict()  # String substitution dict
 
-    if 'asm_name' in kwargs.keys():
-        asm_list = kwargs['asm_name']
+    if 'asm_name' in kwargs.keys() and kwargs['asm_name'] is not None:
+        asm_list = set(kwargs['asm_name'])
     else:
         asm_list = asm_table.index
 
-    if 'hap' in kwargs.keys():
+    if 'hap' in kwargs.keys() and kwargs['hap'] is not None:
         hap_set = set(kwargs['hap'])
     else:
         hap_set = None

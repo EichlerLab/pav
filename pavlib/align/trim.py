@@ -622,8 +622,7 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
     """
 
     # Right-index traversal
-    tc_idx_r = 0        # Current right-index in trace record list (tc)
-    #tc_idx_r_last = -1  # Last right-index. Used for early-exit.
+    tc_idx_r = 0         # Current right-index in trace record list (tc)
 
     len_r = len(trace_r)  # End of r-indexes
 

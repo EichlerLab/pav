@@ -31,16 +31,16 @@ localrules: align_all
 rule align_all:
     input:
         bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/align/trim-{trim}/depth_tig_{hap}.bed.gz', ASM_TABLE,
-            trim=('none', 'tig', 'tigref')
+            'results/{asm_name}/align/trim-{trim}/depth_qry_{hap}.bed.gz', ASM_TABLE,
+            trim=('none', 'qry', 'qryref')
         )
 
 # Create a depth BED file for alignments.
 rule align_depth_bed:
     input:
-        bed='results/{asm_name}/align/trim-{trim}/aligned_query_{hap}.bed.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-{trim}/aligned_qry_{hap}.bed.gz'
     output:
-        bed='results/{asm_name}/align/trim-{trim}/depth_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-{trim}/depth_ref_{hap}.bed.gz'
     run:
 
         pavlib.align.align_bed_to_depth_bed(
@@ -50,23 +50,24 @@ rule align_depth_bed:
             output.bed, sep='\t', index=False, compression='gzip'
         )
 
-# Cut contig alignment overlaps in reference coordinates
-rule align_trim_tigref:
+
+# Cut alignment overlaps in reference coordinates
+rule align_trim_qryref:
     input:
-        bed='results/{asm_name}/align/trim-tig/aligned_query_{hap}.bed.gz',
-        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        bed='results/{asm_name}/align/tier-{tier}/trim-qry/aligned_query_{hap}.bed.gz',
+        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-qryref/aligned_query_{hap}.bed.gz'
     params:
-        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
+        min_trim_qry_len=lambda wildcards: int(get_config(wildcards, 'min_trim_qry_len', 1000)),  # Minimum aligned length
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
     run:
 
         # Trim alignments
         df = pavlib.align.trim_alignments(
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
-            params.min_trim_tig_len,  # Minimum contig length
-            input.tig_fai,  # Path to alignment FASTA FAI
+            params.min_trim_qry_len,  # Minimum alignment length
+            input.qry_fai,  # Path to query FASTA FAI
             match_qry=params.redundant_callset,  # Redundant callset, trim reference space only for records with matching IDs
             mode='ref'
         )
@@ -74,23 +75,24 @@ rule align_trim_tigref:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# Cut contig alignment overlaps in contig coordinates
-rule align_trim_tig:
+
+# Cut alignment overlaps in query coordinates
+rule align_trim_qry:
     input:
         bed='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.bed.gz',
-        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/tier-{tier}/trim-tig/aligned_query_{hap}.bed.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-qry/aligned_query_{hap}.bed.gz'
     params:
-        min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000))  # Minimum aligned tig length
+        min_trim_qry_len=lambda wildcards: int(get_config(wildcards, 'min_trim_qry_len', 1000))  # Minimum aligned length
     run:
 
         # Trim alignments
         df = pavlib.align.trim_alignments(
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
-            params.min_trim_tig_len,  # Minimum contig length
-            input.tig_fai,  # Path to alignment FASTA FAI
-            mode='tig'
+            params.min_trim_qry_len,  # Minimum alignment length
+            input.qry_fai,  # Path to query FASTA FAI
+            mode='qry'
         )
 
         # Write
@@ -101,10 +103,12 @@ rule align_trim_tig:
 rule align_get_read_bed:
     input:
         sam='temp/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.sam.gz',
-        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.bed.gz',
         align_head='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.headers.gz'
+    wildcard_constraints:
+        tier=r'1|2'
     run:
 
         # Write an empty file if SAM is emtpy
@@ -132,7 +136,7 @@ rule align_get_read_bed:
             return
 
         # Read FAI
-        df_qry_fai = svpoplib.ref.get_df_fai(input.tig_fai)
+        df_qry_fai = svpoplib.ref.get_df_fai(input.qry_fai)
         df_qry_fai.index = df_qry_fai.index.astype(str)
 
         # Read alignments as a BED file.
@@ -184,6 +188,8 @@ rule align_map:
         mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if pavlib.align.get_aligner(wildcards.tier, config) == 'lra' else []
     output:
         sam=temp('temp/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.sam.gz')
+    wildcard_constraints:
+        tier=r'1|2'
     threads: 24
     run:
 
@@ -289,43 +295,109 @@ rule align_get_qry_fa:
 
 
 #
-# Utilities
-# Not needed for PAV, but useful rules for troubleshooting.
+# Export alignments (optional feature)
 #
 
-def _align_cram_all(wildcards):
+def _align_export_all(wildcards):
 
     if 'trim' in config:
-        trim = config['trim'].strip().split(',')
+        trim_set = set(config['trim'].strip().split(','))
     else:
-        trim = ('tigref',)
+        trim_set = {'qryref'}
+
+    if 'tier' in config:
+        tier_set = set(config['tier'].strip().split(','))
+    else:
+        tier_set = {'0', '1', '2'}
+
+    if 'export_fmt' in config:
+        ext_set = set(config['export_fmt'].strip().split(','))
+    else:
+        ext_set = {'cram'}
+
+    ext_set = set([ext if ext != 'sam' else 'sam.gz' for ext in ext_set])
+
+    if 'asm_name' in config:
+        asm_set = set(config['asm_name'].strip().split(','))
+    else:
+        asm_set = None
+
+    if 'hap' in config:
+        hap_set = set(config['hap'].strip().split(','))
+    else:
+        hap_set = None
 
     return pavlib.pipeline.expand_pattern(
-        'results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram', ASM_TABLE, trim=trim
+        'results/{asm_name}/align/export/pav_align_tier-{tier}_trim-{trim}_{hap}.{ext}',
+        ASM_TABLE,
+        asm_name=asm_set, hap=hap_set, trim=trim_set, tier=tier_set, ext=ext_set
     )
 
 # Get CRAM files
-localrules: align_cram_all
+localrules: align_export_all
 
-rule align_cram_all:
+rule align_export_all:
     input:
-        cram=_align_cram_all
+        cram=_align_export_all
 
 
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
-rule align_get_cram:
+rule align_export:
     input:
         bed='results/{asm_name}/align/trim-{trim}/aligned_query_{hap}.bed.gz',
         fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
-        align_head='results/{asm_name}/align/trim-none/aligned_query_{hap}.headers.gz',
+        align_head='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:
-        cram='results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram',
-        crai='results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram.crai'
+        align='results/{asm_name}/align/export/pav_align_tier-{tier}_trim-{trim}_{hap}.{ext}'
     params:
         sam_tag=lambda wildcards: fr'@PG\tID:PAV-{wildcards.trim}\tPN:PAV\tVN:{pavlib.constants.get_version_string()}\tDS:PAV Alignment trimming {pavlib.align.TRIM_DESC[wildcards.trim]}'
-    shell:
-        """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
-            """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} --tag "{params.sam_tag}" | """
-        """samtools view -T {input.ref_fa} -O CRAM -o {output.cram} && """
-        """samtools index {output.cram}"""
+    run:
+
+        if wildcards.ext == 'cram':
+            out_fmt = 'CRAM'
+            do_bgzip = False
+            do_index = True
+            do_tabix = False
+
+        elif wildcards.ext == 'bam':
+            out_fmt = 'BAM'
+            do_bgzip = False
+            do_index = True
+            do_tabix = False
+
+        elif wildcards.ext == 'sam.gz':
+            out_fmt = 'SAM'
+            do_bgzip = True
+            do_index = False
+            do_tabix = True
+
+        else:
+            raise RuntimeError(f'Unknown output format extension: {wildcards.ext}: (Allowed: "cram", "bam", "sam.gz")')
+
+        # Export
+
+        if not do_bgzip:
+            shell(
+                """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
+                    """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} --tag "{params.sam_tag}" | """
+                """samtools view -T {input.ref_fa} -O {out_fmt} -o {output.align}"""
+            )
+        else:
+            shell(
+                """python3 {PIPELINE_DIR}/scripts/reconstruct_sam.py """
+                    """--bed {input.bed} --fasta {input.fa} --headers {input.align_head} --tag "{params.sam_tag}" | """
+                """samtools view -T {input.ref_fa} -O {out_fmt} | """
+                """bgzip > {output.align}"""
+            )
+
+        # Index
+        if do_index:
+            shell(
+                """samtools index {output.align}"""
+            )
+
+        if do_tabix:
+            shell(
+                """tabix {output.align}"""
+            )

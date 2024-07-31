@@ -83,7 +83,7 @@ def get_aligner_params(tier, config, aligner=None):
     # Get aligner config parameter
     aligner_config = f'align_params_tier{tier}'
 
-    if tier == 1 and f'{aligner}_params' in config:
+    if tier == 1 and aligner == 'minimap2' and 'minimap2_params' in config:
 
         # Backwards compatibility: Allow "minimap2_params" (or "lra_params" to be consistent) for compatibility with older PAV versions
         if aligner_config in config and str(config[f'{aligner}_params']).strip() != str(config[aligner_config]).strip():

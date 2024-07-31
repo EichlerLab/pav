@@ -33,11 +33,22 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 
 ### Alignments
 
-* min_trim_tig_len [1000, int]: Ignore contig alignments shorter than this size. This is the number of reference bases
-  the contig covers.
-* aligner [minimap2; string]: PAV supports minimap2 (aligner: minimap2) and LRA (aligner: lra). LRA is under development
-  with the Chaisson lab (USC).
+Alignments are done in two tiers and reconciled. The first tier (tier 1) uses alignment parameters to capture large SVs
+and is the basis for most of the callset. The second tier (tier 2) uses a different set alignment parameters to align
+smaller fragments allowing for better SV resolution, particularly complex SVs.
 
+* min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
+  bases the query sequence covers in one alignment record.
+* aligner_tierX [minimap2; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
+  "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
+* aligner [minimap2; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
+* align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
+  * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
+  * lra tier 1 default: "" (default LRA parameters)
+  * minimap2 tier 2 default: "-x asm5"
+  * If LRA is used for tier 2 (i.e. "aligner_tier2" = "lra"), then "align_params_tier2" must be defined.
+* minimap2_params: Alias for "align_params_tier1", but only if the tier 1 aligner is minimap2. Allows PAV to read 
+  configurations from earlier versions of PAV.
 
 ## Inversions
 
@@ -50,7 +61,7 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 These inversion calls break the alignment into mulitple alignment records. PAV will first try to resolve these
 through its k-mer density 
 
-* inv_k_size [31; int]: Use k-mers of this size when resolving inversion breakpoints. Contig k-mers are assigned to
+* inv_k_size [31; int]: Use k-mers of this size when resolving inversion breakpoints. Query k-mers are assigned to
   a reference state (FWD, REV, FWD+REV, NA) by matching k-mers of this size to reference k-mer sets over the
   same region.
 * lg_batch_count [10; int]: Run large variant detection (variants truncating alignments) in this many batches and
@@ -58,16 +69,14 @@ through its k-mer density
 
 ### Small inversions
 
-Small inversions typically do not cause the aligner to break the contig into multiple records. Instead, it aligns
-through the inversion leaving signatures of variation behind, but no inversion call. PAV recognizes these
+Small inversions typically do not cause the aligner to break the query sequence into multiple records. Instead, it
+aligns through the inversion leaving signatures of variation behind, but no inversion call. PAV recognizes these
 signatures, such as SV insertions and deletions in close proximity with the same size and resolves the
 inversion event. When an inversion is found, the false variants from those signatures are replaced with the
 inversion call.
 
 Parameters controlling inversion detection for small inversions:
 
-  plots for k-mer states (for breakpoint and structure resolution). This parameter is specifically for resolving
-  inversions within aligned contigs (i.e. did not break contig into multiple alignment records).
 * inv_min_expand [1; int]: When searching for inversions, expand the search window at least this many times before
   giving up on a region. May be used to increase sensitivity for some inversions, but increasing this
   parameter penalizes performance heavily trying to resolve complex loci where there are no inversions.
@@ -105,18 +114,18 @@ Signatures of small inversions include:
 
 ### Density resolution parameters
 
-In a region that is being scanned for an inversion, PAV knows the reference locus, the matching contig locus,
-and the reference orientation (i.e. if the contig was reverse complemented when it was mapped).
+In a region that is being scanned for an inversion, PAV knows the reference locus, the matching query locus,
+and the reference orientation (i.e. if the query was reverse complemented when it was mapped).
 
-PAV first extracts a list of k-mers from the scanned contig region. Over the matching reference region, it gets
-a set of k-mers that match the contig k-mers and a set of k-mers that match the reverse-complemented contig
+PAV first extracts a list of k-mers from the scanned query region. Over the matching reference region, it gets
+a set of k-mers that match the query k-mers and a set of k-mers that match the reverse-complemented query
 k-mers.
 
-Each contig k-mer is then assigned a state:
+Each query k-mer is then assigned a state:
 
-* FWD: Contig k-mer matches a reference k-mer in the same orientation.
-* REV: Contig k-mer matches a reference k-mer if it is reverse-complemented.
-* FWDREV: Contig k-mer and it's reverse complement both match reference k-mers.
+* FWD: Query k-mer matches a reference k-mer in the same orientation.
+* REV: Query k-mer matches a reference k-mer if it is reverse-complemented.
+* FWDREV: Query k-mer and it's reverse complement both match reference k-mers.
   * Common inside inverted repeats flanking NAHR-driven inversions.
 * NA: K-mer does not match a reference k-mer in the region.
 
@@ -125,7 +134,7 @@ be less biased by variation that emerged within the inversion since the inversio
 the inversion event. For example, an MEI insertion in the inversion will not cause inversion detection to fail. PAV
 stores the original k-mer coordinates, which are restored later.
 
-PAV then generates a density function for each state (FWD, REV, FWDREV) and applies it to the contig k-mers.
+PAV then generates a density function for each state (FWD, REV, FWDREV) and applies it to the query k-mers.
 Density is computed and scaled between 0 and 1 (max value for any k-mer is 1). Using the smoothed density, PAV
 determines the internal structure of the inversion by setting breakpoins where the maximum state changes. For
 example, a typical inversion flanked by inverted repeats will traverse through states
@@ -136,12 +145,12 @@ FWD transitions to either FWDREV or REV on each side. PAV requires max states th
 REV occuring at least once inside the locus to call an inversion. Very complex patterns are sometimes seen
 inside, such as multiple FWDREV/REV transitions (common in MEI-dense loci).
 
-Once PAV sees the necessary state transitions, it moves back to the original contig coordinates (recall that NA
+Once PAV sees the necessary state transitions, it moves back to the original query coordinates (recall that NA
 states were removed for density computations), annotates the inner and outer breakpoints in both reference and
-contig space, and emits the inversion call.
+query space, and emits the inversion call.
 
 Because computing density values is very compute heavy, PAV implements an interpolation scheme to avoid computing
-densities for each location in the contig. By default, it computes every 20th k-mer density and interpolates
+densities for each location in the query. By default, it computes every 20th k-mer density and interpolates
 the values between them. If the maximum state changes or if there is a significant change in the density within
 the interpolated region, the actual density is computed for each k-mer in the window.
 
@@ -178,13 +187,18 @@ for the second parameter will give diminishing returns.
 
 ### Alignment
 
-* aligner [minimap2]
-* min_trim_tig_len [1000]
-* redundant_callset [False]: Allow multiple haplotypes in one assembly. This option turns off trimming reference bases
-  from alignments unless two alignment records are from the same contig. Can increase false calls, especially for small
-  variants, but should not eliminate haplotypic variation in an assembly that is not separated into two FASTA files.
-* chrom_cluster [False]
-* minimap2_params [-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5]: Alignment parameters used to run minimap2
+* min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
+  bases the query sequence covers in one alignment record.
+* aligner_tierX [minimap2; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
+  "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
+* aligner [minimap2; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
+* align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
+  * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
+  * lra tier 1 default: "" (default LRA parameters)
+  * minimap2 tier 2 default: "-x asm5"
+  * If LRA is used for tier 2 (i.e. "aligner_tier2" = "lra"), then "align_params_tier2" must be defined.
+* minimap2_params: Alias for "align_params_tier1", but only if the tier 1 aligner is minimap2. Allows PAV to read 
+  configurations from earlier versions of PAV.
 
 ### Call
 
