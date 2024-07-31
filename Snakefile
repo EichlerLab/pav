@@ -99,7 +99,6 @@ rule pav_all:
 
 ### Includes ###
 
-include: os.path.join(PIPELINE_DIR, 'rules/definitions.snakefile')
 include: os.path.join(PIPELINE_DIR, 'rules/pipeline.snakefile')
 include: os.path.join(PIPELINE_DIR, 'rules/data.snakefile')
 include: os.path.join(PIPELINE_DIR, 'rules/align.snakefile')

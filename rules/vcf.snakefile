@@ -2,8 +2,6 @@
 Rules for writing VCF output.
 """
 
-import collections
-
 import pavlib
 
 global VCF_PATTERN

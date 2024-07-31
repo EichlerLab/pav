@@ -71,7 +71,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
     df['QRY_LEN'] = df['END'] - df['POS']
 
     # Get liftover tool and k-mer util
-    align_lift = pavlib.align.AlignLift(df, df_tig_fai)
+    align_lift = pavlib.align.lift.AlignLift(df, df_tig_fai)
     k_util = kanapy.util.kmer.KmerUtil(k_size)
 
     # with RefTigManager(ref_fa_name, tig_fa_name) as fa_pair:
@@ -190,7 +190,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                         # Left-shift through matching bases and get position
                         left_shift = np.min([
-                            pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                            pavlib.align.util.match_bp(row1, True),  # Do not shift through anything but matched bases
                             pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
                         ])
 
@@ -275,7 +275,7 @@ def scan_for_events(df, df_tig_fai, hap, ref_fa_name, tig_fa_name, k_size, n_tre
 
                         # Left-shift through matching bases and get position
                         left_shift = np.min([
-                            pavlib.align.match_bp(row1, True),  # Do not shift through anything but matched bases
+                            pavlib.align.util.match_bp(row1, True),  # Do not shift through anything but matched bases
                             pavlib.call.left_homology(pos_ref - 1, seq_ref, seq.upper())  # SV/breakpoint upstream homology
                         ])
 

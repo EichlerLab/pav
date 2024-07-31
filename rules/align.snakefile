@@ -17,6 +17,7 @@ global shell
 global temp
 global get_config
 global ASM_TABLE
+global PIPELINE_DIR
 global REF_FA
 global REF_FAI
 
@@ -43,7 +44,7 @@ rule align_depth_bed:
         bed='results/{asm_name}/align/tier-{tier}/trim-{trim}/depth_ref_{hap}.bed.gz'
     run:
 
-        pavlib.align.align_bed_to_depth_bed(
+        pavlib.align.util.align_bed_to_depth_bed(
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),
             svpoplib.ref.get_df_fai(REF_FAI)
         ).to_csv(
@@ -64,7 +65,7 @@ rule align_trim_qryref:
     run:
 
         # Trim alignments
-        df = pavlib.align.trim_alignments(
+        df = pavlib.align.trim.trim_alignments(
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
             params.min_trim_qry_len,  # Minimum alignment length
             input.qry_fai,  # Path to query FASTA FAI
@@ -88,7 +89,7 @@ rule align_trim_qry:
     run:
 
         # Trim alignments
-        df = pavlib.align.trim_alignments(
+        df = pavlib.align.trim.trim_alignments(
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
             params.min_trim_qry_len,  # Minimum alignment length
             input.qry_fai,  # Path to query FASTA FAI
@@ -108,7 +109,7 @@ rule align_get_read_bed:
         bed='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.bed.gz',
         align_head='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.headers.gz'
     wildcard_constraints:
-        tier=r'1|2'
+        tier=r'[12]'
     run:
 
         # Write an empty file if SAM is emtpy
@@ -140,7 +141,7 @@ rule align_get_read_bed:
         df_qry_fai.index = df_qry_fai.index.astype(str)
 
         # Read alignments as a BED file.
-        df = pavlib.align.get_align_bed(input.sam, df_qry_fai, wildcards.hap, tier=int(wildcards.tier))
+        df = pavlib.align.util.get_align_bed(input.sam, df_qry_fai, wildcards.hap, tier=int(wildcards.tier))
 
         # Write SAM headers
         with gzip.open(input.sam, 'rt') as in_file:
@@ -181,21 +182,21 @@ rule align_get_read_bed:
 rule align_map:
     input:
         ref_fa='data/ref/ref.fa.gz',
-        fa=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else 'temp/{asm_name}/align/query/query_{hap}.fa',
-        fai=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.fai' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else [],
-        gzi=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else [],
-        gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if pavlib.align.get_aligner(wildcards.tier, config) == 'lra' else [],
-        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if pavlib.align.get_aligner(wildcards.tier, config) == 'lra' else []
+        fa=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz' if pavlib.align.params.get_aligner(wildcards.tier, config) != 'lra' else 'temp/{asm_name}/align/query/query_{hap}.fa',
+        fai=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.fai' if pavlib.align.params.get_aligner(wildcards.tier, config) != 'lra' else [],
+        gzi=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi' if pavlib.align.params.get_aligner(wildcards.tier, config) != 'lra' else [],
+        gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if pavlib.align.params.get_aligner(wildcards.tier, config) == 'lra' else [],
+        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if pavlib.align.params.get_aligner(wildcards.tier, config) == 'lra' else []
     output:
         sam=temp('temp/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.sam.gz')
     wildcard_constraints:
-        tier=r'1|2'
+        tier=r'[12]'
     threads: 24
     run:
 
         # Get alignment command
-        aligner = pavlib.align.get_aligner(wildcards.tier, config)
-        aligner_params = pavlib.align.get_aligner_params(wildcards.tier, config, aligner)
+        aligner = pavlib.align.params.get_aligner(wildcards.tier, config)
+        aligner_params = pavlib.align.params.get_aligner_params(wildcards.tier, config, aligner)
 
         if aligner == 'minimap2':
             align_cmd = (
@@ -344,14 +345,14 @@ rule align_export_all:
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
 rule align_export:
     input:
-        bed='results/{asm_name}/align/trim-{trim}/aligned_query_{hap}.bed.gz',
+        bed='results/{asm_name}/align/tier-{tier}/trim-{trim}/aligned_query_{hap}.bed.gz',
         fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
         align_head='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:
         align='results/{asm_name}/align/export/pav_align_tier-{tier}_trim-{trim}_{hap}.{ext}'
     params:
-        sam_tag=lambda wildcards: fr'@PG\tID:PAV-{wildcards.trim}\tPN:PAV\tVN:{pavlib.constants.get_version_string()}\tDS:PAV Alignment trimming {pavlib.align.TRIM_DESC[wildcards.trim]}'
+        sam_tag=lambda wildcards: fr'@PG\tID:PAV-{wildcards.trim}\tPN:PAV\tVN:{pavlib.constants.get_version_string()}\tDS:PAV Alignment trimming {pavlib.align.util.TRIM_DESC[wildcards.trim]}'
     run:
 
         if wildcards.ext == 'cram':

@@ -2,8 +2,6 @@
 Alignment parameters and helper functions.
 """
 
-DEFAULT_ALIGNER = 'minimap2'
-
 DEFAULT_ALIGNER = {
     1: 'minimap2',
     2: 'minimap2'
@@ -25,10 +23,10 @@ def get_aligner(tier, config):
     """
     Get aligner.
 
-    :param wildcards: Rule wildcards.
+    :param tier: Alignment tier.
     :param config: Pipeline config.
 
-    :return: Name of aligner.
+    :return: Name of aligner. Will pull from default values if not overridden by config.
     """
 
     # Get tier
@@ -66,6 +64,15 @@ def get_aligner(tier, config):
 
 
 def get_aligner_params(tier, config, aligner=None):
+    """
+    Get parameters for an alignment tier.
+
+    :param tier: Alignment tier.
+    :param config: Pipeline config.
+    :param aligner: Alignment program name (minimap2, lra).
+
+    :return: A string of parameters for the aligner. Will pull from default values if not overridden by config.
+    """
 
     # Get tier
     try:

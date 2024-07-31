@@ -6,8 +6,6 @@ import numpy as np
 
 import pavlib
 
-from .align import *
-
 
 class AlignLift:
     """
@@ -119,7 +117,7 @@ class AlignLift:
             if len(match_set) == 1:
                 match_interval = list(match_set)[0]
 
-            if len(match_set) == 0:
+            elif len(match_set) == 0:
                 # Allow queries to match if they end exactly at the alignment end
                 match_set = lift_tree[pos - 1]
 
@@ -135,9 +133,7 @@ class AlignLift:
                         ).format(query_id, pos_org, index, gap)
                     )
 
-            elif len(match_set) > 1:
-                lift_coord_list.append(None)
-
+            else:
                 raise RuntimeError(
                     (
                         'Found multiple matches in a lift-tree for a record within a '
@@ -403,7 +399,7 @@ class AlignLift:
         itree_qry = intervaltree.IntervalTree()
 
         # Get CIGAR and check query start position
-        cigar_op_list = list(cigar_str_to_tuples(self.df.loc[index]))
+        cigar_op_list = list(pavlib.align.util.cigar_str_to_tuples(self.df.loc[index]))
 
         clipped_bp = 0
 

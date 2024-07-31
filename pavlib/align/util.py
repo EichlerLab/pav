@@ -245,7 +245,7 @@ def align_bed_to_depth_bed(df, df_fai=None):
 
     if df_fai is not None:
         if last_chrom not in df_fai.index:
-            raise RuntimeError(f'Missing chromosomem in reference FAI index: {chrom}')
+            raise RuntimeError(f'Missing chromosome in reference FAI index: {last_chrom}')
 
         # Add final record up to end of chromosome
         if last_pos > df_fai[last_chrom]:
@@ -317,7 +317,7 @@ def cigar_str_to_tuples(record):
                 record['QRY_ID'], record['#CHROM'], record['POS'], cigar[pos]
             ))
 
-        yield((int(cigar[pos:len_pos]), cigar[len_pos]))
+        yield int(cigar[pos:len_pos]), cigar[len_pos]
 
         pos = len_pos + 1
 
@@ -366,7 +366,7 @@ def check_record(row, df_qry_fai):
     Check alignment DatFrame record for sanity. Throws exceptions if there are problems. Returns nothing if everything
     passes.
 
-    :param record: Alignment table record (Pandas Series).
+    :param row: Alignment table record (Pandas Series).
     :param df_qry_fai: Panadas Series with query names as keys and query lengths as values.
     """
 
@@ -501,7 +501,7 @@ def count_cigar(row, allow_m=False):
     clip_s_r = 0
     clip_h_r = 0
 
-    cigar_list = list(pavlib.align.cigar_str_to_tuples(row))
+    cigar_list = list(cigar_str_to_tuples(row))
 
     cigar_n = len(cigar_list)
 

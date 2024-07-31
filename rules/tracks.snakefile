@@ -10,12 +10,10 @@ import pandas as pd
 import pavlib
 import svpoplib
 
+global ASM_TABLE
 global PIPELINE_DIR
 global REF_FAI
-
 global temp
-global ASM_TABLE
-
 
 
 #
@@ -23,7 +21,7 @@ global ASM_TABLE
 #
 
 VARTYPE_TO_SVTYPE_TUPLE = {
-    'snv': ('snv'),
+    'snv': ('snv',),
     'sv': ('ins', 'del'),
     'indel': ('ins', 'del')
 }
@@ -177,17 +175,17 @@ rule tracks_hap_call:
 rule tracks_align_all:
     input:
         bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'tracks/{asm_name}/align/tig_align_trim-{trim}.bb', ASM_TABLE,
-            trim=('none', 'tig', 'tigref')
+            'tracks/{asm_name}/align/aligned_query_tier-{tier}_trim-{trim}.bb', ASM_TABLE,
+            trim=('none', 'qry', 'qryref'), tier=('0', '1', '2')
         )
 
 # Alignment track BED to BigBed.
 rule tracks_align_bb:
     input:
-        bed='temp/{asm_name}/tracks/align/tig_align_trim-{trim}.bed',
-        asfile='temp/{asm_name}/tracks/align/tig_align_trim-{trim}.as'
+        bed='temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.bed',
+        asfile='temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.as'
     output:
-        bb='tracks/{asm_name}/align/tig_align_trim-{trim}.bb'
+        bb='tracks/{asm_name}/align/aligned_query_tier-{tier}_trim-{trim}.bb'
     shell:
         """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {REF_FAI} {output.bb}"""
 
@@ -195,28 +193,28 @@ rule tracks_align_bb:
 rule tracks_align:
     input:
         bed=lambda wildcards: [
-            f'results/{wildcards.asm_name}/align/trim-{wildcards.trim}/aligned_query_{hap}.bed.gz'
+            f'results/{wildcards.asm_name}/align/tier-{wildcards.tier}/trim-{wildcards.trim}/aligned_query_{hap}.bed.gz'
                 for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
         ]
     output:
-        bed=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.bed'),
-        asfile=temp('temp/{asm_name}/tracks/align/tig_align_trim-{trim}.as')
+        bed=temp('temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.bed'),
+        asfile=temp('temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.as')
     wildcard_constraints:
         trim='none|tig|tigref'
     run:
 
         # Get track description
         if wildcards.trim == 'none':
-            track_desc_short = 'PreTrim'
-            track_description = 'Pre-trimmed alignments'
+            track_desc_short = f'PavAlignNoneTier{wildcards.tier}'
+            track_description = f'PAV Align (Trim NONE, Tier {wildcards.tier})'
 
-        elif wildcards.trim == 'tig':
-            track_desc_short = 'TrimTig'
-            track_description = 'Alignments (contig trimmed)'
+        elif wildcards.trim == 'qry':
+            track_desc_short = f'PavAlignQryTier{wildcards.tier}'
+            track_description = f'PAV Align (Trim QRY, Tier {wildcards.tier})'
 
-        elif wildcards.trim == 'tigref':
-            track_desc_short = 'TrimTigRef'
-            track_description = 'Alignments (contig & ref trimmed)'
+        elif wildcards.trim == 'qryref':
+            track_desc_short = f'PavAlignQryrefTier{wildcards.tier}'
+            track_description = f'PAV Align (Trim QRY/REF, Tier {wildcards.tier})'
 
         else:
             raise RuntimeError('Unknown trim wildcard: '.format(wildcards.trim))

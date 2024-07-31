@@ -91,6 +91,7 @@ BATCH_COUNT_DEFAULT = 60
 #
 
 # Merge batches.
+# noinspection PyTypeChecker
 rule call_inv_batch_merge:
     input:
         bed=lambda wildcards: expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
@@ -171,7 +172,7 @@ rule call_inv_batch:
             # Init
             k_util = kanapy.util.kmer.KmerUtil(k_size)
 
-            align_lift = pavlib.align.AlignLift(
+            align_lift = pavlib.align.lift.AlignLift(
                 pd.read_csv(input.bed_aln, sep='\t'),
                 svpoplib.ref.get_df_fai(input.fai)
             )
@@ -600,6 +601,7 @@ rule call_inv_flag_insdel_cluster:
 
 
 # Detect clusters of indels and SNVs that common occur when contigs are aligned through inversions in direct orientation
+# noinspection PyTypeChecker
 rule call_inv_cluster:
     input:
         bed=_input_call_inv_cluster

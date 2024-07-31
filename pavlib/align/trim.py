@@ -1,11 +1,10 @@
 # Alignment trimming functions
 
 import numpy as np
+import pandas as pd
 
 import pavlib
 import svpoplib
-
-from .align import *
 
 
 def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both'):
@@ -306,7 +305,7 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
 
                     else:
 
-                        record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'ref')
+                        record_l, record_r = pavlib.align.trim.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'ref')
 
                         if record_l is not None and record_r is not None:
 
@@ -348,7 +347,7 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
     # Check sanity
     df_qry_fai = svpoplib.ref.get_df_fai(qry_fai)
 
-    df.apply(pavlib.align.check_record, df_qry_fai=df_qry_fai, axis=1)
+    df.apply(pavlib.align.util.check_record, df_qry_fai=df_qry_fai, axis=1)
 
     # Return trimmed alignments
     return df
@@ -401,8 +400,8 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         raise RuntimeError('Unknown match_coord parameter: {}: Expected "qry" or "ref"'.format(match_coord))
 
     # Get cigar operations (list of (op_len, op_code) tuples)
-    cigar_l = list(cigar_str_to_tuples(record_l))
-    cigar_r = list(cigar_str_to_tuples(record_r))
+    cigar_l = list(pavlib.align.util.cigar_str_to_tuples(record_l))
+    cigar_r = list(pavlib.align.util.cigar_str_to_tuples(record_r))
 
     # Orient CIGAR operations so regions to be trimmed are at the head of the list
     if rev_l:
@@ -473,29 +472,29 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     cut_r = trace_r[cut_idx_r]
 
     # Set mid-record cuts (Left-align cuts, mismatch first)
-    residual_bp = diff_bp - (cut_l[TC_DIFF_CUM] + cut_r[TC_DIFF_CUM])
+    residual_bp = diff_bp - (cut_l[pavlib.align.util.TC_DIFF_CUM] + cut_r[pavlib.align.util.TC_DIFF_CUM])
     trim_l = 0
     trim_r = 0
 
-    if residual_bp > 0 and cut_r[TC_OP_CODE] == 'X':  # Right mismatch
-        trim_r += np.min([residual_bp, cut_r[TC_OP_LEN] - 1])
+    if residual_bp > 0 and cut_r[pavlib.align.util.TC_OP_CODE] == 'X':  # Right mismatch
+        trim_r += np.min([residual_bp, cut_r[pavlib.align.util.TC_OP_LEN] - 1])
         residual_bp -= trim_r
 
-    if residual_bp > 0 and cut_l[TC_OP_CODE] == 'X':  # Left mismatch
-        trim_l += np.min([residual_bp, cut_l[TC_OP_LEN] - 1])
+    if residual_bp > 0 and cut_l[pavlib.align.util.TC_OP_CODE] == 'X':  # Left mismatch
+        trim_l += np.min([residual_bp, cut_l[pavlib.align.util.TC_OP_LEN] - 1])
         residual_bp -= trim_l
 
-    if residual_bp > 0 and cut_l[TC_OP_CODE] == '=':  # Left match
-        trim_l += np.min([residual_bp, cut_l[TC_OP_LEN] - 1])
+    if residual_bp > 0 and cut_l[pavlib.align.util.TC_OP_CODE] == '=':  # Left match
+        trim_l += np.min([residual_bp, cut_l[pavlib.align.util.TC_OP_LEN] - 1])
         residual_bp -= trim_l
 
-    if residual_bp > 0 and cut_r[TC_OP_CODE] == '=':  # Right match
-        trim_r += np.min([residual_bp, cut_r[TC_OP_LEN] - 1])
+    if residual_bp > 0 and cut_r[pavlib.align.util.TC_OP_CODE] == '=':  # Right match
+        trim_r += np.min([residual_bp, cut_r[pavlib.align.util.TC_OP_LEN] - 1])
         residual_bp -= trim_r
 
     # Get cut CIGAR String
-    cigar_l_mod = cigar_l[cut_l[TC_INDEX]:]
-    cigar_r_mod = cigar_r[cut_r[TC_INDEX]:]
+    cigar_l_mod = cigar_l[cut_l[pavlib.align.util.TC_INDEX]:]
+    cigar_r_mod = cigar_r[cut_r[pavlib.align.util.TC_INDEX]:]
 
     # Shorten last alignment record if set.
     cigar_l_mod[0] = (cigar_l_mod[0][0] - trim_l, cigar_l_mod[0][1])
@@ -505,11 +504,11 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     record_l_mod = record_l.copy()
     record_r_mod = record_r.copy()
 
-    cut_ref_l = cut_l[TC_SUB_BP] + trim_l
-    cut_qry_l = cut_l[TC_QRY_BP] + trim_l
+    cut_ref_l = cut_l[pavlib.align.util.TC_SUB_BP] + trim_l
+    cut_qry_l = cut_l[pavlib.align.util.TC_QRY_BP] + trim_l
 
-    cut_ref_r = cut_r[TC_SUB_BP] + trim_r
-    cut_qry_r = cut_r[TC_QRY_BP] + trim_r
+    cut_ref_r = cut_r[pavlib.align.util.TC_SUB_BP] + trim_r
+    cut_qry_r = cut_r[pavlib.align.util.TC_QRY_BP] + trim_r
 
     if rev_l:
         record_l_mod['END'] -= cut_ref_l
@@ -564,18 +563,18 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         record_r_mod['TRIM_QRY_L'] += cut_qry_r
 
     # Add clipped bases to CIGAR
-    if cut_l[TC_CLIPH_BP] > 0:
-        cigar_l_pre = [(cut_l[TC_CLIPH_BP], 'H')]
+    if cut_l[pavlib.align.util.TC_CLIPH_BP] > 0:
+        cigar_l_pre = [(cut_l[pavlib.align.util.TC_CLIPH_BP], 'H')]
     else:
         cigar_l_pre = []
 
-    if cut_r[TC_CLIPH_BP] > 0:
-        cigar_r_pre = [(cut_r[TC_CLIPH_BP], 'H')]
+    if cut_r[pavlib.align.util.TC_CLIPH_BP] > 0:
+        cigar_r_pre = [(cut_r[pavlib.align.util.TC_CLIPH_BP], 'H')]
     else:
         cigar_r_pre = []
 
-    clip_s_l = cut_l[TC_CLIPS_BP] + cut_l[TC_QRY_BP] + trim_l
-    clip_s_r = cut_r[TC_CLIPS_BP] + cut_r[TC_QRY_BP] + trim_r
+    clip_s_l = cut_l[pavlib.align.util.TC_CLIPS_BP] + cut_l[pavlib.align.util.TC_QRY_BP] + trim_l
+    clip_s_r = cut_r[pavlib.align.util.TC_CLIPS_BP] + cut_r[pavlib.align.util.TC_QRY_BP] + trim_r
 
     if clip_s_l > 0:
         cigar_l_pre.append((clip_s_l, 'S'))
@@ -651,13 +650,13 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
         # The following code assumes an = or X record is being processed.
 
         # Get min and max base differences achievable by cutting at the end or beginning of this l-record.
-        min_bp_l = trace_l[tc_idx_l][TC_DIFF_CUM]
-        max_bp_l = trace_l[tc_idx_l][TC_DIFF_CUM] + trace_l[tc_idx_l][TC_DIFF] - 1  # Cut all but one left base
+        min_bp_l = trace_l[tc_idx_l][pavlib.align.util.TC_DIFF_CUM]
+        max_bp_l = trace_l[tc_idx_l][pavlib.align.util.TC_DIFF_CUM] + trace_l[tc_idx_l][pavlib.align.util.TC_DIFF] - 1  # Cut all but one left base
 
         # Traverse r cut-sites until max-left + max-right base difference diff_bp or greater.
         while (
                 tc_idx_r + 1 < len_r and
-                max_bp_l + trace_r[tc_idx_r][TC_DIFF_CUM] + trace_r[tc_idx_r][TC_DIFF] - 1 < diff_bp  # Cut all but one right base
+                max_bp_l + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF_CUM] + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF] - 1 < diff_bp  # Cut all but one right base
         ):
             tc_idx_r += 1
 
@@ -667,19 +666,19 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
 
         while (
                 tc_idx_r < len_r and (
-                    min_bp_l + trace_r[tc_idx_r][TC_DIFF_CUM] <= diff_bp or  # Acceptable cut site not found
+                    min_bp_l + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF_CUM] <= diff_bp or  # Acceptable cut site not found
                     tc_idx_r == tc_idx_r_start  # Find at least one cut-site on the right side, even if it over-cuts.
                 )
         ):
 
             # Collect cut-site stats
-            min_bp = min_bp_l + trace_r[tc_idx_r][TC_DIFF_CUM]
-            max_bp = max_bp_l + trace_r[tc_idx_r][TC_DIFF_CUM] + trace_r[tc_idx_r][TC_DIFF] - 1
+            #min_bp = min_bp_l + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF_CUM]
+            max_bp = max_bp_l + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF_CUM] + trace_r[tc_idx_r][pavlib.align.util.TC_DIFF] - 1
 
             diff_min = diff_bp - max_bp
 
             # Count number of events if the minimal cut at these sites are made.
-            event_count = trace_l[tc_idx_l][TC_EVENT_CUM] + trace_r[tc_idx_r][TC_EVENT_CUM]
+            event_count = trace_l[tc_idx_l][pavlib.align.util.TC_EVENT_CUM] + trace_r[tc_idx_r][pavlib.align.util.TC_EVENT_CUM]
 
             if diff_min <= 0:
                 # Target cut length is within the minimum and maximum bp by cutting at this site
@@ -692,10 +691,10 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
                     # Number of events that could be added if either or both ends X and are fully cut. Since records
                     # Cannot be fully truncated, remove one event for X records.
                     (
-                        trace_l[tc_idx_l][TC_EVENT] +  # Number of left events by dropping whole left record
-                        trace_r[tc_idx_r][TC_EVENT] -  # Number of right events by dropping whole right record
-                        (1 if trace_l[tc_idx_l][TC_EVENT] > 0 else 0) -  # Cannot cut whole left record
-                        (1 if trace_r[tc_idx_r][TC_EVENT] > 0 else 0)    # Cannot cut whole right record
+                        trace_l[tc_idx_l][pavlib.align.util.TC_EVENT] +  # Number of left events by dropping whole left record
+                        trace_r[tc_idx_r][pavlib.align.util.TC_EVENT] -  # Number of right events by dropping whole right record
+                        (1 if trace_l[tc_idx_l][pavlib.align.util.TC_EVENT] > 0 else 0) -  # Cannot cut whole left record
+                        (1 if trace_r[tc_idx_r][pavlib.align.util.TC_EVENT] > 0 else 0)    # Cannot cut whole right record
                     )
                 ])
 

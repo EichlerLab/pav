@@ -86,7 +86,7 @@ rule call_lg_discover:
 
         # Get large events
         with open(log.log, 'wt') as log_file:
-            df_ins, df_del, df_inv = pavlib.lgsv.scan_for_events(
+            df_ins, df_del, df_inv = pavlib.lgsv.discover.scan_for_events(
                 df, df_tig_fai, wildcards.hap, REF_FA, input.fa,
                 k_size=params.k_size,
                 n_tree=n_tree,
@@ -105,6 +105,7 @@ rule call_lg_discover:
 
 
 # Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
+# noinspection PyTypeChecker
 rule call_lg_split:
     input:
         bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz'

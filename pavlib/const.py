@@ -32,6 +32,9 @@ def get_version_string():
 # Call #
 ########
 
+# Batch count for variant merging
+MERGE_BATCH_COUNT = 20
+
 # Default merge for INS/DEL/INV
 MERGE_PARAM_INSDELINV = 'nr::ro(0.5):szro(0.5,200,2):match'
 MERGE_PARAM_SNV = 'nrsnv::exact'

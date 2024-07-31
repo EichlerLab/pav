@@ -15,7 +15,6 @@ import pavlib
 import svpoplib
 
 global ASM_TABLE
-global MERGE_BATCH_COUNT
 global REF_FA
 global get_config
 
@@ -40,12 +39,13 @@ rule call_all_bed:
 
 
 # Concatenate variant BED files from batched merges - non-SNV (has variant FASTA).
+# noinspection PyTypeChecker
 rule call_merge_haplotypes:
     input:
         bed_batch=lambda wildcards: [
             'temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{batch}.bed.gz'.format(
                 asm_name=wildcards.asm_name, filter=wildcards.filter, vartype_svtype=wildcards.vartype_svtype, batch=batch
-            ) for batch in range(MERGE_BATCH_COUNT)
+            ) for batch in range(pavlib.const.MERGE_BATCH_COUNT)
         ]
     output:
         bed='results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz',
@@ -78,7 +78,7 @@ rule call_merge_haplotypes_snv:
         bed_batch=lambda wildcards: [
             'temp/{asm_name}/bed/batch/{filter}/snv_snv/{batch}.bed.gz'.format(
                 asm_name=wildcards.asm_name, filter=wildcards.filter, batch=batch
-            ) for batch in range(MERGE_BATCH_COUNT)
+            ) for batch in range(pavlib.const.MERGE_BATCH_COUNT)
         ]
     output:
         bed='results/{asm_name}/bed_merged/{filter}/snv_snv.bed.gz'
@@ -86,6 +86,7 @@ rule call_merge_haplotypes_snv:
         filter='pass|fail'
     run:
 
+        # noinspection PyTypeChecker
         df_list = [pd.read_csv(file_name, sep='\t') for file_name in input.bed_batch if os.stat(file_name).st_size > 0]
 
         df = pd.concat(
@@ -97,6 +98,8 @@ rule call_merge_haplotypes_snv:
         )
 
 # Merge by batches.
+# noinspection PyTypeChecker
+# noinspection PyUnresolvedReferences
 rule call_merge_haplotypes_batch:
     input:
         tsv='data/ref/merge_batch.tsv.gz',
@@ -131,7 +134,7 @@ rule call_merge_haplotypes_batch:
         var_svtype_list = wildcards.vartype_svtype.split('_')
 
         if len(var_svtype_list) != 2:
-            raise RuntimeError('Wildcard "vartype_svtype" must be two elements separated by an underscore: {}'.format(wildcards.var_svtype))
+            raise RuntimeError('Wildcard "vartype_svtype" must be two elements separated by an underscore: {}'.format(wildcards.vartype_svtype))
 
         # Read variant tables
         bed_list = list()
@@ -319,12 +322,13 @@ rule call_integrate_filter_redundant:
 
 
 # Concatenate variant BED files from batched merges.
+# noinspection PyTypeChecker
 rule call_intersect_fail:
     input:
         tsv=lambda wildcards: [
             'temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz'.format(
                 asm_name=wildcards.asm_name, hap=wildcards.hap, vartype_svtype=wildcards.vartype_svtype, batch=batch
-            ) for batch in range(MERGE_BATCH_COUNT)
+            ) for batch in range(pavlib.const.MERGE_BATCH_COUNT)
         ]
     output:
         tsv='results/{asm_name}/bed_hap/fail/{hap}/redundant/intersect_{vartype_svtype}.tsv.gz'
@@ -341,6 +345,8 @@ rule call_intersect_fail:
 
 # Intersect failed calls with FILTER=PASS calls and other failed calls. Used to eliminate redundant failed call
 # annotations.
+# noinspection PyTypeChecker
+# noinspection PyUnresolvedReferences
 rule call_intersect_fail_batch:
     input:
         bed_pass='results/{asm_name}/bed_hap/pass/{hap}/{vartype_svtype}.bed.gz',
@@ -485,6 +491,7 @@ rule call_intersect_fail_batch:
                 pass
 
 # Filter variants from inside inversions
+# noinspection PyTypeChecker
 rule call_integrate_sources:
     input:
         bed_cigar_insdel='temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz',
@@ -652,8 +659,8 @@ rule call_integrate_sources:
             # Compound filter
             pavlib.call.update_filter_compound_fields(df, filter_dict, compound_dict)
 
-            del(filter_dict)
-            del(compound_dict)
+            del filter_dict
+            del compound_dict
 
             # Alignment depth
             df['COV_MEAN'] = np.nan
@@ -680,7 +687,7 @@ rule call_integrate_sources:
                     # Merge
                     df = pd.concat(df_insdel_list, axis=0).sort_values(['#CHROM', 'POS'])
 
-                    del(df_insdel_list)
+                    del df_insdel_list
 
                     # Separate INS and DEL, then write
                     for svtype in ('ins', 'del'):
@@ -693,7 +700,7 @@ rule call_integrate_sources:
                         with Bio.bgzf.BgzfWriter(out_filename_dict[svtype][2]) as out_file:
                             Bio.SeqIO.write(svpoplib.seq.bed_to_seqrecord_iter(subdf), out_file, 'fasta')
 
-                        del(subdf['SEQ'])
+                        del subdf['SEQ']
 
                         subdf.to_csv(out_filename_dict[svtype][0], sep='\t', index=False, compression='gzip')
 
@@ -711,7 +718,7 @@ rule call_integrate_sources:
                             out_filename_dict[svtype][1], sep='\t', index=False, compression='gzip'
                         )
 
-                        del(subdf)
+                        del subdf
 
                 else:
 
@@ -740,10 +747,10 @@ rule call_integrate_sources:
                         out_filename_dict[vartype][1], sep='\t', index=False, compression='gzip'
                     )
 
-                    del(subdf)
+                    del subdf
 
             # Clean
-            del(df)
+            del df
 
 
 
@@ -822,9 +829,9 @@ rule call_cigar:
             df_snv.index, drop=True
         )
 
-        df_snv['FILTER'] = (
+        df_snv['FILTER'] = df_snv.loc[
                 (df_snv['POS'] > df_pass['POS']) & (df_snv['END'] < df_pass['END'])
-        ).apply(
+        ].apply(
             lambda val: 'PASS' if val else 'TRIM'
         )
 
@@ -835,9 +842,9 @@ rule call_cigar:
             df_insdel.index, drop=True
         )
 
-        df_insdel['FILTER'] = (
+        df_insdel['FILTER'] = df_insdel.loc[
                 (df_insdel['POS'] > df_pass['POS']) & (df_insdel['END'] < df_pass['END'])
-        ).apply(
+        ].apply(
             lambda val: 'PASS' if val else 'TRIM'
         )
 
@@ -882,7 +889,7 @@ rule call_merge_batch_table:
 
             min_index = 0
 
-            for i in range(MERGE_BATCH_COUNT):
+            for i in range(pavlib.const.MERGE_BATCH_COUNT):
 
                 if list_size[i] == 0:
                     return i

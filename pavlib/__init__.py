@@ -14,6 +14,6 @@ from . import align
 from . import util
 from . import lgsv
 from . import call
-from . import constants
+from . import const
 from . import cigarcall
 from . import pipeline

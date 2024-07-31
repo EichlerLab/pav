@@ -22,6 +22,7 @@ global touch
 ### Input functions ###
 #######################
 
+# noinspection PyTypeChecker
 def fig_input_inv_tuples(asm_name, filter, hap_list):
 
     tuple_list = list()
