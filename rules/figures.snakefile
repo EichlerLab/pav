@@ -96,7 +96,7 @@ rule figures_inv_all_sample:
 # are in reference orientation (pointing up) or inverted orientation (pointing down).
 rule figures_inv_den:  # Replacing with one rule per dot or density
     input:
-        tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
+        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
         bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz'
     output:
         fig_den='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_den.{ext}'
@@ -167,8 +167,8 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
 rule figures_inv_dot:
     input:
         bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz',
-        tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
+        tig_fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
     output:
         fig_dot='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_dot.{ext}'
     run:

@@ -8,25 +8,25 @@ import svpoplib
 from .align import *
 
 
-def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both'):
+def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both'):
     """
     Do alignment trimming from prepared alignment BED file. This BED contains information about reference and
-    contig coordinates mapped, CIGAR string and flags.
+    query coordinates mapped, CIGAR string and flags.
 
     :param df: Alignment dataframe.
-    :param min_trim_tig_len: Minimum alignment record length. Alignment records smaller will be discarded.
-    :param tig_fai: FAI file from the contig FASTA that was mapped. Used for an alignment sanity check after trimming.
-    :param match_tig: When trimming in reference space (removing redundantly mapped reference bases), only trim
-        alignment records if the contig (query ID) matches. This allows multiple contigs to map to the same location,
-        which may produce a redundant set of variant calls from mis-aligned contigs (e.g. incorrectly mapped paralogs).
-        This mode is useful for generating a maximal callset where multiple contigs may cover the same region (e.g.
+    :param min_trim_qry_len: Minimum alignment record length. Alignment records smaller will be discarded.
+    :param qry_fai: FAI file from the query FASTA that was mapped. Used for an alignment sanity check after trimming.
+    :param match_qry: When trimming in reference space (removing redundantly mapped reference bases), only trim
+        alignment records if the query ID matches. This allows multiple queries to map to the same location,
+        which may produce a redundant set of variant calls from mis-aligned queries (e.g. incorrectly mapped paralogs).
+        This mode is useful for generating a maximal callset where multiple queries may cover the same region (e.g.
         alleles in squashed assembly or mixed haplotypes (e.g. subclonal events). Additional QC should be applied to
         callsets using this option.
-    :param mode: Trim alignments to remove redundantly mapped tig bases (mode = "tig"), reference bases with more than
+    :param mode: Trim alignments to remove redundantly mapped query bases (mode = "qry"), reference bases with more than
         one alignment (mode = "ref"), or both (mode = "both"). If None, assume "both".
 
     :return: Trimmed alignments as an alignment DataFrame. Same format as `df` with columns added describing the
-        number of reference and contig bases that were trimmed. Dropped records (mapped inside another or too shart) are
+        number of reference and query bases that were trimmed. Dropped records (mapped inside another or too shart) are
         removed.
     """
 
@@ -36,39 +36,39 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
     mode = mode.lower()
 
-    if mode == 'tig':
-        do_trim_tig = True
+    if mode == 'qry':
+        do_trim_qry = True
         do_trim_ref = False
     elif mode == 'ref':
-        do_trim_tig = False
+        do_trim_qry = False
         do_trim_ref = True
     elif mode == 'both':
-        do_trim_tig = True
+        do_trim_qry = True
         do_trim_ref = True
     else:
-        raise RuntimeError(f'Unrecognized trimming mode "{mode}": Expected "tig", "ref", or "both"')
+        raise RuntimeError(f'Unrecognized trimming mode "{mode}": Expected "qry", "ref", or "both"')
 
     # Remove short alignments
     for index in df.index:
-        if df.loc[index, 'QRY_END'] - df.loc[index, 'QRY_POS'] < min_trim_tig_len:
+        if df.loc[index, 'QRY_END'] - df.loc[index, 'QRY_POS'] < min_trim_qry_len:
             df.loc[index, 'INDEX'] = -1
 
     # Discard fully trimmed records (shouldn't occur at this stage)
     df = df.loc[df['INDEX'] >= 0].copy()
 
 
-    ###                                          ###
-    ### Trim overlapping contigs in contig space ###
-    ###                                          ###
+    ###                     ###
+    ### Trim in query space ###
+    ###                     ###
 
-    if do_trim_tig:
+    if do_trim_qry:
 
-        # Sort by alignment lengths in contig space
+        # Sort by alignment lengths in query space
         df.sort_values(['QRY_ID', 'QRY_LEN'], ascending=(True, False), inplace=True)
 
         df.reset_index(inplace=True, drop=True)
 
-        # Do trim in contig space #
+        # Do trim in query space #
         iter_index_l = 0
         index_max = df.shape[0]
 
@@ -78,7 +78,7 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
             while iter_index_r < index_max and df.loc[iter_index_l, 'QRY_ID'] == df.loc[iter_index_r, 'QRY_ID']:
 
-                # Get index in order of contig placement
+                # Get index in order of query placement
                 if df.loc[iter_index_l, 'QRY_POS'] <= df.loc[iter_index_r, 'QRY_POS']:
                     index_l = iter_index_l
                     index_r = iter_index_r
@@ -110,7 +110,7 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
                 # Detect overlap in reference
                 if rev_l == rev_r or df.loc[index_l, '#CHROM'] != df.loc[index_r, '#CHROM']:
-                    # Contigs were aligned in different reference chromosomes or orientations, no overlap
+                    # Queries were aligned in different reference chromosomes or orientations, no overlap
                     ref_overlap = False
 
                 else:
@@ -124,7 +124,7 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
                         # POS placement was the same,
                         ref_overlap = False
 
-                # If contig alignments overlap in reference space and are in the same orientation, preferentially
+                # If query alignments overlap in reference space and are in the same orientation, preferentially
                 # trim the downstream end more to left-align alignment-truncating SVs (first argument to
                 # trim_alignment_record is preferentially trimmed)
                 if ref_overlap:
@@ -132,14 +132,14 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
                     # a: Try with record l as first and r as second
                     record_l_a, record_r_a = trim_alignment_record(
-                        df.loc[index_l], df.loc[index_r], 'query',
+                        df.loc[index_l], df.loc[index_r], 'qry',
                         rev_l=rev_l,
                         rev_r=rev_r
                     )
 
                     # b: Try with record r as first and l as second
                     record_l_b, record_r_b = trim_alignment_record(
-                        df.loc[index_r], df.loc[index_l], 'query',
+                        df.loc[index_r], df.loc[index_l], 'qry',
                         rev_l=rev_r,
                         rev_r=rev_l
                     )
@@ -148,11 +148,11 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
                     keep = None
 
                     # Case: Alignment trimming completely removes one of the records
-                    rm_l_a = record_l_a['QRY_END'] - record_l_a['QRY_POS'] < min_trim_tig_len
-                    rm_l_b = record_l_b['QRY_END'] - record_l_b['QRY_POS'] < min_trim_tig_len
+                    rm_l_a = record_l_a['QRY_END'] - record_l_a['QRY_POS'] < min_trim_qry_len
+                    rm_l_b = record_l_b['QRY_END'] - record_l_b['QRY_POS'] < min_trim_qry_len
 
-                    rm_r_a = record_r_a['QRY_END'] - record_r_a['QRY_POS'] < min_trim_tig_len
-                    rm_r_b = record_r_b['QRY_END'] - record_r_b['QRY_POS'] < min_trim_tig_len
+                    rm_r_a = record_r_a['QRY_END'] - record_r_a['QRY_POS'] < min_trim_qry_len
+                    rm_r_b = record_r_b['QRY_END'] - record_r_b['QRY_POS'] < min_trim_qry_len
 
                     rm_any_a = rm_l_a or rm_r_a
                     rm_any_b = rm_l_b or rm_r_b
@@ -198,16 +198,16 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
                 else:
 
-                    # Switch record order if they are on the same contig and same orientation (note: rev_l and rev_r are
-                    # opposite if contigs are mapped in the same orientation, one was swapped to trim the dowstream-
-                    # aligned end).
+                    # Switch record order if they are on the same query and same orientation (note: rev_l and rev_r are
+                    # opposite if query sequences are mapped in the same orientation, one was swapped to trim the
+                    # downstream-aligned end).
                     if df.loc[index_l, '#CHROM'] == df.loc[index_r, '#CHROM'] and rev_l != rev_r:
 
                         # Get position of end to be trimmed
                         trim_pos_l = df.loc[index_l, 'END'] if not df.loc[index_l, 'REV'] else df.loc[index_l, 'POS']
                         trim_pos_r = df.loc[index_r, 'POS'] if not df.loc[index_r, 'REV'] else df.loc[index_r, 'END']
 
-                        # Swap positions so the upstream-aligned end of the contig is index_l. The left end is
+                        # Swap positions so the upstream-aligned end of the query is index_l. The left end is
                         # preferentially trimmed shorter where there are equal breakpoints effectively left-aligning
                         # around large SVs (e.g. large DELs).
                         if trim_pos_r < trim_pos_l:
@@ -222,18 +222,18 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
                     # Trim record
                     record_l, record_r = trim_alignment_record(
-                        df.loc[index_l], df.loc[index_r], 'query',
+                        df.loc[index_l], df.loc[index_r], 'qry',
                         rev_l=rev_l,
                         rev_r=rev_r
                     )
 
-                # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
-                if record_l['QRY_END'] - record_l['QRY_POS'] >= min_trim_tig_len:
+                # Modify if new aligned size is at least min_trim_qry_len, remove if shorter
+                if record_l['QRY_END'] - record_l['QRY_POS'] >= min_trim_qry_len:
                     df.loc[index_l] = record_l
                 else:
                     df.loc[index_l, 'INDEX'] = -1
 
-                if (record_r['QRY_END'] - record_r['QRY_POS']) >= min_trim_tig_len:
+                if (record_r['QRY_END'] - record_r['QRY_POS']) >= min_trim_qry_len:
                     df.loc[index_r] = record_r
                 else:
                     df.loc[index_r, 'INDEX'] = -1
@@ -247,15 +247,15 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
         # Discard fully trimmed records
         df = df.loc[df['INDEX'] >= 0].copy()
 
-    # end: if do_trim_tig
+    # end: if do_trim_qry
 
-    ###                                             ###
-    ### Trim overlapping contigs in reference space ###
-    ###                                             ###
+    ###                         ###
+    ### Trim in reference space ###
+    ###                         ###
 
     if do_trim_ref:
 
-        # Sort by contig alignment length in reference space
+        # Sort by alignment length in reference space
         df = df.loc[
             pd.concat(
                 [df['#CHROM'], df['END'] - df['POS']], axis=1
@@ -282,12 +282,12 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
                     iter_index_r += 1
                     continue
 
-                # Skip if match_tig and query names differ
-                if match_tig and df.loc[iter_index_l, 'QRY_ID'] != df.loc[iter_index_r, 'QRY_ID']:
+                # Skip if match_qry and query names differ
+                if match_qry and df.loc[iter_index_l, 'QRY_ID'] != df.loc[iter_index_r, 'QRY_ID']:
                     iter_index_r += 1
                     continue
 
-                # Get indices ordered by contig placement
+                # Get indices ordered by query placement
                 if df.loc[iter_index_l, 'POS'] <= df.loc[iter_index_r, 'POS']:
                     index_l = iter_index_l
                     index_r = iter_index_r
@@ -306,17 +306,17 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
                     else:
 
-                        record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'subject')
+                        record_l, record_r = pavlib.align.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'ref')
 
                         if record_l is not None and record_r is not None:
 
-                            # Modify if new aligned size is at least min_trim_tig_len, remove if shorter
-                            if record_l['QRY_END'] - record_l['QRY_POS'] >= min_trim_tig_len:
+                            # Modify if new aligned size is at least min_trim_qry_len, remove if shorter
+                            if record_l['QRY_END'] - record_l['QRY_POS'] >= min_trim_qry_len:
                                 df.loc[index_l] = record_l
                             else:
                                 df.loc[index_l, 'INDEX'] = -1
 
-                            if (record_r['QRY_END'] - record_r['QRY_POS']) >= min_trim_tig_len:
+                            if (record_r['QRY_END'] - record_r['QRY_POS']) >= min_trim_qry_len:
                                 df.loc[index_r] = record_r
                             else:
                                 df.loc[index_r, 'INDEX'] = -1
@@ -346,9 +346,9 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
     df.sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'], ascending=[True, True, False, True], inplace=True)
 
     # Check sanity
-    df_tig_fai = svpoplib.ref.get_df_fai(tig_fai)
+    df_qry_fai = svpoplib.ref.get_df_fai(qry_fai)
 
-    df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+    df.apply(pavlib.align.check_record, df_qry_fai=df_qry_fai, axis=1)
 
     # Return trimmed alignments
     return df
@@ -356,29 +356,29 @@ def trim_alignments(df, min_trim_tig_len, tig_fai, match_tig=False, mode='both')
 
 def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=False):
     """
-    Trim ends of overlapping alignments until ends no longer overlap. In repeat-mediated events, aligners (e.g.
-    minimap2) will align the same parts of a contig to both reference copies (e.g. large DEL) or two parts of a contig
-    to the same region (e.g. tandem duplication). This function trims back the alignments using the CIGAR string until
-    the overlap is resolved using a simple greedy algorithm that maximizes the number of variants removed from the
-    alignment during trimming (each variant is an insertion, deletion, or SNVs; currently, no bonus is given to removing
-    larger insertions or deletions vs smaller ones).
+    Trim ends of overlapping alignments until ends no longer overlap. In repeat-mediated events, aligners may align the
+    same parts of a query sequence to both reference copies (e.g. large DEL) or two parts of a query
+    sequence to the same region (e.g. tandem duplication). This function trims back the alignments using the CIGAR
+    string until the overlap is resolved using a simple greedy algorithm that maximizes the number of variants removed
+    from the alignment during trimming (each variant is an insertion, deletion, or SNVs; currently, no bonus is given to
+    removing larger insertions or deletions vs smaller ones).
 
-    For example, a large repeat-mediated deletion will have two reference copies, but one copy in the contig, and the
-    single contig copy is aligned to both by breaking the alignment record into two (one up to the deletion, and one
-    following it). If the contig coordinates were ignored, the alignment gap is smaller than the actual deletion event
+    For example, a large repeat-mediated deletion will have two reference copies, but one copy in the query, and the
+    single query copy is aligned to both by breaking the alignment record into two (one up to the deletion, and one
+    following it). If the query coordinates were ignored, the alignment gap is smaller than the actual deletion event
     and one or both sides of the deletion are filled with false variants. In this example, the alignment is walked-
-    out from both ends of the deletion until there is no duplication of aligned contig (e.g. the alignment stops at
-    one contig base and picks up at the next contig base). In this case, this function would be asked to resolve the
-    contig coordinates (match_coord = "query").
+    out from both ends of the deletion until there is no duplication of aligned query (e.g. the alignment stops at
+    one query base and picks up at the next query base). In this case, this function would be asked to resolve the
+    query coordinates (match_coord = "query").
 
     A similar situation occurs for large tandem duplications, except there is one copy in the reference and two
-    (or more) in the contig. Aligners may align through the reference copy, break the alignment, and start a new
-    alignment through the second copy in the contig. In this case, this function would be asked to resolve reference
-    coordinates (match_coord = "subject").
+    (or more) in the query. Aligners may align through the reference copy, break the alignment, and start a new
+    alignment through the second copy in the query. In this case, this function would be asked to resolve reference
+    coordinates (match_coord = "ref").
 
     :param record_l: Pandas Series alignment record (generated by align_get_read_bed).
     :param record_r: Pandas Series alignment record (generated by align_get_read_bed).
-    :param match_coord: "query" to trim contig alignments, or "subject" to match reference alignments.
+    :param match_coord: "qry" to trim query alignments, or "ref" to match reference alignments.
     :param rev_l: Trim `record_l` from the downstream end (alignment end) if `True`, otherwise, trim from the upstream
         end (alignment start).
     :param rev_r: Trim `record_r` from the downstream end (alignment end) if `True`, otherwise, trim from the upstream
@@ -391,8 +391,14 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     record_r = record_r.copy()
 
     # Check arguments
-    if match_coord not in {'query', 'subject'}:
-        raise RuntimeError('Unknown match_coord parameter: {}: Expected "query" or "subject"'.format(match_coord))
+    if match_coord == 'reference':
+        match_coord = 'ref'
+
+    if match_coord == 'query':
+        match_coord = 'qry'
+
+    if match_coord not in {'qry', 'ref'}:
+        raise RuntimeError('Unknown match_coord parameter: {}: Expected "qry" or "ref"'.format(match_coord))
 
     # Get cigar operations (list of (op_len, op_code) tuples)
     cigar_l = list(cigar_str_to_tuples(record_l))
@@ -406,18 +412,11 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         cigar_r = cigar_r[::-1]
 
     # Get number of bases to trim. Assumes records overlap and are oriented in
-    if match_coord == 'query':
+    if match_coord == 'qry':
 
         if record_l['QRY_POS'] < record_r['QRY_POS']:
             diff_bp = record_l['QRY_END'] - record_r['QRY_POS']
-
         else:
-            #raise RuntimeError('Contigs are incorrectly ordered in query space: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
-            #    record_l['QRY_ID'], record_l['#CHROM'], record_l['POS'],
-            #    record_r['QRY_ID'], record_r['#CHROM'], record_r['POS'],
-            #    match_coord
-            #))
-
             diff_bp = record_r['QRY_END'] - record_l['QRY_POS']
 
         if diff_bp <= 0:
@@ -429,7 +428,7 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
             ))
     else:
         if record_l['POS'] > record_r['POS']:
-            raise RuntimeError('Contigs are incorrectly ordered in subject space: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
+            raise RuntimeError('Query sequences are incorrectly ordered in reference space: {} ({}:{}) vs {} ({}:{}), match_coord={}'.format(
                 record_l['QRY_ID'], record_l['#CHROM'], record_l['POS'],
                 record_r['QRY_ID'], record_r['#CHROM'], record_r['POS'],
                 match_coord
@@ -445,11 +444,11 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
                 match_coord
             ))
 
-    # Find the number of upstream (l) bases to trim to get to 0 (or contig start)
-    trace_l = trace_cigar_to_zero(cigar_l, diff_bp, record_l, match_coord == 'query')
+    # Find the number of upstream (l) bases to trim to get to 0 (or query start)
+    trace_l = trace_cigar_to_zero(cigar_l, diff_bp, record_l, match_coord == 'qry')
 
-    # Find the number of downstream (r) bases to trim to get to 0 (or contig start)
-    trace_r = trace_cigar_to_zero(cigar_r, diff_bp, record_r, match_coord == 'query')
+    # Find the number of downstream (r) bases to trim to get to 0 (or query start)
+    trace_r = trace_cigar_to_zero(cigar_r, diff_bp, record_r, match_coord == 'qry')
 
 
     # For each upstream alignment cut-site, find the best matching downstream alignment cut-site. Not all cut-site
@@ -506,62 +505,62 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     record_l_mod = record_l.copy()
     record_r_mod = record_r.copy()
 
-    cut_sub_l = cut_l[TC_SUB_BP] + trim_l
+    cut_ref_l = cut_l[TC_SUB_BP] + trim_l
     cut_qry_l = cut_l[TC_QRY_BP] + trim_l
 
-    cut_sub_r = cut_r[TC_SUB_BP] + trim_r
+    cut_ref_r = cut_r[TC_SUB_BP] + trim_r
     cut_qry_r = cut_r[TC_QRY_BP] + trim_r
 
     if rev_l:
-        record_l_mod['END'] -= cut_sub_l
+        record_l_mod['END'] -= cut_ref_l
 
-        # Adjust positions in contig space
+        # Adjust positions in query space
         if record_l_mod['REV']:
             record_l_mod['QRY_POS'] += cut_qry_l
         else:
             record_l_mod['QRY_END'] -= cut_qry_l
 
         # Track cut bases
-        record_l_mod['TRIM_REF_R'] += cut_sub_l
+        record_l_mod['TRIM_REF_R'] += cut_ref_l
         record_l_mod['TRIM_QRY_R'] += cut_qry_l
 
     else:
-        record_l_mod['POS'] += cut_sub_l
+        record_l_mod['POS'] += cut_ref_l
 
-        # Adjust positions in contig space
+        # Adjust positions in query space
         if record_l_mod['REV']:
             record_l_mod['QRY_END'] -= cut_qry_l
         else:
             record_l_mod['QRY_POS'] += cut_qry_l
 
         # Track cut bases
-        record_l_mod['TRIM_REF_L'] += cut_sub_l
+        record_l_mod['TRIM_REF_L'] += cut_ref_l
         record_l_mod['TRIM_QRY_L'] += cut_qry_l
 
     if rev_r:
-        record_r_mod['END'] -= cut_sub_r
+        record_r_mod['END'] -= cut_ref_r
 
-        # Adjust positions in contig space
+        # Adjust positions in query space
         if record_r_mod['REV']:
             record_r_mod['QRY_POS'] += cut_qry_r
         else:
             record_r_mod['QRY_END'] -= cut_qry_r
 
         # Track cut bases
-        record_r_mod['TRIM_REF_R'] += cut_sub_r
+        record_r_mod['TRIM_REF_R'] += cut_ref_r
         record_r_mod['TRIM_QRY_R'] += cut_qry_r
 
     else:
-        record_r_mod['POS'] += cut_sub_r
+        record_r_mod['POS'] += cut_ref_r
 
-        # Adjust positions in contig space
+        # Adjust positions in query space
         if record_r_mod['REV']:
             record_r_mod['QRY_END'] -= cut_qry_r
         else:
             record_r_mod['QRY_POS'] += cut_qry_r
 
         # Track cut bases
-        record_r_mod['TRIM_REF_L'] += cut_sub_r
+        record_r_mod['TRIM_REF_L'] += cut_ref_r
         record_r_mod['TRIM_QRY_L'] += cut_qry_r
 
     # Add clipped bases to CIGAR
@@ -597,13 +596,6 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod])
     record_r_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_r_mod])
 
-    # # Adjust reference and contig span after trimming
-    # record_l_mod['QRY_MAP_LEN'] = record_l_mod['QRY_END'] - record_l_mod['QRY_POS']
-    # record_l_mod['SUB_MAP_LEN'] = record_l_mod['END'] - record_l_mod['POS']
-    #
-    # record_r_mod['QRY_MAP_LEN'] = record_r_mod['QRY_END'] - record_r_mod['QRY_POS']
-    # record_r_mod['SUB_MAP_LEN'] = record_r_mod['END'] - record_r_mod['POS']
-
     # Return trimmed records
     return record_l_mod, record_r_mod
 
@@ -622,10 +614,10 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
     :param trace_l: List of tuples for the left alignment generated by `trace_cigar_to_zero()`. This list
         should be reversed after it was generated (traversed start to end).
     :param trace_r: List of tuples for the right alignment generated by `trace_cigar_to_zero()`.
-    :param diff_bp: Target removing this many bases. Could be subject (ref) or query (tig) depending on how the
+    :param diff_bp: Target removing this many bases. Could be reference or query depending on how the
         traces were constructed.
 
-    :return: Tuple of (cut_idx_l, cut_idx_r). cut_idx_l and cut_idx_r are the left contig and right contig cigar list index (argument to
+    :return: Tuple of (cut_idx_l, cut_idx_r). cut_idx_l and cut_idx_r are the left query and right query cigar list index (argument to
         trace_cigar_to_zero()), index element of `trace_l` and `trace_r`) where the alignment cuts should occur.
     """
 
@@ -656,7 +648,7 @@ def find_cut_sites(trace_l, trace_r, diff_bp):
         max_event_part = 0
         max_diff_optimal_part = None
 
-        # Note: "=" and "X" consume both subj and qry, so diff calculation is the same if subject or query is cut.
+        # Note: "=" and "X" consume both ref and qry, so diff calculation is the same if reference or query is cut.
         # The following code assumes an = or X record is being processed.
 
         # Get min and max base differences achievable by cutting at the end or beginning of this l-record.
@@ -792,8 +784,8 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
             but not including it.
         * TC_EVENT = 6: Event differences for this event. "1" for insertions or deletions, OP_LEN for mismatches
             "X", SNV).
-        * TC_SUB_BP = 7: Cumulative number of subject (ref) bases consumed up to this event, but not including it.
-        * TC_QRY_BP = 8: Cumulative number of query (tig) bases consumed up to this event, but not including it.
+        * TC_SUB_BP = 7: Cumulative number of reference bases consumed up to this event, but not including it.
+        * TC_QRY_BP = 8: Cumulative number of query bases consumed up to this event, but not including it.
         * TC_CLIPS_BP = 9: Cumulative number of soft-clipped bases up to AND INCLUDING this event. Alignments are not
             cut on clipped records, so cumulative and including does not affect the algorithm.
         * TC_CLIPH_BP = 10: Cumulative number of hard-clipped bases up to AND INCLUDING this event.
@@ -801,8 +793,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
     :param cigar_list: List of cigar operation tuples (cigar_len, cigar_op) with cigar_op as characters (e.g. "X", "=").
     :param diff_bp: Number of query bases to trace back. Final record will traverse past this value.
     :param aln_record: Alignment record for error reporting.
-    :param diff_query: Compute base differences for query (tig) sequence if `True`. If `False`, compute for subject
-        (reference).
+    :param diff_query: Compute base differences for query sequence if `True`. If `False`, compute for reference.
 
     :return: A list of tuples tracing the effects of truncating an alignment at a given CIGAR operation.
     """
@@ -815,7 +806,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
     diff_cumulative = 0
     event_cumulative = 0
 
-    sub_bp_sum = 0
+    ref_bp_sum = 0
     qry_bp_sum = 0
     clip_s_sum = 0
     clip_h_sum = 0
@@ -831,7 +822,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         if cigar_op == '=':
             event_count = 0
 
-            sub_bp = cigar_len
+            ref_bp = cigar_len
             qry_bp = cigar_len
 
             last_no_match = False
@@ -839,7 +830,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         elif cigar_op == 'X':
             event_count = cigar_len
 
-            sub_bp = cigar_len
+            ref_bp = cigar_len
             qry_bp = cigar_len
 
             last_no_match = True
@@ -847,7 +838,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         elif cigar_op == 'I':
             event_count = 1
 
-            sub_bp = 0
+            ref_bp = 0
             qry_bp = cigar_len
 
             last_no_match = True
@@ -855,7 +846,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         elif cigar_op == 'D':
             event_count = 1
 
-            sub_bp = cigar_len
+            ref_bp = cigar_len
             qry_bp = 0
 
             last_no_match = True
@@ -863,7 +854,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         elif cigar_op == 'S':
             event_count = 0
 
-            sub_bp = 0
+            ref_bp = 0
             qry_bp = 0
 
             clip_s_sum += cigar_len
@@ -873,7 +864,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         elif cigar_op == 'H':
             event_count = 0
 
-            sub_bp = 0
+            ref_bp = 0
             qry_bp = 0
 
             clip_h_sum += cigar_len
@@ -882,7 +873,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
 
         else:
             raise RuntimeError((
-                'Illegal operation in contig alignment while trimming alignment: {}{} '
+                'Illegal operation in query alignment while trimming alignment: {}{} '
                 '(start={}:{}): CIGAR operation #{}: Expected CIGAR op in "IDSH=X"'
             ).format(cigar_len, cigar_op, aln_record['#CHROM'], aln_record['POS'], index))
 
@@ -890,7 +881,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         if diff_query:
             diff_change = qry_bp
         else:
-            diff_change = sub_bp
+            diff_change = ref_bp
 
         # Add to trace list
         if cigar_op in {'=', 'X'}:
@@ -900,7 +891,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
                     cigar_len, cigar_op,
                     diff_cumulative, diff_change,
                     event_cumulative, event_count,
-                    sub_bp_sum, qry_bp_sum,
+                    ref_bp_sum, qry_bp_sum,
                     clip_s_sum, clip_h_sum
                 )
             )
@@ -909,7 +900,7 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         diff_cumulative += diff_change
         event_cumulative += event_count
 
-        sub_bp_sum += sub_bp
+        ref_bp_sum += ref_bp
         qry_bp_sum += qry_bp
 
         index += 1

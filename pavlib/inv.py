@@ -390,7 +390,7 @@ def scan_for_inv(
     )
 
     # Lift to reference
-    region_ref_outer = align_lift.lift_region_to_sub(region_tig_outer)
+    region_ref_outer = align_lift.lift_region_to_ref(region_tig_outer)
 
     if region_ref_outer is None:
         _write_log(
@@ -400,7 +400,7 @@ def scan_for_inv(
 
         return None
 
-    region_ref_inner = align_lift.lift_region_to_sub(region_tig_inner, gap=True)
+    region_ref_inner = align_lift.lift_region_to_ref(region_tig_inner, gap=True)
 
     if region_ref_inner is None:
         region_ref_inner = region_ref_outer

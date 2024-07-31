@@ -39,10 +39,10 @@ rule call_merge_lg:
 # Call alignment-truncating SVs.
 rule call_lg_discover:
     input:
-        bed='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
+        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
         tsv_group='temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz',
-        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai',
+        fa='temp/{asm_name}/align/query_{hap}.fa.gz',
+        fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai',
         bed_n='data/ref/n_gap.bed.gz'
     output:
         bed_ins=temp('temp/{asm_name}/lg_sv/batch/sv_ins_{hap}_{batch}.bed.gz'),
@@ -107,7 +107,7 @@ rule call_lg_discover:
 # Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
 rule call_lg_split:
     input:
-        bed='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz'
     output:
         tsv=temp('temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz')
     params:

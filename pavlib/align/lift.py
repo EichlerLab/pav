@@ -11,7 +11,7 @@ from .align import *
 
 class AlignLift:
     """
-    Create an alignment liftover object for translating between reference and contig alignments (both directions). Build
+    Create an alignment liftover object for translating between reference and query alignments (both directions). Build
     liftover from alignment data in a DataFrame (requires #CHROM, POS, END, QRY_ID, QUERY_POS, and QUERY_END). The
     DataFrame index must not have repeated values. The data-frame is also expected not to change, so feed this object
     a copy if it might be altered while this object is in use.
@@ -22,7 +22,7 @@ class AlignLift:
         Create AlignLift instance.
 
         :param df: Alignment BED file (post-cut) as DataFrame.
-        :param df_fai: Contig FAI file as Series.
+        :param df_fai: Query FAI file as Series.
         :param cache_align: Number of alignment records to cache.
         """
 
@@ -34,23 +34,23 @@ class AlignLift:
         if len(set(df.index)) != df.shape[0]:
             raise RuntimeError('Cannot create AlignLift object with duplicate index values')
 
-        # Build a reference-coordinate and a tig-coordinate tree
+        # Build a reference-coordinate and a query-coordinate tree
         self.ref_tree = collections.defaultdict(intervaltree.IntervalTree)
-        self.tig_tree = collections.defaultdict(intervaltree.IntervalTree)
+        self.qry_tree = collections.defaultdict(intervaltree.IntervalTree)
 
         for index, row in df.iterrows():
             self.ref_tree[row['#CHROM']][row['POS']:row['END']] = index
-            self.tig_tree[row['QRY_ID']][row['QRY_POS']:row['QRY_END']] = index
+            self.qry_tree[row['QRY_ID']][row['QRY_POS']:row['QRY_END']] = index
 
         # Build alignment caching structures
         self.cache_queue = collections.deque()
 
         self.ref_cache = dict()
-        self.tig_cache = dict()
+        self.qry_cache = dict()
 
-    def lift_to_sub(self, query_id, coord, gap=False):
+    def lift_to_ref(self, query_id, coord, gap=False):
         """
-        Lift coordinates from query (tig) to subject (reference).
+        Lift coordinates from query to reference.
 
         Returns tuple(s) of:
             0: Query ID.
@@ -61,12 +61,12 @@ class AlignLift:
             4: Maximum position.
             5: Align record index.
 
-        If the lift hits an alignment gap, then the function can try to resolve the lift to the best subject position
+        If the lift hits an alignment gap, then the function can try to resolve the lift to the best reference position
         based on the alignment using a strategy outlined by the `gap` parameter.
 
         :param query_id: Query record ID.
         :param coord: Query coordinates. May be a single value, list, or tuple.
-        :param gap: Interpolate into an alignment gap between two contigs if `True`.
+        :param gap: Interpolate into an alignment gap between two queries if `True`.
 
         :return: Single coordinate tuple or list of coordinate tuples if `coord` is a list or tuple. Returns `None`
             for coordinates that cannot be lifted.
@@ -86,13 +86,13 @@ class AlignLift:
             pos_org = pos  # Pre-reverse position
 
             # Find matching records
-            match_set = self.tig_tree[query_id][pos:(pos + 1)]
+            match_set = self.qry_tree[query_id][pos:(pos + 1)]
 
             if len(match_set) == 1:
                 index = list(match_set)[0].data
 
             elif len(match_set) == 0 and gap:
-                lift_coord_list.append(self._get_subject_gap(query_id, pos))
+                lift_coord_list.append(self._get_ref_gap(query_id, pos))
                 continue
 
             else:
@@ -100,10 +100,10 @@ class AlignLift:
                 continue
 
             # Get lift tree
-            if index not in self.tig_cache.keys():
+            if index not in self.qry_cache.keys():
                 self._add_align(index)
 
-            lift_tree = self.tig_cache[index]
+            lift_tree = self.qry_cache[index]
 
             # Get row
             row = self.df.loc[index]
@@ -131,7 +131,7 @@ class AlignLift:
                     raise RuntimeError(
                         (
                             'Found no matches in a lift-tree for a record within a '
-                            'global to-subject tree: {}:{} (index={}, gap={})'
+                            'global to-reference tree: {}:{} (index={}, gap={})'
                         ).format(query_id, pos_org, index, gap)
                     )
 
@@ -141,7 +141,7 @@ class AlignLift:
                 raise RuntimeError(
                     (
                         'Found multiple matches in a lift-tree for a record within a '
-                        'global to-subject tree: {}:{} (index={}, gap={})'
+                        'global to-reference tree: {}:{} (index={}, gap={})'
                     ).format(query_id, pos_org, index,  gap)
                 )
 
@@ -174,9 +174,9 @@ class AlignLift:
         else:
             return lift_coord_list[0]
 
-    def lift_to_qry(self, subject_id, coord):
+    def lift_to_qry(self, reference_id, coord):
         """
-        Lift coordinates from subject (reference) to query (tig).
+        Lift coordinates from reference to query.
 
         Returns tuple(s) of:
             0: Query ID.
@@ -187,7 +187,7 @@ class AlignLift:
             4: Maximum position.
             5: Align record index.
 
-        :param subject_id: Subject ID.
+        :param reference_id: Subject ID.
         :param coord: Subject coordinates. May be a single value, list, or tuple.
 
         :return: Single coordinate tuple or list of coordinate tuples if `coord` is a list or tuple. Returns `None`
@@ -205,22 +205,16 @@ class AlignLift:
         lift_coord_list = list()
 
         for pos in coord:
-            match_set = self.ref_tree[subject_id][pos:(pos + 1)]
+            match_set = self.ref_tree[reference_id][pos:(pos + 1)]
 
             # Check coordinates
             if len(match_set) == 0:
                 lift_coord_list.append(None)
                 continue
 
-                # raise ValueError('Subject region {}:{} has no to-query lift records'.format(subject_id, pos))
-
             if len(match_set) > 1:
                 lift_coord_list.append(None)
                 continue
-
-                # raise ValueError(
-                #     'Subject region {}:{} has {} to-query lift records'.format(subject_id, pos, len(match_set))
-                # )
 
             # Get lift tree
             index = list(match_set)[0].data
@@ -241,7 +235,7 @@ class AlignLift:
                     (
                         'Program bug: Found no matches in a lift-tree for a record withing a '
                         'global to-query tree: {}:{} (index={})'
-                    ).format(subject_id, pos, index)
+                    ).format(reference_id, pos, index)
                 )
 
             match_interval = list(match_set)[0]
@@ -271,9 +265,9 @@ class AlignLift:
         else:
             return lift_coord_list[0]
 
-    def lift_region_to_sub(self, region, gap=False):
+    def lift_region_to_ref(self, region, gap=False):
         """
-        Lift region to subject.
+        Lift region to reference.
 
         :param region: Query region.
         :param gap: Interpolate within gap if `True`.
@@ -282,23 +276,23 @@ class AlignLift:
         """
 
         # Lift
-        sub_pos, sub_end = self.lift_to_sub(region.chrom, (region.pos, region.end), gap)
+        ref_pos, ref_end = self.lift_to_ref(region.chrom, (region.pos, region.end), gap)
 
-        # Check lift: Must lift both ends to the same subject ID
-        if sub_pos is None or sub_end is None:
+        # Check lift: Must lift both ends to the same reference ID
+        if ref_pos is None or ref_end is None:
             return None
 
-        if sub_pos[0] != sub_end[0] or (sub_pos[2] is not None and sub_end[2] is not None and sub_pos[2] != sub_end[2]):
+        if ref_pos[0] != ref_end[0] or (ref_pos[2] is not None and ref_end[2] is not None and ref_pos[2] != ref_end[2]):
             return None
 
         # Return
         return pavlib.seq.Region(
-            sub_pos[0], sub_pos[1], sub_end[1],
+            ref_pos[0], ref_pos[1], ref_end[1],
             is_rev=False,
-            pos_min=sub_pos[3], pos_max=sub_pos[4],
-            end_min=sub_end[3], end_max=sub_end[4],
-            pos_aln_index=(sub_pos[5],),
-            end_aln_index=(sub_end[5],)
+            pos_min=ref_pos[3], pos_max=ref_pos[4],
+            end_min=ref_end[3], end_max=ref_end[4],
+            pos_aln_index=(ref_pos[5],),
+            end_aln_index=(ref_end[5],)
         )
 
     def lift_region_to_qry(self, region):
@@ -330,23 +324,23 @@ class AlignLift:
             end_aln_index=(query_end[5],)
         )
 
-    def _get_subject_gap(self, query_id, pos):
+    def _get_ref_gap(self, query_id, pos):
         """
         Interpolate lift coordinates to an alignment gap.
 
-        :param pos: Position on the contig.
+        :param pos: Position on the query.
 
-        :return: A tuple of (subject, pos, rev, min, max).
+        :return: A tuple of (reference, pos, rev, min, max).
         """
 
         # Check arguments
         if pos is None:
             return None
 
-        # Get alignment records for this contig
+        # Get alignment records for this query
         subdf = self.df.loc[self.df['QRY_ID'] == query_id]
 
-        # Must be flanked by two contigs on either side
+        # Must be flanked by two query on either side
         if not np.any(subdf['QRY_END'] < pos):
             return None
 
@@ -362,7 +356,7 @@ class AlignLift:
             subdf.loc[subdf['QRY_POS'] > pos, 'QRY_POS'].sort_values().index[0]
         ]
 
-        # Rows must be mapped to the same subject
+        # Rows must be mapped to the same reference
         if row_l['#CHROM'] != row_r['#CHROM']:
             return None
 
@@ -402,7 +396,7 @@ class AlignLift:
         row = self.df.loc[index]
 
         # Build lift trees
-        sub_bp = row['POS']
+        ref_bp = row['POS']
         qry_bp = 0
 
         itree_ref = intervaltree.IntervalTree()
@@ -433,23 +427,23 @@ class AlignLift:
 
             if cigar_op in {'=', 'X', 'M'}:
 
-                itree_ref[sub_bp:(sub_bp + cigar_len)] = (qry_bp, qry_bp + cigar_len)
-                itree_qry[qry_bp:(qry_bp + cigar_len)] = (sub_bp, sub_bp + cigar_len)
+                itree_ref[ref_bp:(ref_bp + cigar_len)] = (qry_bp, qry_bp + cigar_len)
+                itree_qry[qry_bp:(qry_bp + cigar_len)] = (ref_bp, ref_bp + cigar_len)
 
-                sub_bp += cigar_len
+                ref_bp += cigar_len
                 qry_bp += cigar_len
 
             elif cigar_op == 'I':
 
-                itree_qry[qry_bp:(qry_bp + cigar_len)] = (sub_bp, sub_bp + 1)
+                itree_qry[qry_bp:(qry_bp + cigar_len)] = (ref_bp, ref_bp + 1)
 
                 qry_bp += cigar_len
 
             elif cigar_op == 'D':
 
-                itree_ref[sub_bp:(sub_bp + cigar_len)] = (qry_bp, qry_bp + 1)
+                itree_ref[ref_bp:(ref_bp + cigar_len)] = (qry_bp, qry_bp + 1)
 
-                sub_bp += cigar_len
+                ref_bp += cigar_len
 
             elif cigar_op in {'S', 'H'}:
 
@@ -470,7 +464,7 @@ class AlignLift:
 
         # Cache trees
         self.ref_cache[index] = itree_ref
-        self.tig_cache[index] = itree_qry
+        self.qry_cache[index] = itree_qry
 
         # Add index to end of queue
         self.cache_queue.appendleft(index)
@@ -484,4 +478,4 @@ class AlignLift:
             index = self.cache_queue.pop()
 
             del(self.ref_cache[index])
-            del(self.tig_cache[index])
+            del(self.qry_cache[index])

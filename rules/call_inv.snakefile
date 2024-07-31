@@ -115,9 +115,9 @@ rule call_inv_batch_merge:
 rule call_inv_batch:
     input:
         bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
-        bed_aln='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
-        tig_fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        bed_aln='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
+        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
+        fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
     output:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:

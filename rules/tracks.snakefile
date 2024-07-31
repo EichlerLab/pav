@@ -195,7 +195,7 @@ rule tracks_align_bb:
 rule tracks_align:
     input:
         bed=lambda wildcards: [
-            f'results/{wildcards.asm_name}/align/trim-{wildcards.trim}/aligned_tig_{hap}.bed.gz'
+            f'results/{wildcards.asm_name}/align/trim-{wildcards.trim}/aligned_query_{hap}.bed.gz'
                 for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
         ]
     output:

@@ -185,7 +185,7 @@ rule call_merge_haplotypes_batch:
 # "slop" parameter). The flank is not added to the regions that are output.
 rule call_callable_regions:
     input:
-        bed_align='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
+        bed_align='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
         bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
         bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'
@@ -349,7 +349,7 @@ rule call_intersect_fail_batch:
             if wildcards.vartype_svtype != 'snv_snv' else [],
         fa_fail=lambda wildcards: ['temp/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz']
             if wildcards.vartype_svtype != 'snv_snv' else [],
-        bed_align='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
+        bed_align='results/{asm_name}/align/trim-none/aligned_query_{hap}.bed.gz',
         tsv_batch='data/ref/merge_batch.tsv.gz'
     output:
         tsv=temp('temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz')
@@ -791,9 +791,9 @@ rule call_cigar_merge:
 # IDs are not versioned by this rule, versioning must be applied after batches are merged.
 rule call_cigar:
     input:
-        bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
-        bed_trim='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz',
-        tig_fa_name='temp/{asm_name}/align/contigs_{hap}.fa.gz'
+        bed='results/{asm_name}/align/trim-none/aligned_query_{hap}.bed.gz',
+        bed_trim='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
+        tig_fa_name='temp/{asm_name}/align/query_{hap}.fa.gz'
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
         bed_snv=temp('temp/{asm_name}/cigar/batched/snv.bed_{hap}_{batch}.gz')

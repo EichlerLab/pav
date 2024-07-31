@@ -38,7 +38,7 @@ rule align_all:
 # Create a depth BED file for alignments.
 rule align_depth_bed:
     input:
-        bed='results/{asm_name}/align/trim-{trim}/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/trim-{trim}/aligned_query_{hap}.bed.gz'
     output:
         bed='results/{asm_name}/align/trim-{trim}/depth_tig_{hap}.bed.gz'
     run:
@@ -53,10 +53,10 @@ rule align_depth_bed:
 # Cut contig alignment overlaps in reference coordinates
 rule align_trim_tigref:
     input:
-        bed='results/{asm_name}/align/trim-tig/aligned_tig_{hap}.bed.gz',
-        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        bed='results/{asm_name}/align/trim-tig/aligned_query_{hap}.bed.gz',
+        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/trim-tigref/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz'
     params:
         min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000)),  # Minimum aligned tig length
         redundant_callset=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'redundant_callset', False))
@@ -67,7 +67,7 @@ rule align_trim_tigref:
             pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}),  # Untrimmed alignment BED
             params.min_trim_tig_len,  # Minimum contig length
             input.tig_fai,  # Path to alignment FASTA FAI
-            match_tig=params.redundant_callset,  # Redundant callset, trim reference space only for records with matching IDs
+            match_qry=params.redundant_callset,  # Redundant callset, trim reference space only for records with matching IDs
             mode='ref'
         )
 
@@ -77,10 +77,10 @@ rule align_trim_tigref:
 # Cut contig alignment overlaps in contig coordinates
 rule align_trim_tig:
     input:
-        bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
-        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        bed='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.bed.gz',
+        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/trim-tig/aligned_tig_{hap}.bed.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-tig/aligned_query_{hap}.bed.gz'
     params:
         min_trim_tig_len=lambda wildcards: int(get_config(wildcards, 'min_trim_tig_len', 1000))  # Minimum aligned tig length
     run:
@@ -100,11 +100,11 @@ rule align_trim_tig:
 # Get alignment BED for one part (one aligned cell or split BAM) in one assembly.
 rule align_get_read_bed:
     input:
-        sam='temp/{asm_name}/align/trim-none/aligned_tig_{hap}.sam.gz',
-        tig_fai='temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'
+        sam='temp/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.sam.gz',
+        tig_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
     output:
-        bed='results/{asm_name}/align/trim-none/aligned_tig_{hap}.bed.gz',
-        align_head='results/{asm_name}/align/trim-none/aligned_tig_{hap}.headers.gz'
+        bed='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.bed.gz',
+        align_head='results/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.headers.gz'
     run:
 
         # Write an empty file if SAM is emtpy
@@ -132,11 +132,11 @@ rule align_get_read_bed:
             return
 
         # Read FAI
-        df_tig_fai = svpoplib.ref.get_df_fai(input.tig_fai)
-        df_tig_fai.index = df_tig_fai.index.astype(str)
+        df_qry_fai = svpoplib.ref.get_df_fai(input.tig_fai)
+        df_qry_fai.index = df_qry_fai.index.astype(str)
 
         # Read alignments as a BED file.
-        df = pavlib.align.get_align_bed(input.sam, df_tig_fai, wildcards.hap)
+        df = pavlib.align.get_align_bed(input.sam, df_qry_fai, wildcards.hap, tier=int(wildcards.tier))
 
         # Write SAM headers
         with gzip.open(input.sam, 'rt') as in_file:
@@ -171,69 +171,68 @@ rule align_get_read_bed:
         # Write
         df.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
-# Map contigs as SAM. Pull read information from the SAM before sorting and writing CRAM since tool tend to change
+
+# Map query as SAM. Pull read information from the SAM before sorting and writing CRAM since tool tend to change
 # "=X" to "M" in the CIGAR.
 rule align_map:
     input:
         ref_fa='data/ref/ref.fa.gz',
-        fa=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else 'temp/{asm_name}/align/contigs_{hap}.fa',
-        fai=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz.fai' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else [],
-        gzi=lambda wildcards: 'temp/{asm_name}/align/contigs_{hap}.fa.gz.gzi' if get_config(wildcards, 'aligner', 'minimap2') != 'lra' else [],
-        gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else [],
-        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if get_config(wildcards, 'aligner', 'minimap2') == 'lra' else []
+        fa=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else 'temp/{asm_name}/align/query/query_{hap}.fa',
+        fai=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.fai' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else [],
+        gzi=lambda wildcards: 'temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi' if pavlib.align.get_aligner(wildcards.tier, config) != 'lra' else [],
+        gli=lambda wildcards: 'data/ref/ref.fa.gz.gli' if pavlib.align.get_aligner(wildcards.tier, config) == 'lra' else [],
+        mmi=lambda wildcards: 'data/ref/ref.fa.gz.mms' if pavlib.align.get_aligner(wildcards.tier, config) == 'lra' else []
     output:
-        sam=temp('temp/{asm_name}/align/trim-none/aligned_tig_{hap}.sam.gz')
-    params:
-        aligner=lambda wildcards: get_config(wildcards, 'aligner', 'minimap2'),
-        minimap2_params=lambda wildcards: get_config(wildcards, 'minimap2_params', '-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5')
+        sam=temp('temp/{asm_name}/align/tier-{tier}/trim-none/aligned_query_{hap}.sam.gz')
     threads: 24
     run:
 
-        # Get aligner
-        if params.aligner not in {'minimap2', 'lra'}:
-            raise RuntimeError('Unknown "aligner" parameter in config: {}'.format(params.aligner))
+        # Get alignment command
+        aligner = pavlib.align.get_aligner(wildcards.tier, config)
+        aligner_params = pavlib.align.get_aligner_params(wildcards.tier, config, aligner)
 
-        aligner = params.aligner
+        if aligner == 'minimap2':
+            align_cmd = (
+                f"""minimap2 """
+                    f"""{aligner_params} """
+                    f"""--secondary=no -a -t {threads} --eqx -Y """
+                    f"""{input.ref_fa} {input.fa}"""
+            )
 
-        # Write an empty file if input is empty
-        if os.stat(input.fa).st_size == 0:
+        elif aligner == 'lra':
+            align_cmd = (
+                f"""lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {threads}"""
+                f"""{aligner_params}"""
+            )
+
+        else:
+            raise RuntimeError(f'Unknown alignment program (aligner parameter): {aligner}')
+
+        # Run alignment
+        if os.stat(input.fa).st_size > 0:
+
+            # Run alignment
+            print(f'Aligning {wildcards.asm_name}-{wildcards.hap}: {align_cmd}', flush=True)
+
+            shell(
+                align_cmd + (
+                    """ | awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
+                    """gzip > {output.sam}"""
+                )
+            )
+
+        else:
+            # Write an empty file if input is empty
             with open(output.sam, 'w') as out_file:
                 pass
 
-        else:
 
-            # Align parameters
-            if aligner == 'minimap2':
-                align_cmd = (
-                    """minimap2 """
-                        """{params.minimap2_params} """
-                        """--secondary=no -a -t {threads} --eqx -Y """
-                        """{input.ref_fa} {input.fa} | """
-                        """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
-                        """gzip > {output.sam}"""
-                )
-
-
-            elif aligner == 'lra':
-                align_cmd = (
-                    """lra align {input.ref_fa} {input.fa} -CONTIG -p s -t {threads} | """
-                    """awk -vOFS="\\t" '($1 !~ /^@/) {{$10 = "*"; $11 = "*"}} {{print}}' | """
-                    """gzip > {output.sam}"""
-                )
-
-            else:
-                raise RuntimeError(f'PROGRAM BUG: Unknown "aligner": {aligner}')
-
-            # Align
-            print(f'Aligning {wildcards.asm_name}-{wildcards.hap}: {align_cmd}', flush=True)
-            shell(align_cmd)
-
-# Uncompress contig for aligners that cannot read gzipped FASTAs.
-rule align_uncompress_tig:
+# Uncompress query sequences for aligners that cannot read gzipped FASTAs.
+rule align_uncompress_qry:
     input:
-        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz'
+        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz'
     output:
-        fa='temp/{asm_name}/align/contigs_{hap}.fa'
+        fa='temp/{asm_name}/align/query/query_{hap}.fa'
     run:
 
         if os.stat(input.fa).st_size > 0:
@@ -245,13 +244,13 @@ rule align_uncompress_tig:
                 pass
 
 # Get FASTA files.
-rule align_get_tig_fa:
+rule align_get_qry_fa:
     input:
         fa=lambda wildcards: pavlib.pipeline.get_rule_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, get_config(wildcards))
     output:
-        fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
-        fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'),
-        gzi=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.gzi')
+        fa=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz'),
+        fai=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'),
+        gzi=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi')
     run:
 
         # Get input files
@@ -302,7 +301,7 @@ def _align_cram_all(wildcards):
         trim = ('tigref',)
 
     return pavlib.pipeline.expand_pattern(
-        'results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram', ASM_TABLE, trim=trim
+        'results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram', ASM_TABLE, trim=trim
     )
 
 # Get CRAM files
@@ -316,13 +315,13 @@ rule align_cram_all:
 # Reconstruct CRAM from alignment BED files after trimming redundantly mapped bases (post-cut).
 rule align_get_cram:
     input:
-        bed='results/{asm_name}/align/trim-{trim}/aligned_tig_{hap}.bed.gz',
-        fa='temp/{asm_name}/align/contigs_{hap}.fa.gz',
-        align_head='results/{asm_name}/align/trim-none/aligned_tig_{hap}.headers.gz',
+        bed='results/{asm_name}/align/trim-{trim}/aligned_query_{hap}.bed.gz',
+        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        align_head='results/{asm_name}/align/trim-none/aligned_query_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:
-        cram='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram',
-        crai='results/{asm_name}/align/cram/pav_tig_trim-{trim}_{hap}.cram.crai'
+        cram='results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram',
+        crai='results/{asm_name}/align/cram/pav_query_trim-{trim}_{hap}.cram.crai'
     params:
         sam_tag=lambda wildcards: fr'@PG\tID:PAV-{wildcards.trim}\tPN:PAV\tVN:{pavlib.constants.get_version_string()}\tDS:PAV Alignment trimming {pavlib.align.TRIM_DESC[wildcards.trim]}'
     shell:

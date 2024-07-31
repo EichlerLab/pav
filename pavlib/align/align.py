@@ -46,8 +46,8 @@ TC_CLIPH_BP = 10
 
 TRIM_DESC = {
     'none': 'No trimming',
-    'tig': 'Query-only trimming',
-    'tigref': 'Query-Reference trimming'
+    'qry': 'Query-only trimming',
+    'qryref': 'Query-Reference trimming'
 }
 
 
@@ -69,7 +69,7 @@ def align_bed_to_depth_bed(df, df_fai=None):
     to the start or end of the chromosome and 0-depth records only appear between alignment records.
 
     :param df: Alignment BED file.
-    :param df_fai: FAI series (keys = reference contigs, values = contig length).
+    :param df_fai: FAI series (keys = reference sequence names, values = sequence lengths).
 
     :return: A Pandas DataTable with depth across all reference loci.
     """
@@ -81,9 +81,9 @@ def align_bed_to_depth_bed(df, df_fai=None):
     #  0) Chromosome
     #  1) Event position
     #  2) Event type (1 is align start, 0 is align end)
-    #  3) Align record index. Removes the correct alignment from the aligned contig list when an alignment record ends.
-    #  4) Contig ID: List of contig IDs in the aligned region (comma-sepaated list). Each alignment start goes to the
-    #     end of the list, and each alignment end removes the element from the list that it added even if the contig
+    #  3) Align record index. Removes the correct alignment from the aligned query list when an alignment record ends.
+    #  4) Query ID: List of query IDs in the aligned region (comma-separated list). Each alignment start goes to the
+    #     end of the list, and each alignment end removes the element from the list that it added even if the query
     #     ID is the same.
 
     align_list = list()
@@ -112,25 +112,25 @@ def align_bed_to_depth_bed(df, df_fai=None):
     last_pos = None
     qry_list = list()
 
-    # Write empty records for reference contigs with no alignments
+    # Write empty records for reference sequences with no alignments
     if df_fai is not None:
-        tig_fai_list = list(sorted(df_fai.index.astype(str)))
+        seq_fai_list = list(sorted(df_fai.index.astype(str)))
 
-        while len(tig_fai_list) > 0 and tig_fai_list[0] < align_list[0][0]:
+        while len(seq_fai_list) > 0 and seq_fai_list[0] < align_list[0][0]:
             df_bed_list.append(
                 pd.Series(
-                    [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                    [seq_fai_list[0], 0, df_fai[seq_fai_list[0]], 0, '', ''],
                     index=['#CHROM', 'POS', 'END', 'DEPTH', 'QRY_ID', 'INDEX']
                 )
             )
 
-            tig_fai_list = tig_fai_list[1:]
+            seq_fai_list = seq_fai_list[1:]
 
-        if len(tig_fai_list) == 0 or tig_fai_list[0] != align_list[0][0]:
+        if len(seq_fai_list) == 0 or seq_fai_list[0] != align_list[0][0]:
             raise RuntimeError(f'Missing {align_list[0][0]} in FAI or out of order')
 
     else:
-        tig_fai_list = None
+        seq_fai_list = None
 
     # Process BED records
     for chrom, pos, event, index, qry, row_index in align_list:
@@ -149,21 +149,21 @@ def align_bed_to_depth_bed(df, df_fai=None):
                 if chrom not in df_fai.index:
                     raise RuntimeError(f'Missing chromosome in reference FAI index: {chrom}')
 
-                # Write empty records for reference contigs with no alignments
-                while len(tig_fai_list) > 0 and tig_fai_list[0] < chrom:
+                # Write empty records for reference sequences with no alignments
+                while len(seq_fai_list) > 0 and seq_fai_list[0] < chrom:
                     df_bed_list.append(
                         pd.Series(
-                            [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                            [seq_fai_list[0], 0, df_fai[seq_fai_list[0]], 0, '', ''],
                             index=['#CHROM', 'POS', 'END', 'DEPTH', 'QRY_ID', 'INDEX']
                         )
                     )
 
-                    tig_fai_list = tig_fai_list[1:]
+                    seq_fai_list = seq_fai_list[1:]
 
-                if len(tig_fai_list) == 0 or tig_fai_list[0] != chrom:
+                if len(seq_fai_list) == 0 or seq_fai_list[0] != chrom:
                     raise RuntimeError(f'Missing {chrom} in FAI or out of order')
 
-                tig_fai_list = tig_fai_list[1:]
+                seq_fai_list = seq_fai_list[1:]
 
                 # Add record up to end of chromosome
                 if last_chrom is not None:
@@ -263,17 +263,17 @@ def align_bed_to_depth_bed(df, df_fai=None):
                 )
             )
 
-        # Write empty records for reference contigs with no alignments
-        while len(tig_fai_list) > 0:
+        # Write empty records for reference sequences with no alignments
+        while len(seq_fai_list) > 0:
 
             df_bed_list.append(
                 pd.Series(
-                    [tig_fai_list[0], 0, df_fai[tig_fai_list[0]], 0, '', ''],
+                    [seq_fai_list[0], 0, df_fai[seq_fai_list[0]], 0, '', ''],
                     index=['#CHROM', 'POS', 'END', 'DEPTH', 'QRY_ID', 'INDEX']
                 )
             )
 
-            tig_fai_list = tig_fai_list[1:]
+            seq_fai_list = seq_fai_list[1:]
 
     # Create BED file
     df_bed = pd.concat(df_bed_list, axis=1).T
@@ -308,12 +308,12 @@ def cigar_str_to_tuples(record):
             len_pos += 1
 
         if len_pos == pos:
-            raise RuntimeError('Missing length in CIGAR string for contig {} alignment starting at {}:{}: CIGAR index {}'.format(
+            raise RuntimeError('Missing length in CIGAR string for query {} alignment starting at {}:{}: CIGAR index {}'.format(
                 record['QRY_ID'], record['#CHROM'], record['POS'], pos
             ))
 
         if cigar[len_pos] not in _CIGAR_OP_SET:
-            raise RuntimeError('Unknown CIGAR operation for contig {} alignment starting at {}:{}: CIGAR operation {}'.format(
+            raise RuntimeError('Unknown CIGAR operation for query {} alignment starting at {}:{}: CIGAR operation {}'.format(
                 record['QRY_ID'], record['#CHROM'], record['POS'], cigar[pos]
             ))
 
@@ -361,17 +361,17 @@ def match_bp(record, right_end):
     return match_count
 
 
-def check_record(row, df_tig_fai):
+def check_record(row, df_qry_fai):
     """
     Check alignment DatFrame record for sanity. Throws exceptions if there are problems. Returns nothing if everything
     passes.
 
     :param record: Alignment table record (Pandas Series).
-    :param df_tig_fai: Panadas Series with contig names as keys and contig lengths as values.
+    :param df_qry_fai: Panadas Series with query names as keys and query lengths as values.
     """
 
     try:
-        ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r = count_cigar(row)
+        ref_bp, qry_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r = count_cigar(row)
 
     except Exception as ex:
         raise RuntimeError(
@@ -381,11 +381,11 @@ def check_record(row, df_tig_fai):
             )
         )
 
-    tig_len = df_tig_fai[row['QRY_ID']]
+    qry_len = df_qry_fai[row['QRY_ID']]
 
-    if row['QRY_LEN'] != tig_len:
+    if row['QRY_LEN'] != qry_len:
         raise RuntimeError('QRY_LEN != length from FAI ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-            row['QRY_LEN'], tig_len,
+            row['QRY_LEN'], qry_len,
             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
         ))
 
@@ -434,81 +434,23 @@ def check_record(row, df_tig_fai):
         )
 
     # Query POS and END agree with length
-    if row['QRY_POS'] + tig_bp != row['QRY_END']:
+    if row['QRY_POS'] + qry_bp != row['QRY_END']:
         raise RuntimeError(
-            'QRY_POS + tig_bp != QRY_END: {} != {} (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-                row['QRY_POS'] + tig_bp, row['QRY_END'],
+            'QRY_POS + qry_bp != QRY_END: {} != {} (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+                row['QRY_POS'] + qry_bp, row['QRY_END'],
                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
             )
         )
 
-    # Check length of the mapped query position (may be reverse complemented)
-    # if len(qry_map_rgn) != tig_bp:
-    #     raise RuntimeError(
-    #         'len(QRY_MAP_RGN) != tig_bp: {} != {} (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #             len(qry_map_rgn), tig_bp,
-    #             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #         )
-    #     )
-
-    # Check concordance against aligned query coordinates (coordinates translated if reverse-complemented)
-    # if row['REV']:
-    #     if row['QRY_POS'] != tig_len - qry_map_rgn.end:
-    #         raise RuntimeError(
-    #             'QRY_POS != tig_len - QRY_MAP_REGION.end (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #                 row['QRY_POS'], tig_len - qry_map_rgn.end,
-    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #             )
-    #         )
-    #
-    #     if row['QRY_END'] != tig_len - qry_map_rgn.pos:
-    #         raise RuntimeError(
-    #             'QRY_END != tig_len - QRY_MAP_REGION.pos (is reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #                 row['QRY_END'], tig_len - qry_map_rgn.pos,
-    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #             )
-    #         )
-    # else:
-    #     if row['QRY_POS'] != qry_map_rgn.pos:
-    #         raise RuntimeError(
-    #             'QRY_POS != QRY_MAP_REGION.pos (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #                 row['QRY_POS'], tig_len - qry_map_rgn.pos,
-    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #             )
-    #         )
-    #
-    #     if row['QRY_END'] != qry_map_rgn.end:
-    #         raise RuntimeError(
-    #             'QRY_END != QRY_MAP_REGION.end (not reverse-complemented) ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #                 row['QRY_POS'], tig_len - qry_map_rgn.pos,
-    #                 row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #             )
-    #         )
-
-    # Contig ends are not longer than contig length
-    if row['QRY_END'] > tig_len:
-        raise RuntimeError('QRY_END > tig_len ({} > {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-            row['QRY_END'], tig_len,
+    # Query ends are not longer than query lengths
+    if row['QRY_END'] > qry_len:
+        raise RuntimeError('QRY_END > qry_len ({} > {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+            row['QRY_END'], qry_len,
             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
         ))
 
-    # if qry_map_rgn.end > tig_len:
-    #     raise RuntimeError('QRY_MAP_RGN.end > tig_len ({} > {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #         row['QUERY_END'], tig_len,
-    #         row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #     ))
-    #
-    # # Clipping agrees with contig starts
-    # if qry_map_rgn.pos != clip_h_l + clip_s_l:
-    #     raise RuntimeError(
-    #         'QRY_MAP_RGN.pos != clip_h_l + clip_s_l ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-    #             qry_map_rgn.pos, clip_h_l + clip_s_l,
-    #             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
-    #         )
-    #     )
 
-
-def check_record_err_string(df, df_tig_fai):
+def check_record_err_string(df, df_qry_fai):
     """
     Runs check_record on each row of `df`, captures exceptions, and returns a Series of error message strings instead
     of failing on the first error. The Series can be added as a column to `df`. For each record where there was no
@@ -516,14 +458,14 @@ def check_record_err_string(df, df_tig_fai):
     pipeline, but is here for troubleshooting alignments.
 
     :param df: Dataframe of alignment records.
-    :param df_tig_fai: Panadas Series with contig names as keys and contig lengths as values.
+    :param df_qry_fai: Panadas Series with query names as keys and query lengths as values.
 
     :return: A Series of error messages (or NA) for each record in `df`.
     """
 
     def _check_record_err_string_check_row(row):
         try:
-            check_record(row, df_tig_fai)
+            check_record(row, df_qry_fai)
             return None
         except Exception as ex:
             return str(ex)
@@ -536,8 +478,8 @@ def count_cigar(row, allow_m=False):
     Count bases affected by CIGAR operations in an alignment record (row is a Pandas Series from an ailgnment BED).
 
     Returns a tuple of:
-    * ref_bp: Reference (subject) bases traversed by CIGAR operations.
-    * tig_bp: Contig (query) bases traversed by CIGAR operations. Does not include clipped bases.
+    * ref_bp: Reference bases traversed by CIGAR operations.
+    * qry_bp: Query bases traversed by CIGAR operations. Does not include clipped bases.
     * clip_h_l: Hard-clipped bases on the left (upstream) side.
     * clip_s_l: Soft-clipped bases on the left (upstream) side.
     * clip_h_r: Hard-clipped bases on the right (downstream) side.
@@ -547,11 +489,11 @@ def count_cigar(row, allow_m=False):
     :param allow_m: If True, allow "M" CIGAR operations. PAV does not allow M operations, this option exists for other
         tools using the PAV library.
 
-    :return: A tuple of (ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r).
+    :return: A tuple of (ref_bp, qry_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r).
     """
 
     ref_bp = 0
-    tig_bp = 0
+    qry_bp = 0
 
     clip_s_l = 0
     clip_h_l = 0
@@ -599,7 +541,7 @@ def count_cigar(row, allow_m=False):
                 )
 
             ref_bp += cigar_len
-            tig_bp += cigar_len
+            qry_bp += cigar_len
 
         elif cigar_op == 'I':
 
@@ -610,7 +552,7 @@ def count_cigar(row, allow_m=False):
                     )
                 )
 
-            tig_bp += cigar_len
+            qry_bp += cigar_len
 
         elif cigar_op == 'D':
 
@@ -653,25 +595,26 @@ def count_cigar(row, allow_m=False):
                 )
 
             ref_bp += cigar_len
-            tig_bp += cigar_len
+            qry_bp += cigar_len
 
         else:
             raise RuntimeError('Bad CIGAR op: ' + cigar_op)
 
         index += 1
 
-    return ref_bp, tig_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r
+    return ref_bp, qry_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r
 
 
-def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
+def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
     """
     Read alignment file as a BED file that PAV can process. Drops any records marked as unaligned by the SAM flag.
 
     :param align_file: SAM, CRAM, BAM, anything `pysam.AlignmentFile` can read.
-    :param df_tig_fai: Pandas Series with contig names as keys and contig lengths as values. Index should be cast as
-        type str if contig names are numeric.
+    :param df_qry_fai: Pandas Series with query names as keys and query lengths as values. Index should be cast as
+        type str if query names are numeric.
     :param hap: Haplotype assinment for this alignment file (h1 or h2).
     :param min_mapq: Minimum MAPQ. If 0, then all alignments are accepted as long as the unmapped flag is not set.
+    :param tier: Alignment tier for these records.
 
     :return: BED file of alignment records.
     """
@@ -691,8 +634,8 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
             if record.is_unmapped or record.mapping_quality < min_mapq or len(record.cigar) == 0:
                 continue
 
-            # Get length for computing real tig positions for rev-complemented records
-            tig_len = df_tig_fai[record.query_name]
+            # Get length for computing real query positions for rev-complemented records
+            qry_len = df_qry_fai[record.query_name]
 
             # Read tags
             tags = dict(record.get_tags())
@@ -700,7 +643,7 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
             # Determine left hard-clipped bases.
             # pysam query alignment functions are relative to the sequence in the alignment record, not the original
             # sequence. The left-most hard-clipped bases must be added to the query positions to translate to the
-            # correct contig coordinates (https://github.com/pysam-developers/pysam/issues/1017).
+            # correct query coordinates (https://github.com/pysam-developers/pysam/issues/1017).
             if len(record.cigartuples) > 0:
                 clip_h = record.cigartuples[0][1] if record.cigartuples[0][0] == CIGAR_H else 0
             else:
@@ -708,12 +651,12 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
 
             cigar_tuples = clip_soft_to_hard(record.cigartuples.copy())
 
-            tig_map_pos = cigar_tuples[0][1] if cigar_tuples[0][0] == CIGAR_H else 0
-            tig_map_len = record.query_alignment_end - record.query_alignment_start
-            tig_map_end = tig_map_pos + tig_map_len
+            qry_map_pos = cigar_tuples[0][1] if cigar_tuples[0][0] == CIGAR_H else 0
+            qry_map_len = record.query_alignment_end - record.query_alignment_start
+            qry_map_end = qry_map_pos + qry_map_len
 
-            if record.query_alignment_start + clip_h != tig_map_pos:
-                raise RuntimeError(f'First aligned based from pysam ({record.query_alignment_start}) does not match clipping ({tig_map_pos}) at alignment record {align_index}')
+            if record.query_alignment_start + clip_h != qry_map_pos:
+                raise RuntimeError(f'First aligned based from pysam ({record.query_alignment_start}) does not match clipping ({qry_map_pos}) at alignment record {align_index}')
 
             cigar_string = ''.join(f'{op_len}{CIGAR_CODE_TO_CHAR[op_code]}' for op_code, op_len in cigar_tuples)
 
@@ -732,15 +675,15 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
                         record.reference_start,
                         record.reference_end,
 
-                        align_index,
+                        tier, align_index,
 
                         record.query_name,
-                        tig_len - tig_map_end if record.is_reverse else tig_map_pos,
-                        tig_len - tig_map_pos if record.is_reverse else tig_map_end,
+                        qry_len - qry_map_end if record.is_reverse else qry_map_pos,
+                        qry_len - qry_map_pos if record.is_reverse else qry_map_end,
 
-                        tig_len,
+                        qry_len,
 
-                        # pavlib.seq.Region(record.query_name, tig_map_pos, tig_map_pos + tig_map_len).to_base1_string(),
+                        # pavlib.seq.Region(record.query_name, qry_map_pos, qry_map_pos + qry_map_len).to_base1_string(),
 
                         tags['RG'] if 'RG' in tags else 'NA',
                         tags['AO'] if 'AO' in tags else 'NA',
@@ -754,10 +697,9 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
-                        'INDEX',
+                        'TIER', 'INDEX',
                         'QRY_ID', 'QRY_POS', 'QRY_END',
                         'QRY_LEN',
-                        # 'QRY_MAP_RGN',
                         'RG', 'AO',
                         'MAPQ',
                         'REV', 'FLAGS',
@@ -774,10 +716,9 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
             [],
             columns=[
                 '#CHROM', 'POS', 'END',
-                'INDEX',
+                'TIER', 'INDEX',
                 'QRY_ID', 'QRY_POS', 'QRY_END',
                 'QRY_LEN',
-                # 'QRY_MAP_RGN',
                 'RG', 'AO',
                 'MAPQ',
                 'REV', 'FLAGS',
@@ -788,7 +729,7 @@ def get_align_bed(align_file, df_tig_fai, hap, min_mapq=0):
     df.sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'], ascending=[True, True, False, True], inplace=True)
 
     # Check sanity
-    df.apply(pavlib.align.check_record, df_tig_fai=df_tig_fai, axis=1)
+    df.apply(check_record, df_qry_fai=df_qry_fai, axis=1)
 
     # Return BED
     return df
