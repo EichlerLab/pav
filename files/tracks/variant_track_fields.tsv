@@ -4,10 +4,10 @@ POS	uint	chromStart	Start position	Start position
 END	uint	chromEnd	End position	End position
 ID	string	name	Variant ID	Variant ID
 SCORE	uint	score	Score	Score
-STRAND	char[1]	strand	+ or - for strand	Strand
+STRAND	char[1]	strand	#NAME?	Strand
 POS_THICK	uint	thickStart	Coding region start	Coding region start
 END_THICK	uint	thickEnd	Coding region end	Coding region end
-COL	uint	reserved	Blue (insertion), red (deletion), green (inversion)	Blue (insertion), red (deletion), green (inversion)
+COL	uint	reserved	"Blue (insertion), red (deletion), green (inversion)"	"Blue (insertion), red (deletion), green (inversion)"
 SVTYPE	string	svType	SV type	Variant type
 SVLEN	uint	svLen	SV length	Variant size
 HAP	string	haplotype	Haplotype	Haplotype variant was discovered on.
@@ -18,7 +18,7 @@ QUERY_STRAND	char[1]	tigStrand	Lead contig strand	Orientation vs reference of le
 TIG_N	uint	tigN	Contig N	Number of contigs aligning over variant
 TIG_SUPPORT	lstring	tigAllName	Contig support	Number of contigs aligning over variant and supporting the variant
 TIG_COORD	lstring	tigAllPos	Contig coord	Comma-separated list of all contigs aligning over region
-TIG_STRAND	lstring	tigAllEnd	Contig strand	Comma-separated list of variant positions on contigs (start:end, BED coord.) matching order of listed contigs
+TIG_STRAND	lstring	tigAllEnd	Contig strand	"Comma-separated list of variant positions on contigs (start:end, BED coord.) matching order of listed contigs"
 HAP_SRC	string	hapSrc	Hap list	List of haplotypes variant was found it
 HAP_VARIANTS	lstring	hapVar	Hap vars	List of lead variants in each haplotype
 HAP_RO	string	hapRo	Hap RO	Reciprocal overlap between variants in each haplotype.

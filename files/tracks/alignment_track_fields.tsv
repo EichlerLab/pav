@@ -27,3 +27,4 @@ TRIM_QRY_R	uint	trimTigR	Align trim (tig R)	Number of contig (query) bases trimm
 CLUSTER	lstring	clust	Cluster	Contig cluster ID
 CLUSTER_MATCH	string	clustMatch	Cluster match	Contig cluster matches chromosome
 CALL_BATCH	uint	callBatch	CIGAR call batch	Alignments with the same batch ID are processed through CIGAR variant calling in the same batch. Links to logs for the batch.
+TIER	uint	tier	Tier	Alignment tier

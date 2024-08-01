@@ -175,17 +175,17 @@ rule tracks_hap_call:
 rule tracks_align_all:
     input:
         bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'tracks/{asm_name}/align/aligned_query_tier-{tier}_trim-{trim}.bb', ASM_TABLE,
-            trim=('none', 'qry', 'qryref'), tier=('0', '1', '2')
+            'tracks/{asm_name}/align/align_query_tier-{tier}_trim-{trim}.bb', ASM_TABLE,
+            trim=('none', 'qry', 'qryref'), tier=('1', '2')
         )
 
 # Alignment track BED to BigBed.
 rule tracks_align_bb:
     input:
-        bed='temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.bed',
-        asfile='temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.as'
+        bed='temp/{asm_name}/tracks/align/align_query_tier-{tier}_trim-{trim}.bed',
+        asfile='temp/{asm_name}/tracks/align/align_query_tier-{tier}_trim-{trim}.as'
     output:
-        bb='tracks/{asm_name}/align/aligned_query_tier-{tier}_trim-{trim}.bb'
+        bb='tracks/{asm_name}/align/align_query_tier-{tier}_trim-{trim}.bb'
     shell:
         """bedToBigBed -tab -as={input.asfile} -type=bed9+ {input.bed} {REF_FAI} {output.bb}"""
 
@@ -197,10 +197,8 @@ rule tracks_align:
                 for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
         ]
     output:
-        bed=temp('temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.bed'),
-        asfile=temp('temp/{asm_name}/tracks/align/aligned_query_tier-{tier}_trim-{trim}.as')
-    wildcard_constraints:
-        trim='none|tig|tigref'
+        bed=temp('temp/{asm_name}/tracks/align/align_query_tier-{tier}_trim-{trim}.bed'),
+        asfile=temp('temp/{asm_name}/tracks/align/align_query_tier-{tier}_trim-{trim}.as')
     run:
 
         # Get track description

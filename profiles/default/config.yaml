@@ -1,6 +1,6 @@
 
 ---
-latency-wait: 30
+latency-wait: 60
 keep-going: True
 rerun-incomplete: True
 printshellcmds: False
