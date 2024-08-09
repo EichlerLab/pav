@@ -25,7 +25,7 @@ set-resources:
   - align_genomecov:mem_mb=4196
   - align_export:mem_mb=4196
   - align_export:runtime=580
-  - align_get_read_bed:mem_mb=16384
+  - align_get_bed:mem_mb=16384
   - align_map:mem_mb=49152
   - align_map:runtime=360
   - align_merge_h12_read_bed:mem_mb=4196

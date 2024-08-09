@@ -39,35 +39,37 @@ rule call_merge_lg:
 # Call alignment-truncating SVs.
 rule call_lg_discover:
     input:
-        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
-        tsv_group='temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz',
-        fa='temp/{asm_name}/align/query_{hap}.fa.gz',
-        fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai',
+        bed_qry='results/{asm_name}/align/t{tier}_qry/align_qry_{hap}.bed.gz',
+        bed_qryref='results/{asm_name}/align/t{tier}_qryref/align_qry_{hap}.bed.gz',
+        #tsv_group='temp/{asm_name}/lg_sv/batch_group_{hap}.tsv.gz',
+        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai',
         bed_n='data/ref/n_gap.bed.gz'
     output:
-        bed_ins=temp('temp/{asm_name}/lg_sv/batch/sv_ins_{hap}_{batch}.bed.gz'),
-        bed_del=temp('temp/{asm_name}/lg_sv/batch/sv_del_{hap}_{batch}.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/lg_sv/batch/sv_inv_{hap}_{batch}.bed.gz')
+        bed_ins=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_ins_{hap}_{batch}.bed.gz'),
+        bed_del=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_del_{hap}_{batch}.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_inv_{hap}_{batch}.bed.gz')
     log:
         log='log/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
     params:
         k_size=lambda wildcards: int(get_config(wildcards, 'inv_k_size', 31)),
-        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True)
+        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
+        align_score=lambda wildcards: get_config(wildcards,'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL)
     threads: 12
     run:
 
-        # Get SRS (state-run-smooth)
-        srs_tree = pavlib.inv.get_srs_tree(get_config(wildcards, 'srs_list', None, True))  # If none, tree contains a default for all region sizes
+        score_model = pavlib.align.score.get_score_model(params.align_score)
+
 
         # Read
         df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM": str, "QRY_ID": str})
         df_tig_fai = svpoplib.ref.get_df_fai(input.fai)
 
         # Subset to alignment records in this batch
-        df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM": str, "TIG": str})
+        df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM": str, "QRY": str})
         df_group = df_group.loc[df_group['BATCH'] == int(wildcards.batch)]
 
-        group_set = set(df_group[['CHROM', 'TIG']].apply(tuple, axis=1))
+        group_set = set(df_group[['CHROM', 'QRY_ID']].apply(tuple, axis=1))
 
         if df.shape[0] > 0:
             df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QRY_ID']) in group_set, axis=1)]
@@ -103,41 +105,41 @@ rule call_lg_discover:
         df_del.to_csv(output.bed_del, sep='\t', index=False, compression='gzip')
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
 
-
-# Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
-# noinspection PyTypeChecker
-rule call_lg_split:
-    input:
-        bed='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz'
-    output:
-        tsv=temp('temp/{asm_name}/lg_sv/batch_{hap}.tsv.gz')
-    params:
-        batch_count=lambda wildcards: get_config(wildcards, 'lg_batch_count', 10)
-    run:
-
-        # Read
-        df = pd.read_csv(input.bed, sep='\t')
-
-        # Get ref/tig pairs with multiple mappings
-        tig_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
-
-        df_group_list = list()
-
-        index = 0
-
-        for chrom, tig in [(chrom, tig_id) for (chrom, tig_id), count in tig_map_count.items() if count > 1]:
-            df_group_list.append(pd.Series(
-                [chrom, tig, index % params.batch_count],
-                index=['CHROM', 'TIG', 'BATCH']
-            ))
-
-            index += 1
-
-        # Merge (CHROM, TIG, BATCH)
-        if len(df_group_list) > 0:
-            df_group = pd.concat(df_group_list, axis=1).T
-        else:
-            df_group = pd.DataFrame([], columns=['CHROM', 'TIG', 'BATCH'])
-
-        # Write
-        df_group.to_csv(output.tsv, sep='\t', index=False, compression='gzip')
+#
+# # Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
+# # noinspection PyTypeChecker
+# rule call_lg_split:
+#     input:
+#         bed='results/{asm_name}/align/t{tier}_qry/align_qry_{hap}.bed.gz'
+#     output:
+#         tsv=temp('temp/{asm_name}/lg_sv/t{tier}_qry/batch_group_{hap}.tsv.gz')
+#     params:
+#         batch_count=lambda wildcards: get_config(wildcards, 'lg_batch_count', 10)
+#     run:
+#
+#         # Read
+#         df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM": str, "QRY_ID": str})
+#
+#         # Get ref/tig pairs with multiple mappings
+#         qry_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
+#
+#         df_group_list = list()
+#
+#         index = 0
+#
+#         for chrom, qry in [(chrom, tig_id) for (chrom, tig_id), count in qry_map_count.items() if count > 1]:
+#             df_group_list.append(pd.Series(
+#                 [chrom, qry, index % params.batch_count],
+#                 index=['CHROM', 'QRY_ID', 'BATCH']
+#             ))
+#
+#             index += 1
+#
+#         # Merge (CHROM, QRY, BATCH)
+#         if len(df_group_list) > 0:
+#             df_group = pd.concat(df_group_list, axis=1).T
+#         else:
+#             df_group = pd.DataFrame([], columns=['CHROM', 'QRY_ID', 'BATCH'])
+#
+#         # Write
+#         df_group.to_csv(output.tsv, sep='\t', index=False, compression='gzip')

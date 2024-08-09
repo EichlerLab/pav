@@ -9,10 +9,10 @@ POS_THICK	uint	thickStart	Coding region start	Coding region start
 END_THICK	uint	thickEnd	Coding region end	Coding region end
 COL	uint	reserved	Hap Color	Color by haplotype
 INDEX	uint	recordIndex	Record index	Unique index (per haplotype) for each alignment record
+INDEX_ORG	uint	recordIndexOrg	Record index (Org)	Original record index before joining ailgnments (tiers 1 & 2 to tier 0)
 QRY_ID	lstring	qryId	Query ID	Query (contig) ID
 QRY_POS	uint	qryPos	Query POS	Query start position in original contig (not reverse complemented if alignment was)
 QRY_END	uint	qryEnd	Query END	Query end position in original contig (not reverse complemented if alignment was)
-QRY_LEN	uint	qryLen	Query len (whole tig)	Length of the full query sequence aligned in this record
 QRY_ORDER	uint	qryOrd	Query order	Order of the aligned query segment from the start of the query sequence to the end
 AO	string	chainOrder	Global chain order	Global chain order (LRA alignments)
 RG	string	readGroup	Read group	Read group
@@ -24,7 +24,6 @@ TRIM_REF_L	uint	trimRefL	Align trim (ref L)	Number of reference bases trimmed fr
 TRIM_REF_R	uint	trimRefR	Align trim (ref R)	Number of reference bases trimmed from the right side
 TRIM_QRY_L	uint	trimTigL	Align trim (tig L)	Number of contig (query) bases trimmed from the left side
 TRIM_QRY_R	uint	trimTigR	Align trim (tig R)	Number of contig (query) bases trimmed from the right side
-CLUSTER	lstring	clust	Cluster	Contig cluster ID
-CLUSTER_MATCH	string	clustMatch	Cluster match	Contig cluster matches chromosome
 CALL_BATCH	uint	callBatch	CIGAR call batch	Alignments with the same batch ID are processed through CIGAR variant calling in the same batch. Links to logs for the batch.
 TIER	uint	tier	Tier	Alignment tier
+CIGAR_SCORE	float	cigarScore	CIGAR score	Sum of scored CIGAR records in the CIGAR string.

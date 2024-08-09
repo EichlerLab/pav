@@ -2,7 +2,8 @@
 Call variants by CIGAR string.
 """
 
-import Bio
+import Bio.Seq
+import Bio.SeqIO
 import numpy as np
 import pandas as pd
 import pysam
@@ -83,7 +84,7 @@ def make_insdel_snv_calls(df_align, ref_fa_name, tig_fa_name, hap, version_id=Tr
         last_op = None
         last_oplen = 0
 
-        for oplen, op in pavlib.align.cigar_str_to_tuples(row):
+        for oplen, op in pavlib.align.util.cigar_str_to_tuples(row):
             # NOTE: break/continue in this look will not advance last_op and last_oplen (end of loop)
 
             cigar_index += 1

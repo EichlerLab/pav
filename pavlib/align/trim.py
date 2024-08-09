@@ -7,7 +7,7 @@ import pavlib
 import svpoplib
 
 
-def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both'):
+def trim_alignments(df, qry_fai, min_trim_qry_len=1, match_qry=False, mode='both', score_model=None):
     """
     Do alignment trimming from prepared alignment BED file. This BED contains information about reference and
     query coordinates mapped, CIGAR string and flags.
@@ -23,6 +23,11 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
         callsets using this option.
     :param mode: Trim alignments to remove redundantly mapped query bases (mode = "qry"), reference bases with more than
         one alignment (mode = "ref"), or both (mode = "both"). If None, assume "both".
+    :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
+        a score model object. If `None`, the default score model is used. An alignment score is computed by summing
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
+        column.
+
 
     :return: Trimmed alignments as an alignment DataFrame. Same format as `df` with columns added describing the
         number of reference and query bases that were trimmed. Dropped records (mapped inside another or too shart) are
@@ -63,7 +68,18 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
     if do_trim_qry:
 
         # Sort by alignment lengths in query space
-        df.sort_values(['QRY_ID', 'QRY_LEN'], ascending=(True, False), inplace=True)
+        df = df.sort_values(['QRY_ID', 'CIGAR_SCORE'], ascending=(True, False)).reset_index(drop=True)
+
+        # df = df.loc[
+        #     pd.concat(
+        #         [df['QRY_ID'], df['QRY_END'] - df['QRY_POS']], axis=1
+        #     ).sort_values(
+        #         ['QRY_ID', 0],
+        #         ascending=(True, False)
+        #     ).index
+        # ].reset_index(drop=True)
+
+        #df.sort_values(['QRY_ID', 'QRY_LEN'], ascending=(True, False), inplace=True)
 
         df.reset_index(inplace=True, drop=True)
 
@@ -133,14 +149,16 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
                     record_l_a, record_r_a = trim_alignment_record(
                         df.loc[index_l], df.loc[index_r], 'qry',
                         rev_l=rev_l,
-                        rev_r=rev_r
+                        rev_r=rev_r,
+                        score_model=score_model
                     )
 
                     # b: Try with record r as first and l as second
                     record_l_b, record_r_b = trim_alignment_record(
                         df.loc[index_r], df.loc[index_l], 'qry',
                         rev_l=rev_r,
-                        rev_r=rev_l
+                        rev_r=rev_l,
+                        score_model=score_model
                     )
 
                     ### Determine which left-aligns best ###
@@ -223,7 +241,8 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
                     record_l, record_r = trim_alignment_record(
                         df.loc[index_l], df.loc[index_r], 'qry',
                         rev_l=rev_l,
-                        rev_r=rev_r
+                        rev_r=rev_r,
+                        score_model=score_model
                     )
 
                 # Modify if new aligned size is at least min_trim_qry_len, remove if shorter
@@ -255,14 +274,16 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
     if do_trim_ref:
 
         # Sort by alignment length in reference space
-        df = df.loc[
-            pd.concat(
-                [df['#CHROM'], df['END'] - df['POS']], axis=1
-            ).sort_values(
-                ['#CHROM', 0],
-                ascending=(True, False)
-            ).index
-        ].reset_index(drop=True)
+        df = df.sort_values(['#CHROM', 'CIGAR_SCORE'], ascending=(True, False)).reset_index(drop=True)
+
+        # df = df.loc[
+        #     pd.concat(
+        #         [df['#CHROM'], df['END'] - df['POS']], axis=1
+        #     ).sort_values(
+        #         ['#CHROM', 0],
+        #         ascending=(True, False)
+        #     ).index
+        # ].reset_index(drop=True)
 
         # Do trim in reference space
         iter_index_l = 0
@@ -305,7 +326,7 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
 
                     else:
 
-                        record_l, record_r = pavlib.align.trim.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'ref')
+                        record_l, record_r = pavlib.align.trim.trim_alignment_record(df.loc[index_l], df.loc[index_r], 'ref', score_model=score_model)
 
                         if record_l is not None and record_r is not None:
 
@@ -353,7 +374,7 @@ def trim_alignments(df, min_trim_qry_len, qry_fai, match_qry=False, mode='both')
     return df
 
 
-def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=False):
+def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=False, score_model=None):
     """
     Trim ends of overlapping alignments until ends no longer overlap. In repeat-mediated events, aligners may align the
     same parts of a query sequence to both reference copies (e.g. large DEL) or two parts of a query
@@ -382,9 +403,15 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         end (alignment start).
     :param rev_r: Trim `record_r` from the downstream end (alignment end) if `True`, otherwise, trim from the upstream
         end (alignment start).
+    :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
+        a score model object. If `None`, the default score model is used. An alignment score is computed by summing
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
+        column.
 
     :return: A tuple of modified `record_l` and 'record_r`.
     """
+
+    score_model = pavlib.align.score.get_score_model(score_model)
 
     record_l = record_l.copy()
     record_r = record_r.copy()
@@ -586,6 +613,7 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
     cigar_l_mod = cigar_l_pre + cigar_l_mod
     cigar_r_mod = cigar_r_pre + cigar_r_mod
 
+    # Finish CIGAR and update score
     if rev_l:
         cigar_l_mod = cigar_l_mod[::-1]
 
@@ -593,7 +621,10 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         cigar_r_mod = cigar_r_mod[::-1]
 
     record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod])
+    record_l_mod['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar_l_mod)
+
     record_r_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_r_mod])
+    record_r_mod['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar_r_mod)
 
     # Return trimmed records
     return record_l_mod, record_r_mod
@@ -904,3 +935,308 @@ def trace_cigar_to_zero(cigar_list, diff_bp, aln_record, diff_query):
         index += 1
 
     return trace_list
+
+
+#
+# Truncate overlapping records
+#
+
+def truncate_alignment_record(record, overlap_bp, trunc_side, score_model=None):
+    """
+    Truncate overlapping alignments in query space modifying the alignment record in-place. Similar to alignment
+    trimming except only one side is trimmed.
+
+    The alignment record is trimmed from either side (left "l" for QRY_POS up to `trunc_pos`, or right "r" for QRY_END back
+    to `pos`). A modified alignment record is returned.
+
+    :param record: Alignment record to truncate.
+    :param overlap_bp: Number of query bases to trim.
+    :param trunc_side: Trim from this side of the record. Valid values are "l" for left side and "r" for right side.
+    :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
+        a score model object. If `None`, the default score model is used. An alignment score is computed by summing
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
+        column.
+
+    :return: A modified alignment record or None if the alignment was completely truncated.
+    """
+
+    score_model = pavlib.align.score.get_score_model(score_model)
+
+    # Check arguments
+    if trunc_side not in {'l', 'r'}:
+        raise ValueError(f'Invalid argument for "trunc_side" (expected "l" or "r"): {trunc_side}')
+
+    if overlap_bp <= 0:
+        raise RuntimeError(f'Overlap bp must be positive: {overlap_bp}')
+
+    # Get cigar operations (list of (op_len, op_code) tuples)
+    cigar = list(pavlib.align.util.cigar_str_to_tuples(record))
+
+    # Orient CIGAR operations so regions to be trimmed are at the head of the list
+    is_rev = record['REV'] ^ (trunc_side == 'l')
+
+    if is_rev:
+        cigar = cigar[::-1]
+
+    # Init cut site search
+    cigar_loc = len(cigar) - 1
+
+    cut_bp_qry = 0
+    cut_bp_ref = 0
+
+    clip_bp = 0
+
+    # Eliminate clipping
+    while cigar_loc > 0 and cigar[cigar_loc][1] in {'S', 'H'}:
+        clip_bp += cigar[cigar_loc][0]
+        cigar_loc -= 1
+
+    if cigar_loc < 0:
+        raise RuntimeError(f'No CIGAR records to trim')
+
+    # Find cut site
+    while cigar_loc > 0 and cigar[cigar_loc][1] not in {'S', 'H'}:
+        cigar_len, cigar_op = cigar[cigar_loc]
+
+        if cigar_op in {'=', 'X'}:
+            if cut_bp_qry + cigar_len > overlap_bp:
+                break
+
+            cut_bp_qry += cigar_len
+            cut_bp_ref += cigar_len
+
+        elif cigar_op == 'I':
+            cut_bp_qry += cigar_len
+
+        elif cigar_op == 'D':
+            cut_bp_ref += cigar_len
+
+        else:
+            raise RuntimeError((
+                'Illegal operation in query alignment while truncating alignment: {}{} '
+                '(alignment record={}): Expected CIGAR op in "IDSH=X"'
+            ).format(cigar_len, cigar_op, record['INDEX']))
+
+        cigar_loc -= 1
+
+    # Trim mid-record
+    if cut_bp_qry < overlap_bp:
+
+        residual_bp = overlap_bp - cut_bp_qry
+
+        # Check CIGAR position
+        if cigar_loc < 0:
+            raise RuntimeError(f'Ran out of CIGAR operations: {residual_bp} bp left with no more CIGAR operations to trim')
+
+        if cigar[cigar_loc][1] not in {'=', 'X'}:
+            raise RuntimeError(f'Ran out of CIGAR operations: {residual_bp} bp with only clipping CIGAR operations remaining')
+
+        if cigar[cigar_loc][1] not in {'=', 'X'}:
+            raise RuntimeError(f'Program bug: Mid-operation cut site is not in an "=" or "X" record: (CIGAR-op="{cigar[cigar_loc][0]}{cigar[cigar_loc][1]}")')
+
+        if cigar[cigar_loc][0] <= residual_bp:
+            raise RuntimeError(f'Program bug: Mid-operation cut is not less than than the "=" or "X" record size: (residual={residual_bp}, CIGAR-op="{cigar[cigar_loc][0]}{cigar[cigar_loc][1]}")')
+
+        # Truncate CIGAR records before this one
+        cigar = cigar[0:cigar_loc + 1]
+
+        # Modify record, shuffle trimmed bases to clipping
+        cigar[-1] = (cigar[-1][0] - residual_bp, cigar[-1][1])
+
+        cut_bp_qry += residual_bp
+        cut_bp_ref += residual_bp
+
+    else:
+        if cigar_loc < 0:
+            return None
+
+    cigar = cigar[0:cigar_loc + 1]
+
+    # Truncate all records?
+    if cigar[-1][1] in {'S', 'H'}:
+        for cigar_loc2 in range(cigar_loc):
+            if cigar[cigar_loc2][1] not in {'S', 'H'}:
+                raise RuntimeError(f'Found clipping mid-CIGAR')
+
+        return None
+
+    # Add clipping
+    if cut_bp_qry == 0:
+        raise RuntimeError('Program Bug: Overlap detected, but no truncation was performed')
+
+    cigar.append((clip_bp + cut_bp_qry, 'H'))
+
+    # Modify record
+    if is_rev:
+        cigar = cigar[::-1]
+
+    record['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar])
+
+    if record['REV'] ^ (trunc_side == 'r'):
+        record['END'] -= cut_bp_ref
+        record['TRIM_REF_R'] += cut_bp_ref
+        record['TRIM_QRY_R'] += cut_bp_qry
+    else:
+        record['POS'] += cut_bp_ref
+        record['TRIM_REF_L'] += cut_bp_ref
+        record['TRIM_QRY_L'] += cut_bp_qry
+
+    if trunc_side == 'r':
+        record['QRY_END'] -= cut_bp_qry
+    else:
+        record['QRY_POS'] += cut_bp_qry
+
+    record['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar)
+
+    return record
+
+
+    # # Truncate partial record
+    #
+    # # For each upstream alignment cut-site, find the best matching downstream alignment cut-site. Not all cut-site
+    # # combinations need to be tested since trimmed bases and event count is non-decreasing as it moves away from the
+    # # best cut-site (residual overlapping bases 0 and maximum events consumed)
+    #
+    # # Find optimal cut sites.
+    # # cut_idx_l and cut_idx_r are indices to trace_l and trace_r. These trace records point to the last CIGAR operation to
+    # # survive the cut, although they may be truncated. The whole record will not be removed.
+    # cut_idx_l, cut_idx_r = find_cut_sites(trace_l, trace_r, diff_bp)
+    #
+    # # Check for no cut-sites. Should not occur at this stage
+    # if cut_idx_l is None or cut_idx_r is None:
+    #     raise RuntimeError('Program bug: Found no cut-sites: {} (INDEX={}) vs {} (INDEX={}), match_coord={}'.format(
+    #         record_l['QRY_ID'], record_l['INDEX'],
+    #         record_r['QRY_ID'], record_r['INDEX'],
+    #         match_coord
+    #     ))
+    #
+    # # Get cut records
+    # cut_l = trace_l[cut_idx_l]
+    # cut_r = trace_r[cut_idx_r]
+    #
+    # # Set mid-record cuts (Left-align cuts, mismatch first)
+    # residual_bp = diff_bp - (cut_l[pavlib.align.util.TC_DIFF_CUM] + cut_r[pavlib.align.util.TC_DIFF_CUM])
+    # trim_l = 0
+    # trim_r = 0
+    #
+    # if residual_bp > 0 and cut_r[pavlib.align.util.TC_OP_CODE] == 'X':  # Right mismatch
+    #     trim_r += np.min([residual_bp, cut_r[pavlib.align.util.TC_OP_LEN] - 1])
+    #     residual_bp -= trim_r
+    #
+    # if residual_bp > 0 and cut_l[pavlib.align.util.TC_OP_CODE] == 'X':  # Left mismatch
+    #     trim_l += np.min([residual_bp, cut_l[pavlib.align.util.TC_OP_LEN] - 1])
+    #     residual_bp -= trim_l
+    #
+    # if residual_bp > 0 and cut_l[pavlib.align.util.TC_OP_CODE] == '=':  # Left match
+    #     trim_l += np.min([residual_bp, cut_l[pavlib.align.util.TC_OP_LEN] - 1])
+    #     residual_bp -= trim_l
+    #
+    # if residual_bp > 0 and cut_r[pavlib.align.util.TC_OP_CODE] == '=':  # Right match
+    #     trim_r += np.min([residual_bp, cut_r[pavlib.align.util.TC_OP_LEN] - 1])
+    #     residual_bp -= trim_r
+    #
+    # # Get cut CIGAR String
+    # cigar_l_mod = cigar_l[cut_l[pavlib.align.util.TC_INDEX]:]
+    # cigar_r_mod = cigar_r[cut_r[pavlib.align.util.TC_INDEX]:]
+    #
+    # # Shorten last alignment record if set.
+    # cigar_l_mod[0] = (cigar_l_mod[0][0] - trim_l, cigar_l_mod[0][1])
+    # cigar_r_mod[0] = (cigar_r_mod[0][0] - trim_r, cigar_r_mod[0][1])
+    #
+    # # Modify alignment records
+    # record_l_mod = record_l.copy()
+    # record_r_mod = record_r.copy()
+    #
+    # cut_ref_l = cut_l[pavlib.align.util.TC_SUB_BP] + trim_l
+    # cut_qry_l = cut_l[pavlib.align.util.TC_QRY_BP] + trim_l
+    #
+    # cut_ref_r = cut_r[pavlib.align.util.TC_SUB_BP] + trim_r
+    # cut_qry_r = cut_r[pavlib.align.util.TC_QRY_BP] + trim_r
+    #
+    # if rev_l:
+    #     record_l_mod['END'] -= cut_ref_l
+    #
+    #     # Adjust positions in query space
+    #     if record_l_mod['REV']:
+    #         record_l_mod['QRY_POS'] += cut_qry_l
+    #     else:
+    #         record_l_mod['QRY_END'] -= cut_qry_l
+    #
+    #     # Track cut bases
+    #     record_l_mod['TRIM_REF_R'] += cut_ref_l
+    #     record_l_mod['TRIM_QRY_R'] += cut_qry_l
+    #
+    # else:
+    #     record_l_mod['POS'] += cut_ref_l
+    #
+    #     # Adjust positions in query space
+    #     if record_l_mod['REV']:
+    #         record_l_mod['QRY_END'] -= cut_qry_l
+    #     else:
+    #         record_l_mod['QRY_POS'] += cut_qry_l
+    #
+    #     # Track cut bases
+    #     record_l_mod['TRIM_REF_L'] += cut_ref_l
+    #     record_l_mod['TRIM_QRY_L'] += cut_qry_l
+    #
+    # if rev_r:
+    #     record_r_mod['END'] -= cut_ref_r
+    #
+    #     # Adjust positions in query space
+    #     if record_r_mod['REV']:
+    #         record_r_mod['QRY_POS'] += cut_qry_r
+    #     else:
+    #         record_r_mod['QRY_END'] -= cut_qry_r
+    #
+    #     # Track cut bases
+    #     record_r_mod['TRIM_REF_R'] += cut_ref_r
+    #     record_r_mod['TRIM_QRY_R'] += cut_qry_r
+    #
+    # else:
+    #     record_r_mod['POS'] += cut_ref_r
+    #
+    #     # Adjust positions in query space
+    #     if record_r_mod['REV']:
+    #         record_r_mod['QRY_END'] -= cut_qry_r
+    #     else:
+    #         record_r_mod['QRY_POS'] += cut_qry_r
+    #
+    #     # Track cut bases
+    #     record_r_mod['TRIM_REF_L'] += cut_ref_r
+    #     record_r_mod['TRIM_QRY_L'] += cut_qry_r
+    #
+    # # Add clipped bases to CIGAR
+    # if cut_l[pavlib.align.util.TC_CLIPH_BP] > 0:
+    #     cigar_l_pre = [(cut_l[pavlib.align.util.TC_CLIPH_BP], 'H')]
+    # else:
+    #     cigar_l_pre = []
+    #
+    # if cut_r[pavlib.align.util.TC_CLIPH_BP] > 0:
+    #     cigar_r_pre = [(cut_r[pavlib.align.util.TC_CLIPH_BP], 'H')]
+    # else:
+    #     cigar_r_pre = []
+    #
+    # clip_s_l = cut_l[pavlib.align.util.TC_CLIPS_BP] + cut_l[pavlib.align.util.TC_QRY_BP] + trim_l
+    # clip_s_r = cut_r[pavlib.align.util.TC_CLIPS_BP] + cut_r[pavlib.align.util.TC_QRY_BP] + trim_r
+    #
+    # if clip_s_l > 0:
+    #     cigar_l_pre.append((clip_s_l, 'S'))
+    #
+    # if clip_s_r > 0:
+    #     cigar_r_pre.append((clip_s_r, 'S'))
+    #
+    # # Append remaining CIGAR
+    # cigar_l_mod = cigar_l_pre + cigar_l_mod
+    # cigar_r_mod = cigar_r_pre + cigar_r_mod
+    #
+    # if rev_l:
+    #     cigar_l_mod = cigar_l_mod[::-1]
+    #
+    # if rev_r:
+    #     cigar_r_mod = cigar_r_mod[::-1]
+    #
+    # record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod])
+    # record_r_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_r_mod])
+    #
+    # # Return trimmed records
+    # return record_l_mod, record_r_mod

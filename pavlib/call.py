@@ -768,3 +768,49 @@ def get_merge_params(wildcards, config):
 
     # Return config definition
     return config_def
+
+
+def filter_by_align(df, df_align, filter_reason='TRIM'):
+    """
+    Filter variants in `df` against a table of trimmed alignments. The variants in `df` are called from a less-
+    trimmed alignment set (i.e. trim "none"), and compared against a more trimmed alignment set (i.e. trim "qryref").
+    If the variant is in an alignment record that was not trimmed, then it gets "PASS", otherwise, FILTER is set
+    to "TRIM".
+
+    For each variant in `df`, the alignment index ("INDEX") column is compared to an alignment index in `df_align`. If
+    the contig coordinates of the variant (columns "QRY_POS" and "QRY_END") are in an alignment record `df_align` for
+    that index, the variant gets FILTER "PASS", otherwise, it gets FILTER "TRIM".
+
+    :param df: Variant table.
+    :param df_align: Table of trimmed alignments.
+    :param filter_reason: Reason for filtered variants (defaults to "TRIM").
+
+    :return: A variant filter column (pandas.Series)
+    """
+
+    region_pattern = re.compile(r'.*:(\d+)-(\d+)$')
+
+    def region_tuple(region):
+        match = re.search(region_pattern, region)
+
+        try:
+            return int(match[1]) - 1, int(match[2])
+        except TypeError:
+            if match is None:
+                raise RuntimeError(f'Expected match object with numeric values, received None')
+
+            raise RuntimeError(f'Expected numeric values in match: Received {type(match[1])} and {type(match[2])}')
+
+    return pd.concat([
+        df['ALIGN_INDEX'],
+        df['QRY_REGION'].apply(region_tuple),
+    ], axis=1).apply(
+        lambda row:
+            (
+                'PASS' if (
+                    (row['QRY_REGION'][0] >= df_align.loc[row['ALIGN_INDEX'], 'QRY_POS']) &
+                    (row['QRY_REGION'][1] <= df_align.loc[row['ALIGN_INDEX'], 'QRY_END'])
+                ) else filter_reason  # Align index present, but variant not within it
+            ) if row['ALIGN_INDEX'] in df_align.index else filter_reason,  # Align index not present (whole alignment record removed)
+        axis=1
+    )

@@ -383,11 +383,16 @@ def check_record(row, df_qry_fai):
 
     qry_len = df_qry_fai[row['QRY_ID']]
 
-    if row['QRY_LEN'] != qry_len:
-        raise RuntimeError('QRY_LEN != length from FAI ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
-            row['QRY_LEN'], qry_len,
+    if 'QRY_LEN' in row.index:
+        raise RuntimeError('QRY_LEN defined (was removed from PAV alignment files) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
             row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
         ))
+
+    # if row['QRY_LEN'] != qry_len:
+    #     raise RuntimeError('QRY_LEN != length from FAI ({} != {}) (INDEX={}, QRY={}:{}-{}, REF={}:{}-{})'.format(
+    #         row['QRY_LEN'], qry_len,
+    #         row['INDEX'], row['QRY_ID'], row['QRY_POS'], row['QRY_END'], row['#CHROM'], row['POS'], row['END']
+    #     ))
 
     # qry_map_rgn = pavlib.seq.region_from_string(row['QRY_MAP_RGN'])
 
@@ -605,7 +610,7 @@ def count_cigar(row, allow_m=False):
     return ref_bp, qry_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r
 
 
-def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
+def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=None):
     """
     Read alignment file as a BED file that PAV can process. Drops any records marked as unaligned by the SAM flag.
 
@@ -615,9 +620,16 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
     :param hap: Haplotype assinment for this alignment file (h1 or h2).
     :param min_mapq: Minimum MAPQ. If 0, then all alignments are accepted as long as the unmapped flag is not set.
     :param tier: Alignment tier for these records.
+    :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
+        a score model object. If `None`, the default score model is used. An alignment score is computed by summing
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to create the "CIGAR_SCORE"
+        column.
 
     :return: BED file of alignment records.
     """
+
+    # Get score model
+    score_model = pavlib.align.score.get_score_model(score_model)
 
     # Get records from SAM
     record_list = list()
@@ -681,8 +693,6 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
                         qry_len - qry_map_end if record.is_reverse else qry_map_pos,
                         qry_len - qry_map_pos if record.is_reverse else qry_map_end,
 
-                        qry_len,
-
                         # pavlib.seq.Region(record.query_name, qry_map_pos, qry_map_pos + qry_map_len).to_base1_string(),
 
                         tags['RG'] if 'RG' in tags else 'NA',
@@ -692,18 +702,19 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
 
                         record.is_reverse,
                         f'0x{record.flag:04x}',
+                        hap,
 
-                        hap, cigar_string
+                        cigar_string,
+                        score_model.score_cigar_tuples(cigar_tuples, rev=True)  # rev for pysam CIGAR (operation code before length)
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
                         'TIER', 'INDEX',
                         'QRY_ID', 'QRY_POS', 'QRY_END',
-                        'QRY_LEN',
                         'RG', 'AO',
                         'MAPQ',
-                        'REV', 'FLAGS',
-                        'HAP', 'CIGAR'
+                        'REV', 'FLAGS', 'HAP',
+                        'CIGAR', 'CIGAR_SCORE'
                     ]
                 )
             )
@@ -718,11 +729,10 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0):
                 '#CHROM', 'POS', 'END',
                 'TIER', 'INDEX',
                 'QRY_ID', 'QRY_POS', 'QRY_END',
-                'QRY_LEN',
                 'RG', 'AO',
                 'MAPQ',
-                'REV', 'FLAGS',
-                'HAP', 'CIGAR'
+                'REV', 'FLAGS', 'HAP',
+                'CIGAR', 'CIGAR_SCORE'
             ]
         )
 

@@ -432,7 +432,7 @@ rule call_intersect_fail_batch:
             # Prioritize alignments by MAPQ and length
             df_align = pd.read_csv(
                 input.bed_align, sep='\t',
-                usecols=['INDEX', 'QRY_LEN', 'QRY_POS', 'QRY_END', 'MAPQ'],
+                usecols=['INDEX', 'QRY_POS', 'QRY_END', 'MAPQ'],
                 dtype={'INDEX': int}
             )
 
@@ -761,11 +761,11 @@ rule call_integrate_sources:
 # Merge discovery sets from each batch.
 rule call_cigar_merge:
     input:
-        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/insdel_{{hap}}_{batch}.bed.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)),
-        bed_snv=expand('temp/{{asm_name}}/cigar/batched/snv.bed_{{hap}}_{batch}.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT))
+        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/t{{tier}}/insdel_{{hap}}_{batch}.bed.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)),
+        bed_snv=expand('temp/{{asm_name}}/cigar/batched/t{{tier}}/snv_{{hap}}_{batch}.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT))
     output:
-        bed_insdel=temp('temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz')
+        bed_insdel=temp('temp/{asm_name}/cigar/merged/t{tier}/svindel_insdel_{hap}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/merged/t{tier}/snv_snv_{hap}.bed.gz')
     run:
 
         # INS/DEL
@@ -798,12 +798,13 @@ rule call_cigar_merge:
 # IDs are not versioned by this rule, versioning must be applied after batches are merged.
 rule call_cigar:
     input:
-        bed='results/{asm_name}/align/trim-none/aligned_query_{hap}.bed.gz',
-        bed_trim='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
-        tig_fa_name='temp/{asm_name}/align/query_{hap}.fa.gz'
+        bed='results/{asm_name}/align/t{tier}_none/align_qry_{hap}.bed.gz',
+        bed_trim='results/{asm_name}/align/t{tier}_qryref/align_qry_{hap}.bed.gz',
+        tig_fa_name='temp/{asm_name}/align/query/query_{hap}.fa.gz'
     output:
-        bed_insdel=temp('temp/{asm_name}/cigar/batched/insdel_{hap}_{batch}.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/cigar/batched/snv.bed_{hap}_{batch}.gz')
+        bed_insdel=temp('temp/{asm_name}/cigar/batched/t{tier}/insdel_{hap}_{batch}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/batched/t{tier}/snv_{hap}_{batch}.gz')
+
     run:
 
         batch = int(wildcards.batch)
@@ -818,35 +819,13 @@ rule call_cigar:
 
         # Read trimmed alignments
         df_trim = pd.read_csv(
-            input.bed_trim, sep='\t', usecols=['POS', 'END', 'INDEX'],
+            input.bed_trim, sep='\t', usecols=['QRY_POS', 'QRY_END', 'INDEX'],
             index_col='INDEX'
         ).astype(int)
 
-        # Set FILTER - snv
-        df_pass = df_trim.reindex(
-            list(df_snv['ALIGN_INDEX']), fill_value=-1
-        ).set_index(
-            df_snv.index, drop=True
-        )
-
-        df_snv['FILTER'] = df_snv.loc[
-                (df_snv['POS'] > df_pass['POS']) & (df_snv['END'] < df_pass['END'])
-        ].apply(
-            lambda val: 'PASS' if val else 'TRIM'
-        )
-
-        # Set FILTER - insdel
-        df_pass = df_trim.reindex(
-            list(df_insdel['ALIGN_INDEX']), fill_value=-1
-        ).set_index(
-            df_insdel.index, drop=True
-        )
-
-        df_insdel['FILTER'] = df_insdel.loc[
-                (df_insdel['POS'] > df_pass['POS']) & (df_insdel['END'] < df_pass['END'])
-        ].apply(
-            lambda val: 'PASS' if val else 'TRIM'
-        )
+        # Set TRIM filter
+        df_snv['FILTER'] = pavlib.call.filter_by_align(df_snv, df_trim, 'TRIM')
+        df_insdel['FILTER'] = pavlib.call.filter_by_align(df_insdel, df_trim, 'TRIM')
 
         # Write
         df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
