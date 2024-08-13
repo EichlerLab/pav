@@ -21,12 +21,12 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
 
     variant_call_list = list()
 
-    for query_id in caller_resources.df_align['QRY_ID'].unique():
+    for query_id in caller_resources.df_align_qry['QRY_ID'].unique():
         if verbose:
             print(f'Query: {query_id}')
 
-        df_align = caller_resources.df_align.loc[
-            caller_resources.df_align['QRY_ID'] == query_id
+        df_align = caller_resources.df_align_qry.loc[
+            caller_resources.df_align_qry['QRY_ID'] == query_id
         ].reset_index(drop=True)
 
         chain_container = pavlib.lgsv.chain.AnchorChainContainer()
@@ -34,13 +34,13 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
         start_index = 0
         last_index = df_align.shape[0]
 
-        tigref_index_set = set(caller_resources.df_align_tigref.index)
+        qryref_index_set = set(caller_resources.df_align_qryref.index)
 
         # Traverse interval setting each position to the left-most anchor candidate.
         while start_index < last_index:
 
             # Skip if anchor did not pass TIG & REF trimming
-            if start_index not in tigref_index_set:
+            if start_index not in qryref_index_set:
                 start_index += 1
                 continue
 
@@ -50,7 +50,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
             # Traverse each interval after the start for right-most anchor candidates. Limit search by contig distance
             while end_index < last_index and pavlib.lgsv.chain.can_reach_anchor(start_row, df_align.loc[end_index], caller_resources.score_model):
 
-                if df_align.loc[end_index]['INDEX'] in tigref_index_set and pavlib.lgsv.chain.can_anchor(
+                if df_align.loc[end_index]['INDEX'] in qryref_index_set and pavlib.lgsv.chain.can_anchor(
                         start_row, df_align.loc[end_index], caller_resources.score_model, min_anchor_score
                 ):
                     chain_container.add_anchor(start_index, end_index)
@@ -74,31 +74,31 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
             #
             # SV call fundamentals
             #
-            interval = pavlib.lgsv.calltrunc.interval.AnchoredInterval(chain_node, df_align, caller_resources.score_model)
+            interval = pavlib.lgsv.interval.AnchoredInterval(chain_node, df_align, caller_resources.score_model)
 
             # Try INS
-            variant_call = pavlib.lgsv.calltrunc.variant.InsertionVariant(interval, caller_resources)
+            variant_call = pavlib.lgsv.variant.InsertionVariant(interval, caller_resources)
 
             # Try DEL
-            variant_call_next = pavlib.lgsv.calltrunc.variant.DeletionVariant(interval, caller_resources)
+            variant_call_next = pavlib.lgsv.variant.DeletionVariant(interval, caller_resources)
 
             if variant_call_next.score_variant > variant_call.score_variant:
                 variant_call = variant_call_next
 
             # Try Inversion
-            variant_call_next = pavlib.lgsv.calltrunc.variant.InversionVariant(interval, caller_resources)
+            variant_call_next = pavlib.lgsv.variant.InversionVariant(interval, caller_resources)
 
             if variant_call_next.score_variant > variant_call.score_variant:
                 variant_call = variant_call_next
 
             # Try tandem duplication
-            variant_call_next = pavlib.lgsv.calltrunc.variant.TandemDuplicationVariant(interval, caller_resources)
+            variant_call_next = pavlib.lgsv.variant.TandemDuplicationVariant(interval, caller_resources)
 
             if variant_call_next.score_variant > variant_call.score_variant:
                 variant_call = variant_call_next
 
             # Try complex
-            variant_call_next = pavlib.lgsv.calltrunc.variant.ComplexVariant(interval, caller_resources)
+            variant_call_next = pavlib.lgsv.variant.ComplexVariant(interval, caller_resources)
 
             if variant_call_next.score_variant > variant_call.score_variant:
                 variant_call = variant_call_next

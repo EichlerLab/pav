@@ -6,6 +6,16 @@ import numpy as np
 import pandas as pd
 import pavlib
 
+SEGMENT_TABLE_FIELDS = [  # Fields for creating an empty table
+    '#CHROM', 'POS', 'END',
+    'IS_ANCHOR', 'IS_ALIGNED', 'IS_REV',
+    'QRY_ID', 'QRY_POS', 'QRY_END',
+    'LEN_REF', 'LEN_QRY',
+    'GAP_REF',
+    'INDEX', 'SEG_ORDER',
+    'SCORE',
+    'TRIM_REF_L', 'TRIM_REF_R', 'TRIM_QRY_L', 'TRIM_QRY_R'
+]
 
 class AnchoredInterval:
     """
@@ -25,6 +35,7 @@ class AnchoredInterval:
         * seg_n: Number of segments between the anchors (length of df_segment without anchors).
         * len_ref: Distance between anchors on the reference. If negative, then the switch from anchor-to-anchor goes
             backwards in reference space. "ref_region" has the absolute value of the distance.
+        * len_qry: Distance between anchors on the query.
         * ref_region: Reference region (pavlib.seq.Region).
         * qry_region: Query region (pavlib.seq.Region).
     """

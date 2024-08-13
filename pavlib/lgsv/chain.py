@@ -7,10 +7,10 @@ import collections
 
 class AnchorChainNode:
     """
-    Describes an SV (simple or complex) anchored by aligned contig bases on each side (start_index and end_index).
+    Describes an SV (simple or complex) anchored by aligned query bases on each side (start_index and end_index).
 
-    :param start_index: Index of the left-most aligned segment in contig coordinate order.
-    :param start_index: Index of the right-most aligned segment in contig coordinate order.
+    :param start_index: Index of the left-most aligned segment in query coordinate order.
+    :param start_index: Index of the right-most aligned segment in query coordinate order.
     """
 
     def __init__(self, start_index, end_index):
@@ -92,27 +92,27 @@ def can_anchor(row_a, row_b, score_model, min_score=1000, gap_scale=1):
     rows.
 
     Both rows are records from an alignment BED file representing a candidate poir of alignments for anchoring an SV
-    (simple or complex) between them. If either row is `None`, they are not aligned to the same reference contig, or
+    (simple or complex) between them. If either row is `None`, they are not aligned to the same reference sequence, or
     if they are not aligned in the same orientation, `False` is returned.
 
     Each row has an alignment score ("SCORE" column), which is computed if the "SCORE" column is absent using
     `score_model`. If either anchor's score is less than `min_score`, `False` is returned. The minimum value of the pair
     alignment scores (from row_a and row_b) is compared to the gap between them. The gap between the alignments is found
-    by adding the number of contig bases skipped between the alignment records and the number of reference bases skipped
+    by adding the number of query bases skipped between the alignment records and the number of reference bases skipped
     moving from `row_a` to `row_b` (orientation does not matter, may skip forward (DEL) or backward (DUP)).
 
     The gap is scored as one gap with `score_model`. If the gap penalty exceeds the minimum alignment score of the
     anchors, then `False` is returned. Otherwise, `True` is returned and these alignments can function as anchors for
     an SV between them.
 
-    :param row_a: Row earlier in the alignment chain (contig position order).
-    :param row_b: Row later in the alignment chain (contig position order).
-    :param score_model: Alignment scoring model used to score the gap between two rows (ref gap and tig gap).
+    :param row_a: Row earlier in the alignment chain (query position order).
+    :param row_b: Row later in the alignment chain (query position order).
+    :param score_model: Alignment scoring model used to score the gap between two rows (ref gap and qry gap).
     :param min_score: Cannot be an anchor if either anchor's alignment score is less than this value.
     :param gap_scale: Scale gap score by this factor. A value of less than 1 reduces the gap penalty (e.g. 0.5 halves
         it), and a value greater than 1 increases the gap penalty (e.g. 2.0 doubles it).
 
-    :return: `True` if both rows are not `None` and are collinear in contig and reference space.
+    :return: `True` if both rows are not `None` and are collinear in query and reference space.
     """
 
     # Both rows should be present and in the same orientation
@@ -148,7 +148,7 @@ def can_anchor(row_a, row_b, score_model, min_score=1000, gap_scale=1):
     if gap_len == 0:
         return True
 
-    return score_model.gap(gap_len) * gap_scale < anchor_score
+    return score_model.gap(gap_len) * gap_scale + anchor_score > 0
 
 
 def can_reach_anchor(row_l, row_r, score_model):
@@ -158,25 +158,25 @@ def can_reach_anchor(row_l, row_r, score_model):
     alignments are anchors (does not consider the score of the right-most alignment or the reference position or
     orientation).
 
-    :param row_l: Left-most archor in contig coordinates.
-    :param row_r: Right-most archor in contig coordinates.
+    :param row_l: Left-most archor in query coordinates.
+    :param row_r: Right-most archor in query coordinates.
     :param score_model: Model for determining a gap score.
 
     :return: `True` if the anchor in alignment `row_l` can reach as far as the start of `row_r` based on the alignment
-        score of `row_l` and the distance in contig coordinates between the end of `row_l` and the start of `row_r`.
+        score of `row_l` and the distance in query coordinates between the end of `row_l` and the start of `row_r`.
     """
 
     # Check rows
     if row_l is None or row_r is None:
-        raise RuntimeError('Cannot score tig distance for records "None"')
+        raise RuntimeError('Cannot score query distance for records "None"')
 
     if row_l['QRY_ID'] != row_r['QRY_ID']:
-        raise RuntimeError(f'Cannot score tig distance for mismatching queries: "{row_l["QRY_ID"]}" and "{row_r["QRY_ID"]}"')
+        raise RuntimeError(f'Cannot score query distance for mismatching queries: "{row_l["QRY_ID"]}" and "{row_r["QRY_ID"]}"')
 
-    tig_dist = row_r['QRY_POS'] - row_l['QRY_END']
+    qry_dist = row_r['QRY_POS'] - row_l['QRY_END']
 
-    if tig_dist < 0:
-        raise RuntimeError(f'Cannot score tig distance for out-of-order (by tig coordinates): indexes "{row_l["INDEX"]}" and "{row_r["INDEX"]}"')
+    if qry_dist < 0:
+        raise RuntimeError(f'Cannot score query distance for out-of-order (by query coordinates): indexes "{row_l["INDEX"]}" and "{row_r["INDEX"]}"')
 
     # Cannot anchor if query distance is too large
-    return tig_dist == 0 or row_l['SCORE'] - score_model.gap(tig_dist) > 0
+    return qry_dist == 0 or row_l['SCORE'] + score_model.gap(qry_dist) > 0

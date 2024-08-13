@@ -2,6 +2,7 @@
 Large variant discovery call methods
 """
 
+import abc
 import numpy as np
 import pandas as pd
 
@@ -13,7 +14,9 @@ import pavlib
 
 CALL_SOURCE = 'ALNTRUNC'
 
-class Variant(object):
+REF_TRACE_COLUMNS = ['#CHROM', 'POS', 'END', 'DEPTH', 'QRY_ID', 'INDEX', 'TYPE', 'LEN', 'FWD_COUNT', 'REV_COUNT']
+
+class Variant(object, metaclass=abc.ABCMeta):
     """
     Base class for variant call objects.
 
@@ -50,7 +53,36 @@ class Variant(object):
 
         # Check and set
         if interval is None:
-            raise RuntimeError('Cannot create variant with interval: None')
+
+            class NullInterval(object):
+                pass
+
+            self.interval = NullInterval()
+            self.interval.ref_region = None
+            self.interval.qry_region = None
+            self.interval.df_segment = pd.DataFrame([], columns=['#CHROM', 'POS', 'END'])
+
+            self.caller_resource = caller_resources
+            self.score_variant = -np.inf
+            self.df_ref_trace = df_ref_trace
+            self.strand = None
+            self.chrom = None
+            self.pos = None
+            self.end = None
+            self.vartype = 'NullVariant'
+            self.svtype = 'NullVariant'
+            self.svsubtype = None
+            self.svlen = 0
+            self.qry_region = None
+            self.hom_ref = None
+            self.hom_qry = None
+
+            self.anchor_score_min = -np.inf
+            self.anchor_score_max = np.inf
+
+            self.is_complete_anno = True
+
+            return
 
         self.interval = interval
 
@@ -85,6 +117,10 @@ class Variant(object):
 
         self.call_source = CALL_SOURCE
         self.seq = '*'
+
+        # Get anchor scores
+        self.anchor_score_min = np.min(self.interval.df_segment.loc[self.interval.df_segment['IS_ANCHOR'], 'SCORE'])
+        self.anchor_score_max = np.max(self.interval.df_segment.loc[self.interval.df_segment['IS_ANCHOR'], 'SCORE'])
 
         # Set to True when annotations are complete
         self.is_complete_anno = False
@@ -133,20 +169,18 @@ class Variant(object):
         before spending the CPU cycles and IO time pulling sequences to complete annotations.
 
         Implementations of this method should complete annotations and set `self.is_complete_anno` to `True`.
-
-        :param caller_resources: Caller resources including qry/ref sequences, k-mer utilities, and scoring models.
         """
 
         if self.is_complete_anno or self.is_null():
             return
 
         # Variant type implementation
-        self.complete_anno_type()
+        self.complete_anno_impl()
 
         # Check for unset required fields
         unset_fields = list()
 
-        for field in ['chrom', 'pos', 'end', 'vartype', 'svtype', 'svlen', 'is_rev', 'qry_region']:
+        for field in ['chrom', 'pos', 'end', 'vartype', 'svtype', 'svlen', 'is_rev']:
             if getattr(self, field) is None:
                 unset_fields.append(field)
 
@@ -165,7 +199,7 @@ class Variant(object):
 
         return self.score_variant == -np.inf
 
-    def complete_anno_type(self):
+    def complete_anno_impl(self):
         pass
 
     def row(self):
@@ -177,18 +211,18 @@ class Variant(object):
         :return: Pandas Series object of this variant call.
         """
 
-        if self.is_null():
-            raise RuntimeError('Cannot get row for a null variant')
+        self.complete_anno()
 
-        self.row_type()
+        return self.row_impl()
 
+    @abc.abstractmethod
     def row_impl(self):
         """
         Variant type implementation of row().
 
         :return: A Pandas Series object representing a variant call table row for this variant call.
         """
-        raise NotImplementedError('Must be implemented by derived class')
+        raise NotImplementedError
 
 
 # TODO: correct untemplated insertion breakpoints for homology at breakpoints
@@ -220,6 +254,12 @@ class InsertionVariant(Variant):
     def __init__(self, interval, caller_resources, df_ref_trace=None):
         Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
 
+        # Null variant (for creating table headers when no variants are found)
+        if interval is None:
+            self.ref_overlap = 0
+
+            return
+
         # Return immediately to leave the variant call a Null type
         if interval.seg_n != 1 or interval.len_qry == 0:
             return
@@ -239,6 +279,79 @@ class InsertionVariant(Variant):
         self.vartype = 'SV' if self.svlen > 50 else 'INDEL'
         self.svtype = 'INS'
 
+    def row_impl(self):
+        return pd.Series(
+            [
+                self.chrom, self.pos, self.end, self.variant_id, self.svtype, self.svlen,
+                str(self.interval.qry_region), self.strand,
+                self.svsubtype, self.score_variant,
+                CALL_SOURCE,
+                self.anchor_score_min, self.anchor_score_max
+            ],
+            index=[
+                '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                'QRY_REGION', 'QRY_STRAND',
+                'SVSUBTYPE', 'VAR_SCORE',
+                'CALL_SOURCE',
+                'ANCHOR_SCORE_MIN', 'ANCHOR_SCORE_MAX'
+            ]
+        )
+
+
+class TandemDuplicationVariant(InsertionVariant):
+    """
+    Tandem duplication variant call.
+    """
+
+    # Tandem duplication (TD)
+    # Repeats:                                [> REP >]            [> REP >]
+    # Qry 1:    --------->--------->--------->--------->--------->--------->
+    # Qry 2:                                  --------->--------->--------->--------->--------->--------->
+    #
+    # Directly-oriented repeats may mediated tandem repeats. Look at alignment-trimming in three ways:
+    # * Qry trimming: Identifies TD if redundant query bases are removed, but queries still overlap
+    # * Qry & Ref trimming: Find a breakpoint for an insertion call.
+    # * No trimming: Identify the repeats at the ends of the TD.
+    #
+    # The resulting call is an INS call with a breakpoint placed in a similar location if the TD was called as an
+    # insertion event in the CIGAR string. The variant is annotated with the DUP locus, and the sequence of both copies
+    # is
+
+    def __init__(self, interval, caller_resources, df_ref_trace=None):
+        Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
+
+        if interval is None:
+            return
+
+        if interval.seg_n != 0 or interval.len_ref >= 0:
+            return
+
+        if interval.df_segment.iloc[0]['INDEX'] not in caller_resources.df_align_qryref:
+            return
+
+        if interval.df_segment.iloc[-1]['INDEX'] not in caller_resources.df_align_qryref:
+            return
+
+        #raise RuntimeError('Tandem duplication not implemented - Test and complete')
+
+        # Determine left-most breakpoint using alignment trimming for homology
+        self.pos = caller_resources.df_align_qryref.loc[interval.df_segment.iloc[0]['INDEX'], 'END']
+        #sub_end = caller_resources.df_align_qryref.loc[interval.df_segment.iloc[-1]['INDEX'], 'POS']
+
+        self.end = self.pos + 1
+
+        qry_pos = caller_resources.df_align_qryref.loc[interval.df_segment.iloc[0]['INDEX'], 'QRY_END']
+        qry_end = caller_resources.df_align_qryref.loc[interval.df_segment.iloc[-1]['INDEX'], 'QRY_POS']
+
+        self.svlen = qry_end - qry_pos
+
+        self.score_variant = \
+            self.caller_resources.score_model.gap(self.svlen)
+
+        self.vartype = 'SV' if self.svlen > 50 else 'INDEL'
+        self.svtype = 'INS'
+        self.svsubtype = 'TD'
+
 
 class DeletionVariant(Variant):
     """
@@ -252,17 +365,39 @@ class DeletionVariant(Variant):
     def __init__(self, interval, caller_resources, df_ref_trace=None):
         Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
 
+        # Null variant (for creating table headers when no variants are found)
+        if interval is None:
+            return
+
         # Return immediately to leave the variant call a Null type
         if interval.len_ref <= 0 or interval.seg_n != 0:
             return
 
-        self.pos = self.interval.qry_region.pos
-        self.end = self.interval.qry_region.end
-        self.svlen = len(self.interval.qry_region)
+        self.pos = self.interval.ref_region.pos
+        self.end = self.interval.ref_region.end
+        self.svlen = len(self.interval.ref_region)
         self.score_variant = self.caller_resources.score_model.gap(self.svlen)
 
         self.vartype = 'SV' if self.svlen > 50 else 'INDEL'
         self.svtype = 'DEL'
+
+    def row_impl(self):
+        return pd.Series(
+            [
+                self.chrom, self.pos, self.end, self.variant_id, self.svtype, self.svlen,
+                str(self.interval.qry_region), self.strand,
+                self.score_variant,
+                CALL_SOURCE,
+                self.anchor_score_min, self.anchor_score_max
+            ],
+            index=[
+                '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                'QRY_REGION', 'QRY_STRAND',
+                'VAR_SCORE',
+                'CALL_SOURCE',
+                'ANCHOR_SCORE_MIN', 'ANCHOR_SCORE_MAX'
+            ]
+        )
 
 
 class InversionVariant(Variant):
@@ -273,8 +408,22 @@ class InversionVariant(Variant):
     def __init__(self, interval, caller_resources, df_ref_trace=None):
         Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
 
+        # Null variant (for creating table headers when no variants are found)
+        if interval is None:
+            self.size_gap = 0
+
+            self.region_ref_outer = pavlib.seq.Region('NullChrom',0,1)
+            self.region_ref_inner = pavlib.seq.Region('NullChrom',0,1)
+            self.region_qry_outer = pavlib.seq.Region('NullChrom',0,1)
+            self.region_qry_inner = pavlib.seq.Region('NullChrom',0,1)
+
+            return
+
         # Check segment - only allow inversion if there is a single inverted aligned segment
-        if interval.seg_n != 1 or interval.df_segment.iloc[1]['IS_REV'] == interval.is_rev or interval.len_ref <= 0:
+        if interval.seg_n != 1 or \
+                interval.df_segment.iloc[1]['IS_REV'] == interval.is_rev or \
+                interval.len_ref <= 0 or \
+                not interval.df_segment.iloc[1]['IS_ALIGNED']:
             return
 
         # Note: Breakpoints may not be placed consistently in inverted repeats on each end, the aligner makes an
@@ -305,7 +454,7 @@ class InversionVariant(Variant):
 
         self.score_variant = (
             self.caller_resources.score_model.gap(self.size_gap) +  # Penalize differences between reference gap and inverted alignment
-            self.caller_resources.score_model.template_switch * 2
+            self.caller_resources.score_model.template_switch() * 2
         )
 
         # Set inner/outer reference regions
@@ -352,61 +501,33 @@ class InversionVariant(Variant):
 
         self.pos = self.region_ref_outer.pos
         self.end = self.region_ref_outer.end
+        self.vartype = 'SV'
         self.svtype = 'INV'
         self.svlen = len(self.region_ref_outer)
 
         return
 
-
-class TandemDuplicationVariant(Variant):
-    """
-    Tandem duplication variant call.
-    """
-
-    # Tandem duplication (TD)
-    # Repeats:                                [> REP >]            [> REP >]
-    # Qry 1:    --------->--------->--------->--------->--------->--------->
-    # Qry 2:                                  --------->--------->--------->--------->--------->--------->
-    #
-    # Directly-oriented repeats may mediated tandem repeats. Look at alignment-trimming in three ways:
-    # * Qry trimming: Identifies TD if redundant query bases are removed, but queries still overlap
-    # * Qry & Ref trimming: Find a breakpoint for an insertion call.
-    # * No trimming: Identify the repeats at the ends of the TD.
-    #
-    # The resulting call is an INS call with a breakpoint placed in a similar location if the TD was called as an
-    # insertion event in the CIGAR string. The variant is annotated with the DUP locus, and the sequence of both copies
-    # is
-
-    def __init__(self, interval, caller_resources, df_ref_trace=None):
-        Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
-
-        if interval.seg_n != 0 or interval.len_ref >= 0:
-            return
-
-        if interval.df_segment.iloc[0]['INDEX'] not in caller_resources.df_align_tigref:
-            return
-
-        if interval.df_segment.iloc[-1]['INDEX'] not in caller_resources.df_align_tigref:
-            return
-
-        #raise RuntimeError('Tandem duplication not implemented - Test and complete')
-
-        # Determine left-most breakpoint using alignment trimming for homology
-        self.pos = caller_resources.df_align_tigref.loc[interval.df_segment.iloc[0]['INDEX'], 'END']
-        #sub_end = caller_resources.df_align_tigref.loc[interval.df_segment.iloc[-1]['INDEX'], 'POS']
-
-        self.end = self.pos + 1
-
-        qry_pos = caller_resources.df_align_tigref.loc[interval.df_segment.iloc[0]['INDEX'], 'QRY_END']
-        qry_end = caller_resources.df_align_tigref.loc[interval.df_segment.iloc[-1]['INDEX'], 'QRY_POS']
-
-        self.svlen = qry_end - qry_pos
-
-        self.score_variant = \
-            self.caller_resources.score_model.gap(self.svlen)
-
-        self.svtype = 'INS'
-        self.svsubtype = 'TD'
+    def row_impl(self):
+        return pd.Series(
+            [
+                self.chrom, self.pos, self.end, self.variant_id, self.svtype, self.svlen,
+                str(self.interval.qry_region), self.strand,
+                self.score_variant,
+                str(self.region_ref_inner), str(self.region_qry_inner), str(self.region_qry_outer),
+                self.size_gap,
+                CALL_SOURCE,
+                self.anchor_score_min, self.anchor_score_max
+            ],
+            index=[
+                '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                'QRY_REGION', 'QRY_STRAND',
+                'VAR_SCORE',
+                'REGION_REF_INNER', 'REGION_QRY_INNER', 'REGION_QRY_OUTER',
+                'ALIGN_SIZE_GAP',
+                'CALL_SOURCE',
+                'ANCHOR_SCORE_MIN', 'ANCHOR_SCORE_MAX'
+            ]
+        )
 
 
 class ComplexVariant(Variant):
@@ -417,8 +538,16 @@ class ComplexVariant(Variant):
     def __init__(self, interval, caller_resources, df_ref_trace=None):
         Variant.__init__(self, interval, caller_resources, df_ref_trace=df_ref_trace)
 
+        # Null variant (for creating table headers when no variants are found)
+        if interval is None:
+            return
+
+        # Must consume query bases
+        if interval.len_qry <= 0:
+            return
+
         # Compute variant score
-        self.score_variant = caller_resources.score_model.template_switch * (interval.df_segment.shape[0] - 1)  # Template switches between segments
+        self.score_variant = caller_resources.score_model.template_switch() * (interval.df_segment.shape[0] - 1)  # Template switches between segments
 
         for i in range(1, interval.df_segment.shape[0] - 1):  # Gap per segment
             self.score_variant += caller_resources.score_model.gap(
@@ -430,32 +559,42 @@ class ComplexVariant(Variant):
         self.pos = self.interval.ref_region.pos
         self.end = self.interval.ref_region.end
 
+        self.vartype = 'SV'
         self.svtype = 'CPX'
         self.svlen = len(interval.qry_region) + np.abs(interval.len_ref)
 
-    def complete_anno_type(self):
+        self.struct_qry = None
+        self.struct_ref = None
+
+    def complete_anno_impl(self):
+
+        if self.is_null():
+            self.df_ref_trace = None
+            self.struct_qry = None
+            self.struct_ref = None
 
         # Get reference trace
         if self.df_ref_trace is None:
             self.df_ref_trace = get_reference_trace(self.interval)
 
-        self.struct_qry = get_qry_struct_str(self.df_segment)
+        self.struct_qry = get_qry_struct_str(self.interval.df_segment)
         self.struct_ref = get_ref_struct_str(self.df_ref_trace)
 
-        self.row = pd.Series(
+    def row_impl(self):
+        return pd.Series(
             [
-                self.chrom, self.ref_region.pos, self.ref_region.end,
-                'CPX', self.svlen,
-                str(self.qry_region),
-                self.struct_ref, self.struct_qry,
-                '-' if self.is_rev else '+',
+                self.chrom, self.pos, self.end, self.variant_id, self.svtype, self.svlen,
+                str(self.interval.qry_region), self.strand,
+                self.interval.df_segment.shape[0], self.struct_ref, self.struct_qry,
+                self.score_variant,
+                self.anchor_score_min, self.anchor_score_max
             ],
             index=[
-                '#CHROM', 'POS', 'END',
-                'SVTYPE', 'SVLEN',
-                'QRY_REGION',
-                'CPX_REF', 'CPX_QRY',
-                'STRAND',
+                '#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN',
+                'QRY_REGION', 'QRY_STRAND',
+                'SEG_N', 'STRUCT_REF', 'STRUCT_QRY',
+                'VAR_SCORE',
+                'ANCHOR_SCORE_MIN', 'ANCHOR_SCORE_MAX'
             ]
         )
 
@@ -490,7 +629,7 @@ def get_reference_trace(interval):
     ])
 
     # Make depth table
-    df_depth = pavlib.align.align_bed_to_depth_bed(interval.df_segment.loc[interval.df_segment['IS_ALIGNED']], df_fai=None)
+    df_depth = pavlib.align.util.align_bed_to_depth_bed(interval.df_segment.loc[interval.df_segment['IS_ALIGNED']], df_fai=None)
 
     # Refine depth to local regions (remove distal, trim segments crossing local region pos & end)
     df_depth['POS'] = df_depth['POS'].apply(lambda val: max(val, local_pos))
@@ -614,7 +753,7 @@ def get_qry_struct_str(df_segment):
 
             last_pos = row['END']
         else:
-            struct_list.append(f'INS({row["LEN_REF"]})')
+            struct_list.append(f'INS({row["LEN_QRY"]})')
 
     row = df_segment.iloc[-1]
     dist = row['POS'] - last_pos

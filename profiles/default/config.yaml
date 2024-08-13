@@ -22,13 +22,14 @@ set-threads:
   - call_merge_haplotypes_batch=12
 
 set-resources:
-  - align_genomecov:mem_mb=4196
-  - align_export:mem_mb=4196
+  - data_align_ref_anno_n_gap:mem_mb=8192
+  - align_genomecov:mem_mb=4096
+  - align_export:mem_mb=4096
   - align_export:runtime=580
   - align_get_bed:mem_mb=16384
   - align_map:mem_mb=49152
   - align_map:runtime=360
-  - align_merge_h12_read_bed:mem_mb=4196
+  - align_merge_h12_read_bed:mem_mb=4096
   - align_postcut_cram:mem_mb=16384
   - align_postcut_sam:mem_mb=12288
   - align_ref_lra_index:mem_mb=32768
@@ -46,7 +47,7 @@ set-resources:
   - call_intersect_fail_batch:runtime=720
   - call_inv_batch:mem_mb=6144
   - call_inv_batch:runtime=120
-  - call_lg_discover:mem_mb=49152
+  - call_lg_discover:mem_mb=4096
   - call_lg_discover:runtime=120
   - call_merge_haplotypes:mem_mb=8192
   - call_merge_haplotypes:runtime=120

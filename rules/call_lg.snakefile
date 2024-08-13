@@ -15,24 +15,16 @@ global get_config
 
 global expand
 global temp
+global ASM_TABLE
 
+# Call all large SVs
+localrules: call_lg_all
 
-# Merge variant calls from large SVs.
-rule call_merge_lg:
+rule call_lg_all:
     input:
-        bed=lambda wildcards: expand(
-            'temp/{{asm_name}}/lg_sv/batch/sv_{{svtype}}_{{hap}}_{batch}.bed.gz',
-            batch=range(get_config(wildcards, 'lg_batch_count', 10))
-        )
-    output:
-        bed=temp('temp/{asm_name}/lg_sv/sv_{svtype}_{hap}.bed.gz')
-    run:
-
-        pd.concat(
-            [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
-            axis=0
-        ).to_csv(
-            output.bed, sep='\t', index=False, compression='gzip'
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz', ASM_TABLE,
+            tier=(0, 1, 2)
         )
 
 
@@ -41,105 +33,153 @@ rule call_lg_discover:
     input:
         bed_qry='results/{asm_name}/align/t{tier}_qry/align_qry_{hap}.bed.gz',
         bed_qryref='results/{asm_name}/align/t{tier}_qryref/align_qry_{hap}.bed.gz',
-        #tsv_group='temp/{asm_name}/lg_sv/batch_group_{hap}.tsv.gz',
-        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
-        fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai',
-        bed_n='data/ref/n_gap.bed.gz'
+        fa_qry='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        fai_qry='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai',
+        fa_ref='data/ref/ref.fa.gz',
+        fai_ref='data/ref/ref.fa.gz.fai'
     output:
-        bed_ins=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_ins_{hap}_{batch}.bed.gz'),
-        bed_del=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_del_{hap}_{batch}.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/lg_sv/batch/t{tier}/sv_inv_{hap}_{batch}.bed.gz')
-    log:
-        log='log/{asm_name}/lg_sv/log/lg_sv_{hap}_{batch}.log'
+        bed_ins=temp('temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz'),
+        bed_del=temp('temp/{asm_name}/lg_sv/t{tier}/svindel_del_{hap}.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/lg_sv/t{tier}/sv_inv_{hap}.bed.gz'),
+        bed_cpx=temp('temp/{asm_name}/lg_sv/t{tier}/sv_cpx_{hap}.bed.gz'),
+        bed_cpx_seg=temp('temp/{asm_name}/lg_sv/t{tier}/segment_cpx_{hap}.bed.gz'),
+        bed_cpx_ref=temp('temp/{asm_name}/lg_sv/t{tier}/reftrace_cpx_{hap}.bed.gz')
     params:
-        k_size=lambda wildcards: int(get_config(wildcards, 'inv_k_size', 31)),
-        inv_region_limit=lambda wildcards: get_config(wildcards, 'inv_region_limit', None, True),
-        align_score=lambda wildcards: get_config(wildcards,'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL)
+        align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL),
+        min_anchor_score=lambda wildcards: get_config(wildcards, 'min_anchor_score', "1000bp")
     threads: 12
     run:
 
+        # Get score model
         score_model = pavlib.align.score.get_score_model(params.align_score)
 
+        # Get minimum anchor score
+        if isinstance(params.min_anchor_score, str):
+            min_anchor_score_str = params.min_anchor_score.strip()
 
-        # Read
-        df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM": str, "QRY_ID": str})
-        df_tig_fai = svpoplib.ref.get_df_fai(input.fai)
+            if len(min_anchor_score_str) == 0:
+                raise RuntimeError('Parameter "min_anchor_score" is empty')
 
-        # Subset to alignment records in this batch
-        df_group = pd.read_csv(input.tsv_group, sep='\t',dtype={"CHROM": str, "QRY": str})
-        df_group = df_group.loc[df_group['BATCH'] == int(wildcards.batch)]
+            if min_anchor_score_str.lower().endswith('bp'):
+                min_anchor_score_bp = abs(float(min_anchor_score_str[:-2]))
 
-        group_set = set(df_group[['CHROM', 'QRY_ID']].apply(tuple, axis=1))
+                if min_anchor_score_bp == 0:
+                    raise RuntimeError(f'Parameter "min_anchor_score" is zero: {params.min_anchor_score}')
 
-        if df.shape[0] > 0:
-            df = df.loc[df.apply(lambda row: (row['#CHROM'], row['QRY_ID']) in group_set, axis=1)]
+                min_anchor_score = score_model.match(min_anchor_score_bp)
 
-        # Get trees of N bases
-        n_tree = collections.defaultdict(intervaltree.IntervalTree)
+            else:
+                try:
+                    min_anchor_score = abs(float(params.min_anchor_score))
+                except ValueError:
+                    raise RuntimeError(f'Parameter "min_anchor_score" is a string that does not represent a numeric value: type={min_anchor_score}')
 
-        df_n = pd.read_csv(input.bed_n, sep='\t', dtype={"#CHROM": str})
+        else:
+            try:
+                # noinspection PyTypeChecker
+                min_anchor_score = float(params.min_anchor_score)
+            except ValueError:
+                raise RuntimeError(f'Parameter "min_anchor_score" is not a string or numeric: type={type(min_anchor_score)}')
 
-        for index, row in df_n.iterrows():
-            n_tree[row['#CHROM']][row['POS']:row['END']] = True
+            if min_anchor_score < 0:
+                raise RuntimeError(f'Parameter "min_anchor_score" is negative: {min_anchor_score}')
 
-        # Make density table output directory
-        density_out_dir = 'results/{asm_name}/inv_caller/density_table_lg'.format(**wildcards)
-        os.makedirs(density_out_dir, exist_ok=True)
+        # Read alignments - Trim QRY
+        df_align_qry = pd.read_csv(
+            input.bed_qry,
+            sep='\t',
+            dtype={'#CHROM': str, 'QRY_ID': str}
+        )
 
-        # Get large events
-        with open(log.log, 'wt') as log_file:
-            df_ins, df_del, df_inv = pavlib.lgsv.discover.scan_for_events(
-                df, df_tig_fai, wildcards.hap, REF_FA, input.fa,
-                k_size=params.k_size,
-                n_tree=n_tree,
-                srs_tree=srs_tree,
-                threads=threads,
-                log=log_file,
-                density_out_dir=density_out_dir,
-                max_region_size=params.inv_region_limit,
-                version_id=False
-            )
+        df_align_qry.sort_values(['QRY_ID', 'QRY_POS', 'QRY_END'], inplace=True)
+        df_align_qry.reset_index(inplace=True, drop=True)
 
-        # Write
+        # Read alignments - Trim QRY/REF
+        df_align_qryref = pd.read_csv(
+            input.bed_qryref,
+            sep='\t',
+            index_col='INDEX',
+            dtype={'#CHROM': str, 'QRY_ID': str}
+        )
+
+        # Set caller resources
+        caller_resources = pavlib.lgsv.util.CallerResources(
+            df_align_qry, df_align_qryref,
+            input.fa_qry, input.fa_ref,
+            wildcards.hap, score_model
+        )
+
+        # Call
+        lgsv_list = pavlib.lgsv.call.call_from_align(caller_resources, min_anchor_score=min_anchor_score)
+
+        # Create tables
+        df_list = {
+            'INS': list(),
+            'DEL': list(),
+            'INV': list(),
+            'CPX': list()
+        }
+
+        for var in lgsv_list:
+            row = var.row()
+
+            if row['SVTYPE'] not in df_list.keys():
+                raise RuntimeError(f'Unexpected SVTYPE: "{row["SVTYPE"]}"')
+
+            df_list[row['SVTYPE']].append(row)
+
+        if len(df_list['INS']) > 0:
+            df_ins = pd.concat(df_list['INS'], axis=1).T
+        else:
+            df_ins = pd.DataFrame([], columns=pavlib.lgsv.variant.InsertionVariant(None, None).row().index)
+
+        if len(df_list['DEL']) > 0:
+            df_del = pd.concat(df_list['DEL'], axis=1).T
+        else:
+            df_del = pd.DataFrame([], columns=pavlib.lgsv.variant.DeletionVariant(None, None).row().index)
+
+        if len(df_list['INV']) > 0:
+            df_inv = pd.concat(df_list['INV'], axis=1).T
+        else:
+            df_inv = pd.DataFrame([], columns=pavlib.lgsv.variant.InversionVariant(None, None).row().index)
+
+        if len(df_list['CPX']) > 0:
+            df_cpx = pd.concat(df_list['CPX'], axis=1).T
+        else:
+            df_cpx = pd.DataFrame([], columns=pavlib.lgsv.variant.ComplexVariant(None, None).row().index)
+
+        # Write variant tables
         df_ins.to_csv(output.bed_ins, sep='\t', index=False, compression='gzip')
         df_del.to_csv(output.bed_del, sep='\t', index=False, compression='gzip')
         df_inv.to_csv(output.bed_inv, sep='\t', index=False, compression='gzip')
+        df_cpx.to_csv(output.bed_cpx, sep='\t', index=False, compression='gzip')
 
-#
-# # Split chromosome/tig records into batches for chromosome/tig pairs with multiple alignments.
-# # noinspection PyTypeChecker
-# rule call_lg_split:
-#     input:
-#         bed='results/{asm_name}/align/t{tier}_qry/align_qry_{hap}.bed.gz'
-#     output:
-#         tsv=temp('temp/{asm_name}/lg_sv/t{tier}_qry/batch_group_{hap}.tsv.gz')
-#     params:
-#         batch_count=lambda wildcards: get_config(wildcards, 'lg_batch_count', 10)
-#     run:
-#
-#         # Read
-#         df = pd.read_csv(input.bed, sep='\t', dtype={"#CHROM": str, "QRY_ID": str})
-#
-#         # Get ref/tig pairs with multiple mappings
-#         qry_map_count = collections.Counter(df[['#CHROM', 'QRY_ID']].apply(tuple, axis=1))
-#
-#         df_group_list = list()
-#
-#         index = 0
-#
-#         for chrom, qry in [(chrom, tig_id) for (chrom, tig_id), count in qry_map_count.items() if count > 1]:
-#             df_group_list.append(pd.Series(
-#                 [chrom, qry, index % params.batch_count],
-#                 index=['CHROM', 'QRY_ID', 'BATCH']
-#             ))
-#
-#             index += 1
-#
-#         # Merge (CHROM, QRY, BATCH)
-#         if len(df_group_list) > 0:
-#             df_group = pd.concat(df_group_list, axis=1).T
-#         else:
-#             df_group = pd.DataFrame([], columns=['CHROM', 'QRY_ID', 'BATCH'])
-#
-#         # Write
-#         df_group.to_csv(output.tsv, sep='\t', index=False, compression='gzip')
+        # Write segment and reference trace tables
+        df_segment_list = list()
+        df_reftrace_list = list()
+
+        for var in lgsv_list:
+            if var.svtype != 'CPX':
+                continue
+
+            df_segment = var.interval.df_segment.copy()
+            df_segment.insert(3, 'ID', var.variant_id)
+
+            df_segment_list.append(df_segment)
+
+        if len(df_segment_list) > 0:
+            df_segment = pd.concat(df_segment_list, axis=0)
+        else:
+            df_segment = pd.DataFrame([], columns=(
+                pavlib.lgsv.interval.SEGMENT_TABLE_FIELDS[:3] + ['ID'] + pavlib.lgsv.interval.SEGMENT_TABLE_FIELDS[3:]
+            ))
+
+        if len(df_reftrace_list) > 0:
+            df_reftrace = pd.concat(df_reftrace_list, axis=0)
+        else:
+            df_reftrace = pd.DataFrame([], columns=(
+                pavlib.lgsv.variant.REF_TRACE_COLUMNS[:3] + ['ID'] + pavlib.lgsv.variant.REF_TRACE_COLUMNS[3:]
+            ))
+
+        df_segment.to_csv(output.bed_cpx_seg, sep='\t', index=False, compression='gzip')
+        df_reftrace.to_csv(output.bed_cpx_ref, sep='\t', index=False, compression='gzip')

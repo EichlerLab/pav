@@ -15,7 +15,7 @@ AFFINE_SCORE_TS = None
 
 DEFAULT_ALIGN_SCORE_MODEL = f'affine::match={AFFINE_SCORE_MATCH},mismatch={AFFINE_SCORE_MISMATCH},gap={";".join([f"{gap_open}:{gap_extend}" for gap_open, gap_extend in AFFINE_SCORE_GAP])}'
 
-class ScoreModel(metaclass=abc.ABCMeta):
+class ScoreModel(object, metaclass=abc.ABCMeta):
     """
     Score model interface.
     """
@@ -50,6 +50,16 @@ class ScoreModel(metaclass=abc.ABCMeta):
 
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def template_switch(self):
+        """
+        Score a template switch.
+
+        :return: Template switch score.
+        """
+
+        raise NotImplementedError
+
     def score(self, op_len, op_code):
         """
         Score a CIGAR operation and return 0 if the operation is not scored (S, H, N, and P CIGAR operations). The
@@ -80,10 +90,6 @@ class ScoreModel(metaclass=abc.ABCMeta):
 
         else:
             raise RuntimeError(f'Unrecognized CIGAR op code: {op_code}')
-
-    def template_switch(self):
-        return - self.score_template_switch
-
 
     def score_cigar_tuples(self, cigar_tuples, rev=False):
         """
@@ -130,16 +136,19 @@ class AffineScoreModel(ScoreModel):
 
     def __init__(self, match=AFFINE_SCORE_MATCH, mismatch=AFFINE_SCORE_MISMATCH, affine_gap=AFFINE_SCORE_GAP, template_switch=AFFINE_SCORE_TS):
         self.score_match = np.abs(match)
-        self.score_mismatch = np.abs(mismatch)
+        self.score_mismatch = -np.abs(mismatch)
         self.score_affine_gap = tuple((
-            (np.abs(gap_open), np.abs(gap_extend))
+            (-np.abs(gap_open), -np.abs(gap_extend))
                 for gap_open, gap_extend in affine_gap
         ))
 
         if template_switch is None:
-            self.score_template_switch = - np.abs(2 * self.gap(50))
+            self.score_template_switch = 2 * self.gap(50)
         else:
-            self.score_template_switch = - np.abs(template_switch)
+            try:
+                self.score_template_switch = - np.abs(float(template_switch))
+            except ValueError:
+                raise ValueError(f'template_switch parameter is not numeric: {template_switch}')
 
     def match(self, n=1):
         """
@@ -157,11 +166,11 @@ class AffineScoreModel(ScoreModel):
         :param n: Number of mismatched bases.
         """
 
-        return -self.score_mismatch * n
+        return self.score_mismatch * n
 
     def gap(self, n=1):
         """
-        Score gap (insertion or deletion). Compute all affine aligment gap scores and return the lowest.
+        Score gap (insertion or deletion). Compute all affine alignment gap scores and return the lowest penalty.
 
         :param n: Size of gap.
         """
@@ -169,17 +178,25 @@ class AffineScoreModel(ScoreModel):
         if n == 0:
             return 0
 
-        return - np.min(
+        return np.max(
             [
                 gap_open + (gap_extend * n)
                     for gap_open, gap_extend in self.score_affine_gap
             ]
         )
 
-    def __repr__(self):
-        gap_str = ';'.join([f'{gap_open}:{gap_extend}' for gap_open, gap_extend in self.affine_gap])
+    def template_switch(self):
+        """
+        Score a template switch.
 
-        return f'AffineScoreModel(match={self.match},mismatch={self.mismatch},gap={gap_str},ts={abs(self.template_switch)})'
+        :return: Template switch score.
+        """
+        return self.score_template_switch
+
+    def __repr__(self):
+        gap_str = ';'.join([f'{abs(gap_open)}:{abs(gap_extend)}' for gap_open, gap_extend in self.score_affine_gap])
+
+        return f'AffineScoreModel(match={self.score_match},mismatch={-self.score_mismatch},gap={gap_str},ts={-self.score_template_switch})'
 
 
 def get_score_model(param_string=None):

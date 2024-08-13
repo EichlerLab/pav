@@ -622,8 +622,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
     :param tier: Alignment tier for these records.
     :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
         a score model object. If `None`, the default score model is used. An alignment score is computed by summing
-        the score of each CIGAR operation against this model (match, mismatch, and gap) to create the "CIGAR_SCORE"
-        column.
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to create the "SCORE" column.
 
     :return: BED file of alignment records.
     """
@@ -714,7 +713,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
                         'RG', 'AO',
                         'MAPQ',
                         'REV', 'FLAGS', 'HAP',
-                        'CIGAR', 'CIGAR_SCORE'
+                        'CIGAR', 'SCORE'
                     ]
                 )
             )
@@ -732,7 +731,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
                 'RG', 'AO',
                 'MAPQ',
                 'REV', 'FLAGS', 'HAP',
-                'CIGAR', 'CIGAR_SCORE'
+                'CIGAR', 'SCORE'
             ]
         )
 

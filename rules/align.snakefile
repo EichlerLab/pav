@@ -306,7 +306,7 @@ rule align_get_bed:
                     'RG', 'AO',
                     'MAPQ',
                     'REV', 'FLAGS', 'HAP',
-                    'CIGAR', 'CIGAR_SCORE',
+                    'CIGAR', 'SCORE',
                     'CALL_BATCH',
                     'TRIM_REF_L', 'TRIM_REF_R', 'TRIM_QRY_L', 'TRIM_QRY_R'
                 ]

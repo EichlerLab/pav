@@ -17,18 +17,18 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 
 ### Base PAV
 
-* config_file [config.json; string]: The runtime configuration file. This option must be supplied to PAV as a
+* config_file ["config.json"; string]: The runtime configuration file. This option must be supplied to PAV as a
   command-line parameter to have an effect (PAV reads the config file when it starts). By default, PAV searches for
   `config.json` in the run directory (not the PAV install directory where `Snakefile` is found). Using this option is not
   recommended, but it could be used to run different profiles (e.g. a different number of alignment threads). Changing
   some options after PAV has partially run, such as numbers of batches (see below) may cause variant call dropout
   or failures. 
-* env_source [setenv.sh; string]: Source this file before running shell commands. If this file is present, it is sourced by
+* env_source ["setenv.sh"; string]: Source this file before running shell commands. If this file is present, it is sourced by
   prepending to all "shell" directives in Snakemake by calling: `shell.prefix('set -euo pipefail; source setenv.sh; ')`.
   Note that all shell commands evoke BASH strict mode regardless of the `setenv.sh`
   (See http://redsymbol.net/articles/unofficial-bash-strict-mode/).
-* assembly_table [assemblies.tsv; string]: Assembly table file name (see "Assembly Input").
-* reference [NA; string]: Location of the reference FASTA file, which may be uncompressed or gzip compressed. This
+* assembly_table ["assemblies.tsv"; string]: Assembly table file name (see "Assembly Input").
+* reference [<no default>; string]: Location of the reference FASTA file, which may be uncompressed or gzip compressed. This
   parameter is required for all PAV runs.
 
 ### Alignments
@@ -39,9 +39,9 @@ smaller fragments allowing for better SV resolution, particularly complex SVs.
 
 * min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
   bases the query sequence covers in one alignment record.
-* aligner_tierX [minimap2; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
+* aligner_tierX ["minimap2"; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
   "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
-* aligner [minimap2; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
+* aligner ["minimap2"; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
 * align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
   * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
   * lra tier 1 default: "" (default LRA parameters)
@@ -90,7 +90,7 @@ Signatures of small inversions include:
 1. Clusters of SNVs.
 1. Clusters of indels.
 
-* inv_sig_filter [svindel; string]: Determine which inversion signature patterns PAV should try to resolve into an
+* inv_sig_filter ["svindel"; string]: Determine which inversion signature patterns PAV should try to resolve into an
   inversion call. See the four recognized signatures above.
     * single_cluster: Accept signatures from only clustered SNVs or clustered indels. This will cause PAV to search
       sites and maximize sensitivity for small inversions. There is a steep performance cost, and possibly a
@@ -183,15 +183,16 @@ is extended up to infinity (e.g. a 1 Mbp inversion in the example above would co
 Recall that PAV will fill actual density values if it sees a state change or a large change in state, so large values
 for the second parameter will give diminishing returns.
 
+
 ## Summary of all parameters
 
 ### Alignment
 
 * min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
   bases the query sequence covers in one alignment record.
-* aligner_tierX [minimap2; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
+* aligner_tierX ["minimap2"; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
   "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
-* aligner [minimap2; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
+* aligner ["minimap2"; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
 * align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
   * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
   * lra tier 1 default: "" (default LRA parameters)
@@ -199,17 +200,34 @@ for the second parameter will give diminishing returns.
   * If LRA is used for tier 2 (i.e. "aligner_tier2" = "lra"), then "align_params_tier2" must be defined.
 * minimap2_params: Alias for "align_params_tier1", but only if the tier 1 aligner is minimap2. Allows PAV to read 
   configurations from earlier versions of PAV.
+* align_score_model ["affine::match=2,mismatch=4,gap=4:2;24:1"; string"]: A model for scoring alignment records.
+  * Alignment records are scored by summing scores across a whole alignment record (i.e. sum of matches, mismatches,
+  * The first parameter before "::" is the model, "affine" is the default if omitted ("::" and everything before is
+    optional). Currently, "affine" is the only supported model.
+  * Affine parameters (minimap2 defaults):
+    * match, mismatch (float): Scores for aligned bases if they match or do not match (respectively)
+    * gap: A list of affine gap parameters separated by ";". Each element is the gap-open and gap-extend penalties
+      separated by ":". Each gap will be scored by each pair of gap-open/extend penalties and the lowest absolute value
+      (least penalty) is chosen.
+    * An optional template-switch penalty may follow ("ts=..."). Applied to complex rearrangements for each template
+      switch.
+    * Values may have attribute keywords preceding (e.g. "match="), or they may be omitted. If omitted, they are read
+      in positional order, match, mismatch, gap, then ts. For example, "match=2,mismatch=4,gap=4:2;24:1" is the same as
+      "2,4,4:2;24:1"). Positional and named keywords may be mixed, but positional must come first.
+    * Values may be positive or negative, PAV will always give match a positive value and the remaining scores a
+      negative value (e.g. it is not possible for mismatches to increase the score whether it is given as "4" or "-4").
+
 
 ### Call
 
-* merge_ins [param merge_svindel]: Override default merging parameters for SV/indel insertions (INS).
-* merge_del [param merge_svindel]: Override default merging parameters for SV/indel deletions (DEL).
-* merge_inv [param merge_svindel]: Override default merging parameters for SV/indel inversions (INV). 
-* merge_svindel [nr::exact:ro(0.5):szro(0.5,200):match]: Override default merging parameters for INS, DEL, INV
-* merge_snv [nrsnv:exact]: Override default merging parameters for SNVs
-* inv_min [300]: Minimum inversion size.
-* inv_max [2000000]: Maximum inversion size.
-* inv_inner ["filter_core"]: Controls how variants within inversions are filtered. Balanced inversions often generate
+* merge_ins [see param merge_svindel; string]: Override default merging parameters for SV/indel insertions (INS).
+* merge_del [see param merge_svindel; string]: Override default merging parameters for SV/indel deletions (DEL).
+* merge_inv [see param merge_svindel; string]: Override default merging parameters for SV/indel inversions (INV). 
+* merge_svindel ["nr::exact:ro(0.5):szro(0.5,200):match"; string]: Override default merging parameters for INS, DEL, INV
+* merge_snv ["nrsnv:exact"; string]: Override default merging parameters for SNVs
+* inv_min [300; int]: Minimum inversion size.
+* inv_max [2000000; int]: Maximum inversion size.
+* inv_inner ["filter_core"; string]: Controls how variants within inversions are filtered. Balanced inversions often generate
   false variant calls from alignment artifacts (false SNVs, indels, and SVs), especially in the uniquely-inverted core
   (between inverted repeats). The default value "filter_core" drops all variants in the uniquely-inverted center of
   inversion calls if the inversion was identified by flagging the site on patterns of false variant calls (not applied
@@ -221,14 +239,14 @@ for the second parameter will give diminishing returns.
   of poor alignments around inversion breakpoints. This parameter is ignored if "redundant_callset" is set.
 
 ### Call - INV
-* inv_k_size [31]: K-mer size for inversion density.
-* inv_region_limit [None]: Before an inversion is resolved, it is comes from a region with inversion signatures. If the
+* inv_k_size [31; int]: K-mer size for inversion density.
+* inv_region_limit [None; int]: Before an inversion is resolved, it is comes from a region with inversion signatures. If the
   region exceeds this size, then stop searching for an inversion.
-* inv_min_expand [1]: Expand the search region up to this many times when searching for an inversion and finding only
+* inv_min_expand [1; int]: Expand the search region up to this many times when searching for an inversion and finding only
   forward-oriented k-mers.
-* inv_sig_merge_flank [500]: When searching for inversion signatures, merge windows within this distance.
-* inv_sig_batch_count [60]: Split inversion signature regions into this many batches. Each batch is resolved in a separate job.
-* inv_sig_filter [svindel; string]: Determine which inversion signature patterns PAV should try to resolve into an
+* inv_sig_merge_flank [500; int]: When searching for inversion signatures, merge windows within this distance.
+* inv_sig_batch_count [60; int]: Split inversion signature regions into this many batches. Each batch is resolved in a separate job.
+* inv_sig_filter ["svindel"; string]: Determine which inversion signature patterns PAV should try to resolve into an
   inversion call. See the four recognized signatures above.
     * single_cluster: Accept signatures from only clustered SNVs or clustered indels. This will cause PAV to search
       sites and maximize sensitivity for small inversions. There is a steep performance cost, and possibly a
@@ -251,6 +269,11 @@ for the second parameter will give diminishing returns.
   site.
 
 ### Call - Large SV
-* inv_k_size [31]: K-mer size for inversion density.
-* inv_region_limit [None]
-* lg_batch_count [10]
+* min_anchor_score ["1000bp"; string, int, float]: Minimum score of alignment records to be an anchor. Each complex variant (CPX) is
+  anchored on both sides by an alignment record and may have one or more aligned or unaligned segments between the
+  anchors. For a CPX variant to be called, both anchors must have a score of this or greater. See parameter
+  "align_score_model" for information about how scores are computed.
+  * An explicit value may be given or a string followed by "bp". If a string followed by "bp" is given, the score is
+    computed as the number of bases perfectly aligned (i.e. "Xbp" would be computed as "X * match" where "match" is the
+    score for matched bases defined in align_score_model). With the "bp" suffix, the anchor quality scales with the
+    alignment scores.

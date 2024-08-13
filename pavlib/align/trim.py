@@ -25,8 +25,7 @@ def trim_alignments(df, qry_fai, min_trim_qry_len=1, match_qry=False, mode='both
         one alignment (mode = "ref"), or both (mode = "both"). If None, assume "both".
     :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
         a score model object. If `None`, the default score model is used. An alignment score is computed by summing
-        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
-        column.
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "SCORE" column.
 
 
     :return: Trimmed alignments as an alignment DataFrame. Same format as `df` with columns added describing the
@@ -68,7 +67,7 @@ def trim_alignments(df, qry_fai, min_trim_qry_len=1, match_qry=False, mode='both
     if do_trim_qry:
 
         # Sort by alignment lengths in query space
-        df = df.sort_values(['QRY_ID', 'CIGAR_SCORE'], ascending=(True, False)).reset_index(drop=True)
+        df = df.sort_values(['QRY_ID', 'SCORE'], ascending=(True, False)).reset_index(drop=True)
 
         # df = df.loc[
         #     pd.concat(
@@ -274,7 +273,7 @@ def trim_alignments(df, qry_fai, min_trim_qry_len=1, match_qry=False, mode='both
     if do_trim_ref:
 
         # Sort by alignment length in reference space
-        df = df.sort_values(['#CHROM', 'CIGAR_SCORE'], ascending=(True, False)).reset_index(drop=True)
+        df = df.sort_values(['#CHROM', 'SCORE'], ascending=(True, False)).reset_index(drop=True)
 
         # df = df.loc[
         #     pd.concat(
@@ -405,8 +404,7 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         end (alignment start).
     :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
         a score model object. If `None`, the default score model is used. An alignment score is computed by summing
-        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
-        column.
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "SCORE" column.
 
     :return: A tuple of modified `record_l` and 'record_r`.
     """
@@ -621,10 +619,10 @@ def trim_alignment_record(record_l, record_r, match_coord, rev_l=True, rev_r=Fal
         cigar_r_mod = cigar_r_mod[::-1]
 
     record_l_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_l_mod])
-    record_l_mod['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar_l_mod)
+    record_l_mod['SCORE'] = score_model.score_cigar_tuples(cigar_l_mod)
 
     record_r_mod['CIGAR'] = ''.join([str(cigar_len) + cigar_op for cigar_len, cigar_op in cigar_r_mod])
-    record_r_mod['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar_r_mod)
+    record_r_mod['SCORE'] = score_model.score_cigar_tuples(cigar_r_mod)
 
     # Return trimmed records
     return record_l_mod, record_r_mod
@@ -954,8 +952,7 @@ def truncate_alignment_record(record, overlap_bp, trunc_side, score_model=None):
     :param trunc_side: Trim from this side of the record. Valid values are "l" for left side and "r" for right side.
     :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
         a score model object. If `None`, the default score model is used. An alignment score is computed by summing
-        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "CIGAR_SCORE"
-        column.
+        the score of each CIGAR operation against this model (match, mismatch, and gap) to update the "SCORE" column.
 
     :return: A modified alignment record or None if the alignment was completely truncated.
     """
@@ -1086,7 +1083,7 @@ def truncate_alignment_record(record, overlap_bp, trunc_side, score_model=None):
     else:
         record['QRY_POS'] += cut_bp_qry
 
-    record['CIGAR_SCORE'] = score_model.score_cigar_tuples(cigar)
+    record['SCORE'] = score_model.score_cigar_tuples(cigar)
 
     return record
 
