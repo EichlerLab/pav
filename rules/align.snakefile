@@ -374,7 +374,7 @@ rule align_map:
         sam=temp('temp/{asm_name}/align/t{tier}_none/align_qry_{hap}.sam.gz')
     wildcard_constraints:
         tier=r'[12]'
-    threads: 24
+    threads: 4
     run:
 
         # Get alignment command

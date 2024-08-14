@@ -540,6 +540,9 @@ class ComplexVariant(Variant):
 
         # Null variant (for creating table headers when no variants are found)
         if interval is None:
+            self.struct_qry = None
+            self.struct_ref = None
+
             return
 
         # Must consume query bases
@@ -573,6 +576,8 @@ class ComplexVariant(Variant):
             self.struct_qry = None
             self.struct_ref = None
 
+            return
+
         # Get reference trace
         if self.df_ref_trace is None:
             self.df_ref_trace = get_reference_trace(self.interval)
@@ -600,6 +605,18 @@ class ComplexVariant(Variant):
 
 
 def get_reference_trace(interval):
+    """
+    Get a table representing the trace across the reference locus for this SV. This only covers the locus of the SV
+    and omits distal template switches.
+
+    In some cases, a complex SV has no reference context. If there is a clean insertion site (no deleted or duplciated
+    bases at the SV site), but the SV is templated from multiple locations (or contains templated and untemplated
+    insertions). In these cases, an empty table is returned.
+
+    :param interval: Interval to generate a reference trace for.
+
+    :return: A reference trace table. Has no rows if there is no reference context at the SV site.
+    """
 
     # Set local template switch boundaries
     # Distance from reference positions (pos & end) must be no more half of:
@@ -638,7 +655,7 @@ def get_reference_trace(interval):
     df_depth = df_depth.loc[
         (df_depth['#CHROM'] == interval.ref_region.chrom) &
         (df_depth['END'] - df_depth['POS'] > 0)
-    ]
+    ].copy()
 
     df_depth['INDEX'] = df_depth['INDEX'].fillna('').astype(str).apply(lambda val: val.strip())
 
@@ -648,10 +665,10 @@ def get_reference_trace(interval):
         str(interval.df_segment.iloc[-1]['INDEX'])
     }
 
-    while df_depth.iloc[-1]['INDEX'] in anchor_index_set and df_depth.iloc[-1]['DEPTH'] == 1:
+    while df_depth.shape[0] > 0 and df_depth.iloc[-1]['INDEX'] in anchor_index_set and df_depth.iloc[-1]['DEPTH'] == 1:
         df_depth = df_depth.iloc[:-1]
 
-    while df_depth.iloc[0]['INDEX'] in anchor_index_set and df_depth.iloc[0]['DEPTH'] == 1:
+    while df_depth.shape[0] > 0 and df_depth.iloc[0]['INDEX'] in anchor_index_set and df_depth.iloc[0]['DEPTH'] == 1:
         df_depth = df_depth.iloc[1:]
 
     # Make reference context
@@ -718,6 +735,15 @@ def get_reference_trace(interval):
             ], axis=0)
         )
 
+    if len(df_ref_trace_list) == 0:
+        return pd.DataFrame(
+            [],
+            columns=[
+                '#CHROM', 'POS', 'END', 'DEPTH', 'QRY_ID', 'INDEX',
+                'TYPE', 'LEN', 'FWD_COUNT', 'REV_COUNT'
+            ]
+        )
+
     df_ref_trace = pd.concat(df_ref_trace_list, axis=1).T
 
     return df_ref_trace
@@ -770,5 +796,8 @@ def get_ref_struct_str(df_ref_trace):
 
     :return: A string describing the reference structure.
     """
+
+    if df_ref_trace.shape[0] == 0:
+        return 'INS'
 
     return ':'.join(df_ref_trace.apply(lambda row: f'{row["TYPE"]}({row["LEN"]})', axis=1))
