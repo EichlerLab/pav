@@ -18,7 +18,7 @@ default-resources:
 set-threads:
   - align_map=4
   - call_inv_batch=4
-  - call_lg_discover=12
+#  - call_lg_discover=12
   - call_merge_haplotypes_batch=12
 
 set-resources:

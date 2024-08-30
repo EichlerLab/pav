@@ -4,6 +4,7 @@ import collections
 import numpy as np
 
 import pavlib
+import svpoplib
 
 DEFAULT_MIN_ANCHOR_SCORE = 1000
 
@@ -20,6 +21,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
     """
 
     variant_call_list = list()
+    variant_id_set = set()
 
     for query_id in caller_resources.df_align_qry['QRY_ID'].unique():
         if verbose:
@@ -174,4 +176,10 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
 
         variant_call_list.extend([sv_dict[node_interval] for node_interval in optimal_interval_list])
 
+    # Version variant IDs
+    for variant_call in variant_call_list:
+        variant_call.variant_id = svpoplib.variant.version_id_name(variant_call.variant_id, variant_id_set)
+        variant_id_set.add(variant_call.variant_id)
+
+    # Return list
     return variant_call_list

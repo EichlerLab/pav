@@ -47,7 +47,7 @@ rule call_lg_discover:
     params:
         align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL),
         min_anchor_score=lambda wildcards: get_config(wildcards, 'min_anchor_score', "1000bp")
-    threads: 12
+    #threads: 12
     run:
 
         # Get score model
@@ -148,6 +148,11 @@ rule call_lg_discover:
         else:
             df_cpx = pd.DataFrame([], columns=pavlib.lgsv.variant.ComplexVariant(None, None).row().index)
 
+        df_ins.sort_values(['#CHROM', 'POS', 'END', 'ID', 'QRY_REGION'], inplace=True)
+        df_del.sort_values(['#CHROM', 'POS', 'END', 'ID', 'QRY_REGION'], inplace=True)
+        df_inv.sort_values(['#CHROM', 'POS', 'END', 'ID', 'QRY_REGION'], inplace=True)
+        df_cpx.sort_values(['#CHROM', 'POS', 'END', 'ID', 'QRY_REGION'], inplace=True)
+
         # Write variant tables
         df_ins.to_csv(output.bed_ins, sep='\t', index=False, compression='gzip')
         df_del.to_csv(output.bed_del, sep='\t', index=False, compression='gzip')
@@ -165,7 +170,11 @@ rule call_lg_discover:
             df_segment = var.interval.df_segment.copy()
             df_segment.insert(3, 'ID', var.variant_id)
 
+            df_reftrace = var.df_ref_trace.copy()
+            df_reftrace.insert(3, 'ID', var.variant_id)
+
             df_segment_list.append(df_segment)
+            df_reftrace_list.append(df_reftrace)
 
         if len(df_segment_list) > 0:
             df_segment = pd.concat(df_segment_list, axis=0)
