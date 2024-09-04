@@ -272,7 +272,7 @@ class InsertionVariant(Variant):
 
         self.score_variant = \
             self.caller_resources.score_model.gap(self.svlen) + \
-            (self.caller_resources.score_model.gap(len_ref) if len_ref > 0 else 0.0)
+            (self.caller_resources.score_model.gap(abs(len_ref)) if abs(len_ref) > 0 else 0.0)
 
         self.pos = self.interval.qry_region.pos
         self.end = self.pos + 1
@@ -602,6 +602,25 @@ class ComplexVariant(Variant):
                 'ANCHOR_SCORE_MIN', 'ANCHOR_SCORE_MAX'
             ]
         )
+
+
+class NullVariant(Variant):
+    """
+    Insertion variant call.
+    """
+
+    # Simple insertion (INS = unaligned or aligned to another site)
+    # INS:                           -------------------
+    #                                        ||
+    # Qry: --->--------->---------->---------> --------->-------->--------->--------->-----
+    # Ref: --------------------------------------------------------------------------------
+
+    def __init__(self):
+        Variant.__init__(self, None, None)
+
+
+    def row_impl(self):
+        raise RuntimeError('Null variant does not have a row')
 
 
 def get_reference_trace(interval):

@@ -193,3 +193,39 @@ class SeqCache:
             self.is_rev = is_rev
 
         return self.seq
+
+def dot_graph_writer(out_file, df_align, chain_container, sv_dict, graph_name='Unnamed_Graph', forcelabels=True):
+
+    # Header
+    out_file.write(f'graph {graph_name} {{\n')
+
+    # Attributes
+    if forcelabels:
+        out_file.write('    forcelabels=true;\n')
+
+    out_file.write('    overlap=false;\n')
+
+    # Add nodes
+    for index, row in df_align.iterrows():
+        out_file.write(f'    n{index} [label="{index} ({row["INDEX"]}) - {row["#CHROM"]}:{row["POS"]}-{row["END"]} {"-" if row["REV"] else "+"} t{row["TIER"]} s={int(row["SCORE"])}"]\n')
+
+    # Add candidate edges
+    for start_index, end_index in chain_container.chain_dict.keys():
+
+        if sv_dict[start_index, end_index].is_null():
+            var_name = 'NullVar'
+        else:
+            var_name = sv_dict[start_index, end_index].variant_id
+
+        out_file.write(f'    n{start_index} -- n{end_index} [label="{var_name}", penwidth=2, color="black"]\n')
+
+    # Add adjacent edges (not anchor candidates)
+    for start_index in range(df_align.shape[0] - 1):
+        end_index = start_index + 1
+
+        if (start_index, end_index) not in chain_container.chain_dict.keys():
+            out_file.write(f'    n{start_index} -- n{end_index} [penwidth=1, color="gray33"]\n')
+
+    # Done
+    out_file.write('}\n')
+
