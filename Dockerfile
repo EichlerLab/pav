@@ -63,9 +63,10 @@ RUN pip3 install \
     pandas \
     pysam \
     scipy \
-    snakemake==7.20.0 \
-    pulp==2.7.0 \
-    drmaa
+    snakemake \
+    pulp \
+    drmaa \
+    joblib
 
 # Copy from build
 COPY --from=build_deps ${PAV_BASE} ${PAV_BASE}

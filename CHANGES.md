@@ -1,6 +1,10 @@
 # PAV changes
 
-## 2.4.0.1 [To be released as 3.0]
+
+
+## 2.4.1
+
+* Final VCFs write to vcf/merged
 * Arbitrary number of named haplotypes and new assembly table format (old format supported).
 * No support for "asm_pattern" in config (was removed before this version but was left in documentation).
 * Removed "chrom_cluster" from configuration options.
@@ -12,6 +16,8 @@
 * Added ".fna" and ".fnq" to recognized file types.
 * Moving to Snakemake profile. Removed threading parameters from config (map_threads, inv_threads_lg, inv_threads)
   Configure in the profile instead of parameters.
+* Added joblib to container dependencies, removed Snakemake version restriction
+* VCF default rule updates
 
 ## 2.3.4
 * Adding "COMPOUND" column for filtered variants annotating which variants it was nested inside of (e.g. small variant

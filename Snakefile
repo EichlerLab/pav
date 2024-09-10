@@ -95,7 +95,7 @@ localrules: pav_all
 # Make all files for all samples.
 rule pav_all:
     input:
-        bed=expand(VCF_PATTERN, asm_name=ASM_TABLE.index)
+        bed=expand('vcf/merged/{asm_name}.vcf.gz', asm_name=ASM_TABLE.index)
 
 ### Includes ###
 
