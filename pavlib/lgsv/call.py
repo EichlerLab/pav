@@ -9,14 +9,14 @@ import svpoplib
 DEFAULT_MIN_ANCHOR_SCORE = 1000
 
 
-def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE, verbose=False, dot_filename=None):
+def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE, verbose=False, dot_basename=None):
     """
     Create a list of variant calls from alignment table.
 
     :param caller_resources: Caller resources.
     :param min_anchor_score: Minimum allowed score for an alignment segment to anchor a variant call.
     :param verbose: Print progress.
-    :param dot_filename: Name of dot graph file to write if not None. File is gzipped if ends with the filename ends
+    :param dot_basename: Name of dot graph file to write if not None. File is gzipped if ends with the filename ends
         with '.gz'.
 
     :return: A list of variant call objects.
@@ -33,7 +33,9 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
             caller_resources.df_align_qry['QRY_ID'] == query_id
         ].reset_index(drop=True)
 
-        chain_container = pavlib.lgsv.chain.AnchorChainContainer()
+        #chain_container = pavlib.lgsv.chain.AnchorChainContainer()
+
+        chain_set = set()
 
         start_index = 0
         last_index = df_align.shape[0]
@@ -57,7 +59,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
                 if df_align.loc[end_index]['INDEX'] in qryref_index_set and pavlib.lgsv.chain.can_anchor(
                         start_row, df_align.loc[end_index], caller_resources.score_model, min_anchor_score
                 ):
-                    chain_container.add_anchor(start_index, end_index)
+                    chain_set.add((start_index, end_index))
 
                 end_index += 1
 
@@ -71,10 +73,8 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
         sv_dict = dict()  # Key: interval range (tuple), value=SV object
         min_sv_score = 0
 
-        for chain_node in chain_container.chain_dict.values():
-
-            if (chain_node.start_index, chain_node.end_index) in sv_dict:
-                raise RuntimeError(f'Duplicated chain entries for index: {chain_node}')
+        for start_index, end_index in chain_set:
+            chain_node = pavlib.lgsv.chain.AnchorChainNode(start_index, end_index)
 
             #
             # SV call fundamentals
@@ -116,7 +116,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
                 min_sv_score = min(min_sv_score, variant_call.score_variant)
 
             # Complete candidate variant call
-            sv_dict[(chain_node.start_index, chain_node.end_index)] = variant_call
+            sv_dict[(start_index, end_index)] = variant_call
 
 
         #
@@ -125,12 +125,15 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
 
         # Initialize Bellman-Ford
         top_score = np.full(df_align.shape[0], -np.inf)   # Score, top-sorted graph
-        last_aligned = np.full(df_align.shape[0], False)  # True if the last node was aligned
         top_tb = np.full(df_align.shape[0], -2)           # Traceback (points to parent node with the best score), top-sorted graph
+        last_aligned = np.full(df_align.shape[0], False)  # True if the last node was aligned
 
-        for source_node in chain_container.source_node_list:
-            top_score[source_node.start_index] = 0
-            top_tb[source_node.start_index] = -1  # Points to root node
+        top_score[0] = 0
+        top_tb[0] = -1
+
+        # for source_node in chain_container.source_node_list:
+        #     top_score[source_node.start_index] = 0
+        #     top_tb[source_node.start_index] = -1  # Points to root node
 
         # if np.isneginf(top_score[0]):
         #     #raise RuntimeError('Root node does not point to node 0')
@@ -140,7 +143,8 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
         # Create a graph by nodes (anchor graph nodes are scored edges)
         node_link = collections.defaultdict(set)
 
-        for start_index, end_index in chain_container.chain_dict.keys():
+        #for start_index, end_index in chain_container.chain_dict.keys():
+        for start_index, end_index in chain_set:
             node_link[start_index].add(end_index)
 
         for start_index in range(df_align.shape[0] - 1):
@@ -151,7 +155,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
             base_score = top_score[start_index]
 
             if np.isneginf(base_score):  # Unreachable
-                continue
+                raise RuntimeError(f'Unreachable node at index {start_index}')
 
             for end_index in sorted(node_link[start_index]):
                 sv_score = sv_dict[start_index, end_index].score_variant \
@@ -161,9 +165,7 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
                     score = base_score + \
                             sv_score + \
                             df_align.loc[end_index]['SCORE'] + \
-                            df_align.loc[start_index]['SCORE'] if not last_aligned[start_index] else 0  # Add anchor score for left anchor if not in the chain
-                    #caller_resources.score_model.gap(df_align.loc[end_index, 'QRY_POS'] - df_align.loc[start_index, 'QRY_END'])  # Unaligned query bases between records
-                    #sv_score = min_sv_score * (end_index - start_index)
+                            (df_align.loc[start_index]['SCORE'] if not last_aligned[start_index] else 0)  # Add anchor score for left anchor if not in the chain
                 else:
                     score = base_score  # Skip over null variants
 
@@ -176,22 +178,24 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
                     top_tb[end_index] = start_index
                     last_aligned[end_index] = not np.isneginf(sv_score)
 
-        # Trace back through scored paths
-        sink_node_list = sorted({
-            chain_node.end_index
-                for chain_node in chain_container.chain_dict.values()
-                    if len(chain_node.next_node_list) == 0
-        })
+        # # Trace back through scored paths
+        # sink_node_list = sorted({
+        #     chain_node.end_index
+        #         for chain_node in chain_container.chain_dict.values()
+        #             if len(chain_node.next_node_list) == 0
+        # })
+        #
+        # if len(sink_node_list) == 0:
+        #     continue
 
-        if len(sink_node_list) == 0:
-            continue
+        last_node = df_align.shape[0] - 1
 
-        max_score_index = np.argmax([top_score[i] for i in sink_node_list])
-        max_sink_node = sink_node_list[max_score_index]
-
+        # max_score_index = np.argmax([top_score[i] for i in sink_node_list])
+        # max_sink_node = sink_node_list[max_score_index]
+        #
         optimal_interval_list = list()
-
-        last_node = max_sink_node
+        #
+        # last_node = max_sink_node
 
         while True:
             first_node = top_tb[last_node]
@@ -216,10 +220,12 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
         variant_call_list.extend(new_var_list)
 
         # Write dot file
-        if not dot_filename is None:
+        if dot_basename is not None:
+            dot_filename = dot_basename + f'{query_id}.dot.gz'
+
             with pavlib.io.PlainOrGzFile(dot_filename, 'wt') as out_file:
                 pavlib.lgsv.util.dot_graph_writer(
-                    out_file, df_align, chain_container, sv_dict, graph_name=f'"{query_id}"', forcelabels=True
+                    out_file, df_align, chain_set, optimal_interval_list, sv_dict, graph_name=f'"{query_id}"', forcelabels=True
                 )
 
     # Return list

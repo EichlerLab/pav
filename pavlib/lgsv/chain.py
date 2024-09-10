@@ -35,56 +35,56 @@ class AnchorChainNode:
         return len(self.next_node_list)
 
 
-class AnchorChainContainer:
-    """
-    A container of anchor chains. Allows chains to be constructed
-    """
-
-    def __init__(self):
-
-        # Chain end list. Key: end_index. Value: list of anchor chain nodes with "end_index" equal to the key index.
-        # Needed for connecting new nodes to the chain graphs ending on new node start indexes.
-        self.chain_end_list = collections.defaultdict(list)
-
-        # List of nodes with no parents.
-        self.source_node_list = list()
-
-        # A dictionary of index of all anchor chains. Key: (start_index, end_index). Value: Anchor chain.
-        self.chain_dict = dict()
-
-    def add_anchor(self, start_index, end_index):
-        """
-        Add a pair of anchors to this graph.
-
-        :param start_index: First aligned segment.
-        :param end_index: Last aligned segment.
-        """
-
-        if start_index >= end_index:
-            raise RuntimeError(f'end_index ({end_index}) must be greater that start_index ({start_index})')
-
-        # Skip if this anchor already exists
-        if (start_index, end_index) in self.chain_dict:
-            return
-
-        # Create node
-        new_node = AnchorChainNode(start_index, end_index)
-
-        self.chain_dict[(start_index, end_index)] = new_node
-
-        # Find parent anchors
-        parent_node_list = self.chain_end_list[start_index]
-
-        if len(parent_node_list) > 0:
-            for parent_node in parent_node_list:
-                parent_node.next_node_list.append(new_node)
-
-        else:
-            self.source_node_list.append(new_node)
-
-        # Append to chain end list
-        self.chain_end_list[end_index].append(new_node)
-
+# class AnchorChainContainer:
+#     """
+#     A container of anchor chains. Allows chains to be constructed
+#     """
+#
+#     def __init__(self):
+#
+#         # Chain end list. Key: end_index. Value: list of anchor chain nodes with "end_index" equal to the key index.
+#         # Needed for connecting new nodes to the chain graphs ending on new node start indexes.
+#         self.chain_end_list = collections.defaultdict(list)
+#
+#         # List of nodes with no parents.
+#         self.source_node_list = list()
+#
+#         # A dictionary of index of all anchor chains. Key: (start_index, end_index). Value: Anchor chain.
+#         self.chain_dict = dict()
+#
+#     def add_anchor(self, start_index, end_index):
+#         """
+#         Add a pair of anchors to this graph.
+#
+#         :param start_index: First aligned segment.
+#         :param end_index: Last aligned segment.
+#         """
+#
+#         if start_index >= end_index:
+#             raise RuntimeError(f'end_index ({end_index}) must be greater that start_index ({start_index})')
+#
+#         # Skip if this anchor already exists
+#         if (start_index, end_index) in self.chain_dict:
+#             return
+#
+#         # Create node
+#         new_node = AnchorChainNode(start_index, end_index)
+#
+#         self.chain_dict[(start_index, end_index)] = new_node
+#
+#         # Find parent anchors
+#         parent_node_list = self.chain_end_list[start_index]
+#
+#         if len(parent_node_list) > 0:
+#             for parent_node in parent_node_list:
+#                 parent_node.next_node_list.append(new_node)
+#
+#         else:
+#             self.source_node_list.append(new_node)
+#
+#         # Append to chain end list
+#         self.chain_end_list[end_index].append(new_node)
+#
 
 def can_anchor(row_a, row_b, score_model, min_score=1000, gap_scale=1):
     """

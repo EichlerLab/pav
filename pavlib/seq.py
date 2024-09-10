@@ -16,6 +16,8 @@ import shutil
 import svpoplib
 import kanapy
 
+import pavlib
+
 
 class Region:
     """
@@ -329,7 +331,7 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
     """
     Get sequence from an indexed FASTA file. FASTA must have ".fai" index.
 
-    :param region: Region object to extract a region, or a string with the recrord ID to extract a whole record.
+    :param region: Region object to extract a region, or a string with the record ID to extract a whole record.
     :param fa_file_name: FASTA file name.
     :param rev_compl: Reverse-complement sequence is `True`. If `None`, reverse-complement if `region.is_rev`.
 
@@ -358,3 +360,72 @@ def region_seq_fasta(region, fa_file_name, rev_compl=None):
                 return str(Bio.Seq.Seq(sequence).reverse_complement())
 
         return sequence
+
+def variant_seq_from_region(df, fa_file_name, region_col='QRY_REGION', strand_col='QRY_STRAND', id_col='ID', seq_upper=False):
+    """
+    Get sequence from an indexed FASTA file. FASTA must have ".fai" index.
+
+    :param df: Variant DataFrame.
+    :param fa_file_name: FASTA file name.
+    :param region_col: Region column name. If column is "-" or `True`, the sequence is reverse complemented. Must be
+        "+", "-", `True`, or `False`. The boolean values allow "IS_REV" column to be used where the sequence is on
+        the negative strand if `True`. If `None`, no reverse complementing is performed.
+    :param strand_col: Strand column name.
+    :param id_col: ID column name.
+    :param seq_upper: Upper-case sequences if `True` (removes soft-mask annotations in the sequence string).
+
+    :return: Iterator over Bio.Seq sequence objects with sequences in reference orientation.
+    """
+
+    if df is None:
+        raise RuntimeError('Variant DataFrame is missing')
+
+    fa_file_name = fa_file_name.strip() if fa_file_name is not None else None
+
+    if fa_file_name is None or len(fa_file_name) == 0:
+        raise RuntimeError('FASTA file name is missing')
+
+    if not os.path.isfile(fa_file_name):
+        raise RuntimeError(f'FASTA file does not exist or is not a regular file: {fa_file_name}')
+
+    if region_col not in df.columns:
+        raise RuntimeError(f'Region column not found in DataFrame: "{region_col}"')
+
+    if strand_col is not None and strand_col not in df.columns:
+        raise RuntimeError(f'Strand column not found in DataFrame: "{strand_col}"')
+
+    if id_col not in  df.columns:
+        raise RuntimeError(f'ID column not found in DataFrame: "{id_col}"')
+
+    n_blank = np.sum(df[id_col].apply(len) == 0)
+
+    if n_blank > 0:
+        raise RuntimeError(f'Found {n_blank} empty IDs in DataFrame: "{id_col}"')
+
+    dup_ids = sorted([id for id, count in collections.Counter(df[id_col]).items() if count > 1])
+
+    if dup_ids:
+        n_dup = len(dup_ids)
+        dup_ids = ', '.join(dup_ids[3:]) + (', ...' if n_dup > 3 else '')
+        raise RuntimeError(f'Found {n_dup} duplicate IDs in DataFrame: "{id_col}": {dup_ids}')
+
+    with pavlib.io.FastaReader(fa_file_name) as fa_file:
+
+        for index, row in df.iterrows():
+
+            region = region_from_string(row[region_col])
+
+            seq = Bio.Seq.Seq(fa_file.fetch(region.chrom, region.pos, region.end))
+
+            if seq_upper:
+                seq = seq.upper()
+
+            if strand_col is not None:
+                if row[strand_col] in {'-', True}:
+                    seq = seq.reverse_complement()
+                elif row[strand_col] not in {'+', True}:
+                    raise RuntimeError(f'Unrecognized strand in record {row[id_col]}: "{row[strand_col]}"')
+
+            yield Bio.SeqRecord.SeqRecord(
+                seq, id=row[id_col], description=''
+            )

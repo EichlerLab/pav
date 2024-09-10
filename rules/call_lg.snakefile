@@ -2,18 +2,16 @@
 Call alignment-truncating events (large SVs).
 """
 
-import collections
-import intervaltree
 import os
 import pandas as pd
 
 import pavlib
-import svpoplib
 
 global REF_FA
 global get_config
 
 global expand
+global shell
 global temp
 global ASM_TABLE
 
@@ -46,9 +44,18 @@ rule call_lg_discover:
         bed_cpx_ref=temp('temp/{asm_name}/lg_sv/t{tier}/reftrace_cpx_{hap}.bed.gz')
     params:
         align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL),
-        min_anchor_score=lambda wildcards: get_config(wildcards, 'min_anchor_score', "1000bp")
+        min_anchor_score=lambda wildcards: get_config(wildcards, 'min_anchor_score', "1000bp"),
+        lg_dot_graph=lambda wildcards: get_config(wildcards, 'lg_dot_graph', 'False')
     #threads: 12
     run:
+
+        # Set graph file output
+        if pavlib.util.as_bool(params.lg_dot_graph):
+            dot_basename = f'temp/{wildcards.asm_name}/lg_sv/t{wildcards.tier}/graph/lgsv_{wildcards.hap}_'
+            dot_dirname = os.path.dirname(dot_basename)
+            os.makedirs(dot_dirname, exist_ok=True)
+        else:
+            dot_basename = None
 
         # Get score model
         score_model = pavlib.align.score.get_score_model(params.align_score)
@@ -110,7 +117,7 @@ rule call_lg_discover:
         )
 
         # Call
-        lgsv_list = pavlib.lgsv.call.call_from_align(caller_resources, min_anchor_score=min_anchor_score)
+        lgsv_list = pavlib.lgsv.call.call_from_align(caller_resources, min_anchor_score=min_anchor_score, dot_basename=dot_basename)
 
         # Create tables
         df_list = {
@@ -192,3 +199,13 @@ rule call_lg_discover:
 
         df_segment.to_csv(output.bed_cpx_seg, sep='\t', index=False, compression='gzip')
         df_reftrace.to_csv(output.bed_cpx_ref, sep='\t', index=False, compression='gzip')
+
+        # Compress graph dot files
+        if dot_basename is not None:
+            dot_tar_filename = f'results/{wildcards.asm_name}/lg_sv/lgsv_graph_{wildcards.hap}_t{wildcards.tier}.tar'
+
+            os.makedirs(os.path.dirname(dot_tar_filename), exist_ok=True)
+
+            shell(
+                """tar -cf {dot_tar_filename} {dot_dirname}/*"""
+            )

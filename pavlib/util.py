@@ -26,6 +26,7 @@ def as_bool(val, fail_to_none=False):
     val = str(val).lower()
 
     if val in {'true', '1', 'yes', 't', 'y'}:
+
         return True
 
     if val in {'false', '0', 'no', 'f', 'n'}:
@@ -41,22 +42,43 @@ def region_merge(file_list, pad=500):
     """
     Merge regions from multiple BED files.
 
-    :param file_list: List of files to merge.
+    :param file_list: List of files to merge. Each element may be a string (filename) or a DataFrame (in-memory table
+        of alignments). Files with zero size are skipped.
     :param pad: Pad interval matches by this amount, but do not add it to the output intervals. Similar to bedtools
         merge "slop" parameter.
     """
 
-    # Read regions
-    df = pd.concat(
-        [
-            pd.read_csv(
-                file_name,
-                sep='\t',
-                usecols=('#CHROM', 'POS', 'END')
-            ) for file_name in file_list if os.stat(file_name).st_size > 0
-        ],
-        axis=0
-    ).sort_values(['#CHROM', 'POS', 'END'], ascending=[True, True, False]).reset_index(drop=True)
+    # Get BED list
+    bed_list = list()
+
+    for file_name in file_list:
+        if isinstance(file_name, str):
+            if os.stat(file_name).st_size > 0:  # Skip if file is empty
+                bed_list.append(
+                    pd.read_csv(
+                        file_name, sep='\t', usecols=('#CHROM', 'POS', 'END')
+                    )
+                )
+
+        elif isinstance(file_name, pd.DataFrame):
+            bed_list.append(file_name)
+
+        else:
+            raise RuntimeError(f'File name is not a string or a DataFrame: {file_name} (type "{type(file_name)}")')
+
+    df = pd.concat(bed_list, axis=0).sort_values(['#CHROM', 'POS', 'END'], ascending=[True, True, False]).reset_index(drop=True)
+
+    # # Read regions
+    # df = pd.concat(
+    #     [
+    #         pd.read_csv(
+    #             file_name,
+    #             sep='\t',
+    #             usecols=('#CHROM', 'POS', 'END')
+    #         ) for file_name in file_list if os.stat(file_name).st_size > 0
+    #     ],
+    #     axis=0
+    # ).sort_values(['#CHROM', 'POS', 'END'], ascending=[True, True, False]).reset_index(drop=True)
 
     # Merge with intervals
     df_list = list()

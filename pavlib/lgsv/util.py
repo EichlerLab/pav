@@ -194,7 +194,7 @@ class SeqCache:
 
         return self.seq
 
-def dot_graph_writer(out_file, df_align, chain_container, sv_dict, graph_name='Unnamed_Graph', forcelabels=True):
+def dot_graph_writer(out_file, df_align, chain_set, optimal_interval_list, sv_dict, graph_name='Unnamed_Graph', forcelabels=True, anchor_width=2.5):
 
     # Header
     out_file.write(f'graph {graph_name} {{\n')
@@ -205,26 +205,61 @@ def dot_graph_writer(out_file, df_align, chain_container, sv_dict, graph_name='U
 
     out_file.write('    overlap=false;\n')
 
+    # Anchor and interval sets
+    optimal_interval_set = set(optimal_interval_list)
+    variant_interval_set = set(sv_dict.keys())
+
+    optimal_anchor_set = {index for index_pair in optimal_interval_set for index in index_pair}
+    variant_anchor_set = {index for index_pair in sv_dict.keys() for index in index_pair}
+
+    # optimal_interval_set = set(optimal_interval_list)
+
     # Add nodes
     for index, row in df_align.iterrows():
-        out_file.write(f'    n{index} [label="{index} ({row["INDEX"]}) - {row["#CHROM"]}:{row["POS"]}-{row["END"]} {"-" if row["REV"] else "+"} t{row["TIER"]} s={int(row["SCORE"])}"]\n')
+
+        if index in optimal_anchor_set:
+            color = 'blue'
+        elif index in variant_anchor_set:
+            color = 'black'
+        else:
+            color = 'gray33'
+
+        width = anchor_width if index in variant_anchor_set else 1
+
+        out_file.write(f'    n{index} [label="{index} ({row["INDEX"]}) - {row["#CHROM"]}:{row["POS"]}-{row["END"]} {"-" if row["REV"] else "+"} t{row["TIER"]} s={row["SCORE"]}", penwidth={width}, color="{color}"]\n')
 
     # Add candidate edges
-    for start_index, end_index in chain_container.chain_dict.keys():
+    for start_index, end_index in chain_set:
 
-        if sv_dict[start_index, end_index].is_null():
+        if (start_index, end_index) in optimal_interval_set:
+            color = 'blue'
+        elif (start_index, end_index) in variant_interval_set:
+            color = 'black'
+        else:
+            color = 'gray33'
+
+        width = anchor_width if (start_index, end_index) in variant_interval_set else 1
+
+        if (start_index, end_index) not in sv_dict or sv_dict[start_index, end_index].is_null():
             var_name = 'NullVar'
         else:
             var_name = sv_dict[start_index, end_index].variant_id
 
-        out_file.write(f'    n{start_index} -- n{end_index} [label="{var_name}", penwidth=2, color="black"]\n')
+        out_file.write(f'    n{start_index} -- n{end_index} [label="{var_name} (s={sv_dict[start_index, end_index].score_variant})", penwidth={width}, color="{color}"]\n')
 
     # Add adjacent edges (not anchor candidates)
     for start_index in range(df_align.shape[0] - 1):
         end_index = start_index + 1
 
-        if (start_index, end_index) not in chain_container.chain_dict.keys():
-            out_file.write(f'    n{start_index} -- n{end_index} [penwidth=1, color="gray33"]\n')
+        if (start_index, end_index) in optimal_interval_set:
+            color = 'blue'
+        elif (start_index, end_index) in variant_interval_set:
+            color = 'black'
+        else:
+            color = 'gray33'
+
+        if (start_index, end_index) not in chain_set:
+            out_file.write(f'    n{start_index} -- n{end_index} [penwidth=1, color="{color}"]\n')
 
     # Done
     out_file.write('}\n')
