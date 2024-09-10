@@ -8,6 +8,7 @@ VERSION_MINOR = 4     # A significant change it PAV or a large number of small i
 VERSION_DEV = 1       # Small changes, usually bug fixes
 VERSION_PATCH = 1     # Development and test versions, not for releases
 
+
 # VERSION_PATCH is "None" for releases or set if:
 #
 # 1) Testing fixes before a release.
