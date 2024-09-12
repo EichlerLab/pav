@@ -25,11 +25,11 @@ rule vcf_write_vcf:
     input:
         bed=lambda wildcards: [
             _VCF_INPUT_PATTERN_BED.format(asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype)
-                for varsvtype in ('snv_snv', 'indel_ins', 'indel_del', 'sv_ins', 'sv_del', 'sv_inv')
+                for varsvtype in ('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
         ],
         fa=lambda wildcards: [
             _VCF_INPUT_PATTERN_FA.format(asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype)
-                for varsvtype in ('indel_ins', 'indel_del', 'sv_ins', 'sv_del')
+                for varsvtype in ('svindel_ins', 'svindel_del')
         ],
         ref_tsv='data/ref/contig_info.tsv.gz'
     output:
@@ -58,7 +58,7 @@ rule vcf_write_vcf:
                 ),
                 _VCF_INPUT_PATTERN_BED.format(
                     asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype
-                ) if varsvtype in {'indel_ins', 'indel_del', 'sv_ins', 'sv_del'} else None
+                ) if varsvtype in {'svindel_ins', 'svindel_del'} else None
             )
 
             # Fail

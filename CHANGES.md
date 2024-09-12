@@ -2,18 +2,23 @@
 
 
 ## In development
+* Improved large variant (alignment-truncating) variants
+* Complex variant discovery algorithm
+* Restructuring alignments and splitting into tiers
+
+## 2.4.1
+* Final VCFs write to vcf/merged
 * Avoid FASTA copy to temp (symlink)
 * Switched away from query/subject and tig or contig. Using query/reference or qry/ref. Change affects API function
   names and parameters.
 * Output and temporary directory structure and filenames changed to group items more appropriately.
 * Multi-tiered alignment with different parameters to capture small and large SVs.
 
-## 2.4.0.2
-* Filter variants inside inverted core (uniquely inverted loci, inner INV coordinates). Previous versions filtered all
-  variants inside inversions (outer INV coordinates)
+## 2.4.0.2 (development version)
+* Filter variants inside inverted core (uniquely inverted loci, inner INV coordinates). Previous versions filtered all variants inside inversions (outer INV coordinates)
 * Skip input FASTA re-indexing if indexes already exist
 
-## 2.4.0.1
+## 2.4.0.1 (development version)
 * Arbitrary number of named haplotypes and new assembly table format (old format supported).
 * No support for "asm_pattern" in config (was removed before this version but was left in documentation).
 * Removed "chrom_cluster" from configuration options.
@@ -25,6 +30,8 @@
 * Added ".fna" and ".fnq" to recognized file types.
 * Moving to Snakemake profile. Removed threading parameters from config (map_threads, inv_threads_lg, inv_threads)
   Configure in the profile instead of parameters.
+* Added joblib to container dependencies, removed Snakemake version restriction
+* VCF default rule updates
 
 ## 2.3.4
 * Adding "COMPOUND" column for filtered variants annotating which variants it was nested inside of (e.g. small variant
