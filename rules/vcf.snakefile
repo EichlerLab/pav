@@ -26,19 +26,21 @@ _VCF_INPUT_PATTERN_FA = 'results/{asm_name}/bed_{merge}/{filter}/fa/{varsvtype}.
 rule vcf_write_vcf:
     input:
         bed=lambda wildcards: [
-            _VCF_INPUT_PATTERN_BED.format(asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype)
+            _VCF_INPUT_PATTERN_BED.format(asm_name=wildcards.asm_name, merge='merged', filter='pass', varsvtype=varsvtype)
                 for varsvtype in ('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
         ],
         fa=lambda wildcards: [
-            _VCF_INPUT_PATTERN_FA.format(asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype)
+            _VCF_INPUT_PATTERN_FA.format(asm_name=wildcards.asm_name, merge='merged', filter='pass', varsvtype=varsvtype)
                 for varsvtype in ('svindel_ins', 'svindel_del')
         ],
         ref_tsv='data/ref/contig_info.tsv.gz'
     output:
-        vcf='vcf/{merge}/{asm_name}.vcf.gz'
-    wildcard_constraints:
-        merge='merged|hap'
+        vcf='{asm_name}.vcf.gz'
+    # wildcard_constraints:
+    #     merge='merged|hap'
     run:
+
+        merge = 'merged'
 
         # Get a dictionary of input files.
         #
@@ -56,20 +58,20 @@ rule vcf_write_vcf:
             # Pass
             input_dict[(varsvtype, 'pass')] = (
                 _VCF_INPUT_PATTERN_BED.format(
-                    asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype
+                    asm_name=wildcards.asm_name, merge=merge, filter='pass', varsvtype=varsvtype
                 ),
                 _VCF_INPUT_PATTERN_BED.format(
-                    asm_name=wildcards.asm_name, merge=wildcards.merge, filter='pass', varsvtype=varsvtype
+                    asm_name=wildcards.asm_name, merge=merge, filter='pass', varsvtype=varsvtype
                 ) if varsvtype in {'svindel_ins', 'svindel_del'} else None
             )
 
             # Fail
             input_dict[(varsvtype, 'fail')] = (
                 _VCF_INPUT_PATTERN_BED.format(
-                    asm_name=wildcards.asm_name, merge=wildcards.merge, filter='fail', varsvtype=varsvtype
+                    asm_name=wildcards.asm_name, merge=merge, filter='fail', varsvtype=varsvtype
                 ),
                 _VCF_INPUT_PATTERN_BED.format(
-                    asm_name=wildcards.asm_name, merge=wildcards.merge, filter='fail', varsvtype=varsvtype
+                    asm_name=wildcards.asm_name, merge=merge, filter='fail', varsvtype=varsvtype
                 ) if varsvtype in {'indel_ins', 'indel_del', 'sv_ins', 'sv_del'} else None
             )
 
