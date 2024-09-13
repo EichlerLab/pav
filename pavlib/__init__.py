@@ -6,14 +6,14 @@ __all__ = []
 
 from . import align
 from . import asmstat
+from . import call
+from . import cigarcall
+from . import constants
 from . import density
 from . import inv
+from . import lgsv
+from . import pipeline
 from . import plot
 from . import seq
-from . import align
 from . import util
-from . import lgsv
-from . import call
-from . import constants
-from . import cigarcall
-from . import pipeline
+from . import vcf

@@ -10,7 +10,6 @@ import Bio.bgzf
 import pavlib
 import svpoplib
 
-
 def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, symbolic_alt=('sv_inv'), symbolic_seq=None):
     """
     Write a merged VCF file.
@@ -53,7 +52,7 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         if not isinstance(key, tuple) or len(key) != 2 or key[0] is None or key[1] is None:
             raise RuntimeError(f'input_dict key is not a tuple (varsvtype, filter): "{key}"')
 
-        if not isinstance(input_tuple, tuple) or len(input_tuple) != 2 or key[0] is None or not isinstance(key[0], str) or (key[1] is None or isinstance(key[1], str)):
+        if not isinstance(input_tuple, tuple) or len(input_tuple) != 2 or key[0] is None or not isinstance(key[0], str) or not (key[1] is None or isinstance(key[1], str)):
             raise RuntimeError(f'input_dict value for key "{key}" is not a tuple (BED filename, filter): "{input_tuple}"')
 
         if key[0] in symbolic_alt and key[0] in symbolic_seq and key[1] is None:

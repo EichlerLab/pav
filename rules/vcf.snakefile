@@ -77,7 +77,8 @@ rule vcf_write_vcf:
         pavlib.vcf.write_merged_vcf(
             asm_name=wildcards.asm_name,
             input_dict=input_dict,
-            reference_file=get_config(wildcards, 'reference')
+            output_filename=output.vcf,
+            reference_filename=get_config(wildcards, 'reference')
         )
 
         # Write tabix index if possible
