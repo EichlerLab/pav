@@ -25,12 +25,20 @@ _VCF_INPUT_PATTERN_FA = 'results/{asm_name}/bed_{merge}/{filter}/fa/{varsvtype}.
 # Make VCF file.
 rule vcf_write_vcf:
     input:
-        bed=lambda wildcards: [
+        bed_pass=lambda wildcards: [
             _VCF_INPUT_PATTERN_BED.format(asm_name=wildcards.asm_name, merge='merged', filter='pass', varsvtype=varsvtype)
+                for varsvtype in ('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
+        ],
+        bed_fail=lambda wildcards: [
+            _VCF_INPUT_PATTERN_BED.format(asm_name=wildcards.asm_name, merge='merged', filter='fail', varsvtype=varsvtype)
                 for varsvtype in ('snv_snv', 'svindel_ins', 'svindel_del', 'sv_inv')
         ],
         fa=lambda wildcards: [
             _VCF_INPUT_PATTERN_FA.format(asm_name=wildcards.asm_name, merge='merged', filter='pass', varsvtype=varsvtype)
+                for varsvtype in ('svindel_ins', 'svindel_del')
+        ],
+        fa_fail=lambda wildcards: [
+            _VCF_INPUT_PATTERN_FA.format(asm_name=wildcards.asm_name, merge='merged', filter='fail', varsvtype=varsvtype)
                 for varsvtype in ('svindel_ins', 'svindel_del')
         ],
         ref_tsv='data/ref/contig_info.tsv.gz'
@@ -53,7 +61,7 @@ rule vcf_write_vcf:
         #     * [1]: Variant FASTA file name (None if no variant sequences are not used in the VCF).
         input_dict = dict()
 
-        for varsvtype in ('snv_snv', 'indel_ins', 'indel_del', 'sv_ins', 'sv_del', 'sv_inv'):
+        for varsvtype in ('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv'):
 
             # Pass
             input_dict[(varsvtype, 'pass')] = (
@@ -72,7 +80,7 @@ rule vcf_write_vcf:
                 ),
                 _VCF_INPUT_PATTERN_BED.format(
                     asm_name=wildcards.asm_name, merge=merge, filter='fail', varsvtype=varsvtype
-                ) if varsvtype in {'indel_ins', 'indel_del', 'sv_ins', 'sv_del'} else None
+                ) if varsvtype in {'svindel_ins', 'svindel_del'} else None
             )
 
         # Write VCF
@@ -80,6 +88,7 @@ rule vcf_write_vcf:
             asm_name=wildcards.asm_name,
             input_dict=input_dict,
             output_filename=output.vcf,
+            ref_tsv=input.ref_tsv,
             reference_filename=get_config(wildcards, 'reference')
         )
 

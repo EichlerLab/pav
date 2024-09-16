@@ -109,7 +109,8 @@ snakemake \
     --jobname "{rulename}.{jobid}" \
     -w 20 \
     --rerun-triggers mtime \
-    "${ARG_ARRAY[@]}"
+    "${ARG_ARRAY[@]}" \
+    --config ignore_env_file=True
 
 # Note:
 # Jobs are erroneously re-run with "reason: Code has changed since last execution" without "--rerun-triggers mtime".

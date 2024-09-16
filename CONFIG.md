@@ -240,3 +240,8 @@ for the second parameter will give diminishing returns.
 * inv_k_size [31]: K-mer size for inversion density.
 * inv_region_limit [None]
 * lg_batch_count [10]
+
+### Pipeline control
+* ignore_env_file [False: boolean]: Set to `True` to tell PAV to ignore the environment file ("setenv.sh" by default).
+  This option is not intended to be used directly, it is set by the container entry point to avoid accidentally
+  polluting the container's environment for shell commands.
