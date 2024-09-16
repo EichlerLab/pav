@@ -1,5 +1,9 @@
 # PAV changes
 
+## 2.4.1.2
+* VCF writes failed variants with a FILTER
+  * INFO/COMPOUND lists larger variants that caused smaller ones underneath it to be removed.
+* Added "ignore_env_file" configuration parameter to be used by the Docker entrypoint script to avoid disrputing the container environment if a "setenv.sh" file is present (container should use it's own environment).
 
 ## 2.4.1
 * Final VCFs write to vcf/merged
