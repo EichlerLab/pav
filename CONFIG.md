@@ -269,6 +269,7 @@ for the second parameter will give diminishing returns.
   site.
 
 ### Call - Large SV
+<<<<<<< HEAD
 * min_anchor_score ["1000bp"; string, int, float]: Minimum score of alignment records to be an anchor. Each complex variant (CPX) is
   anchored on both sides by an alignment record and may have one or more aligned or unaligned segments between the
   anchors. For a CPX variant to be called, both anchors must have a score of this or greater. See parameter
@@ -277,3 +278,8 @@ for the second parameter will give diminishing returns.
     computed as the number of bases perfectly aligned (i.e. "Xbp" would be computed as "X * match" where "match" is the
     score for matched bases defined in align_score_model). With the "bp" suffix, the anchor quality scales with the
     alignment scores.
+
+### Pipeline control
+* ignore_env_file [False: boolean]: Set to `True` to tell PAV to ignore the environment file ("setenv.sh" by default).
+  This option is not intended to be used directly, it is set by the container entry point to avoid accidentally
+  polluting the container's environment for shell commands.

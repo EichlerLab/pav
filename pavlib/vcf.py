@@ -10,8 +10,7 @@ import Bio.bgzf
 import pavlib
 import svpoplib
 
-
-def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, symbolic_alt=('sv_inv'), symbolic_seq=None):
+def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, ref_tsv, symbolic_alt=('sv_inv'), symbolic_seq=None):
     """
     Write a merged VCF file.
 
@@ -27,6 +26,8 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
     :param input_dict: Input dictionary (see above).
     :param output_filename: Output filename. Will be written as a bgzipped VCF file regardless of file name.
     :param reference_filename: Name of reference file.
+    :param ref_tsv: Filename for a TSV of information for each reference sequence (name, length, MD5) or a
+        `pd.DataFrame` object of the table already read into memory.
     :param symbolic_alt: Tuple of vartype_svtype values that should get symbolic ALTs in the VCF.
     :param symbolic_seq: Tuple of vartype-svtype values that should get INFO/SEQ if they are also symbolic (no effect
         if the vartype-svtype is not also in symbolic_alt).
@@ -53,7 +54,7 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         if not isinstance(key, tuple) or len(key) != 2 or key[0] is None or key[1] is None:
             raise RuntimeError(f'input_dict key is not a tuple (varsvtype, filter): "{key}"')
 
-        if not isinstance(input_tuple, tuple) or len(input_tuple) != 2 or key[0] is None or not isinstance(key[0], str) or (key[1] is None or isinstance(key[1], str)):
+        if not isinstance(input_tuple, tuple) or len(input_tuple) != 2 or key[0] is None or not isinstance(key[0], str) or not (key[1] is None or isinstance(key[1], str)):
             raise RuntimeError(f'input_dict value for key "{key}" is not a tuple (BED filename, filter): "{input_tuple}"')
 
         if key[0] in symbolic_alt and key[0] in symbolic_seq and key[1] is None:
@@ -65,6 +66,14 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
 
     # Set of known filters
     known_filter_set = set(pavlib.call.FILTER_REASON.keys())
+
+    # Read reference TSV
+    if isinstance(ref_tsv, str):
+        df_ref = pd.read_csv(ref_tsv, sep='\t')
+    elif isinstance(ref_tsv, pd.DataFrame):
+        df_ref = ref_tsv
+    else:
+        raise RuntimeError(f'Unknown type for reference TSV parameter (ref_tsv): {type(ref_tsv)}')
 
     # Process variant types
     df_list = list()
@@ -121,8 +130,10 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
             raise RuntimeError(f'Unknown filter(s) found in variant file (var-svtype={varsvtype}, filter={filter}: {uk_list}')
 
         # Set VARTYPE
-        df['VARTYPE'] = vartype.upper()
-        df['SVTYPE'] = svtype.upper()
+        if vartype != 'svindel':
+            df['VARTYPE'] = vartype.upper()
+        else:
+            df['VARTYPE'] = df['SVLEN'].apply(lambda svlen: 'SV' if svlen >= 50 else 'INDEL')
 
         # Read sequence from FASTA
         if input_tuple[1] is not None:
@@ -152,7 +163,7 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         # Reformat fields for INFO
         for col in ('HAP', 'HAP_VARIANTS', 'CALL_SOURCE', 'QRY_REGION', 'QRY_STRAND', 'COV_MEAN', 'COV_PROP', 'RGN_REF_INNER', 'RGN_QRY_INNER'):
             if col in df.columns:
-                df[col] = df[col].apply(lambda val: val.replace(';', ','))
+                df[col] = df[col].astype(str).apply(lambda val: val.replace(';', ',') if not pd.isnull(val) else val)
 
         if svtype == 'del':
             df['SVLEN'] = - np.abs(df['SVLEN'])
@@ -170,6 +181,13 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         # INFO: Add INV
         if svtype == 'inv':
             df['INFO'] = df.apply(lambda row: row['INFO'] + ';INNER_REF={RGN_REF_INNER};INNER_TIG={RGN_QRY_INNER}'.format(**row), axis=1)
+
+        # INFO: Add COMPOUND
+        if 'COMPOUND' in df.columns:
+            df['INFO'] = df.apply(lambda row:
+                row['INFO'] + (';COMPOUND={COMPOUND}'.format(**row) if not pd.isnull(row['COMPOUND']) else ''),
+                axis=1
+            )
 
         # INFO: Add breakpoint homology
         # if svtype in {'ins', 'del'}:
@@ -217,11 +235,14 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
 
             df['ALT'] = df['ALT'].apply(lambda val: val.upper())
 
+        # QUAL
+        if 'QUAL' not in df.columns:
+            df['QUAL'] = '.'
+
         # Save columns needed for VCF
-        df = df[['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'INFO', 'GT']]
+        df = df[['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'GT']]
 
         df_list.append(df)
-
 
     # Merge
     df = pd.concat(df_list, axis=0)
@@ -273,10 +294,6 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         if 'INV' in symbolic_alt_set:
             alt_header_list.append(('INV', 'Inversion'))
 
-    # QUAL
-    if 'QUAL' not in df.columns:
-        df['QUAL'] = '.'
-
     # FORMAT
     df['FORMAT'] = 'GT'
 
@@ -290,8 +307,6 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
     df.columns = ['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'FORMAT', asm_name]
 
     # Write
-    df_ref = pd.read_csv(input.ref_tsv, sep='\t')
-
     with Bio.bgzf.open(output_filename, 'wt') as out_file:
         for line in svpoplib.vcf.header_list(
             df_ref,
@@ -300,7 +315,7 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
             alt_header_list,
             filter_header_list,
             variant_source='PAV {}'.format(pavlib.constants.get_version_string()),
-            ref_file_name=os.path.basename(reference_filename)
+            ref_filename=os.path.basename(reference_filename)
         ):
             out_file.write(line)
 

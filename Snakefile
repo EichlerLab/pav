@@ -31,13 +31,6 @@ REF_FA = 'data/ref/ref.fa.gz'
 
 REF_FAI = REF_FA + '.fai'
 
-# Environment source file for shell commands
-
-ENV_FILE = config.get('env_source', 'setenv.sh')
-
-if not os.path.isfile(ENV_FILE):
-    ENV_FILE = None
-
 # VCF file pattern
 VCF_PATTERN = f'{config.get("vcf_prefix", "")}{{asm_name}}{config.get("vcf_suffix", "")}.vcf.gz'
 
@@ -75,6 +68,12 @@ ASM_TABLE = pavlib.pipeline.read_assembly_table(ASM_TABLE_FILENAME, config)
 # Rules
 #
 
+# Environment source file for shell commands
+ENV_FILE = config.get('env_source', 'setenv.sh')
+
+if not os.path.isfile(ENV_FILE) or pavlib.util.as_bool(config.get('ignore_env_file', False)):
+    ENV_FILE = None
+
 if ENV_FILE:
     shell.prefix(f'set -euo pipefail; source {ENV_FILE}; ')
 else:
@@ -95,7 +94,8 @@ localrules: pav_all
 # Make all files for all samples.
 rule pav_all:
     input:
-        bed=expand('vcf/merged/{asm_name}.vcf.gz', asm_name=ASM_TABLE.index)
+        bed=expand('{asm_name}.vcf.gz', asm_name=ASM_TABLE.index)
+        # bed=expand('vcf/merged/{asm_name}.vcf.gz', asm_name=ASM_TABLE.index)
 
 ### Includes ###
 

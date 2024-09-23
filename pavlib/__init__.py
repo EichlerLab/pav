@@ -17,3 +17,5 @@ from . import pipeline
 from . import plot
 from . import seq
 from . import util
+from . import vcf
+

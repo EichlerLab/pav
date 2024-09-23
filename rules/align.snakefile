@@ -463,7 +463,7 @@ rule align_get_qry_fa:
         is_link = False
 
         if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz'):
-            os.symlink(input_tuples[0][0], output.fa)
+            os.symlink(os.path.abspath(input_tuples[0][0]), output.fa)
             is_link = True
 
         else:
