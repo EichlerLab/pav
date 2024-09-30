@@ -9,7 +9,7 @@ from . import asmstat
 from . import cigarcall
 from . import call
 from . import const
-from . import density
+from . import kde
 from . import inv
 from . import io
 from . import lgsv

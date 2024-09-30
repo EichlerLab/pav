@@ -1,5 +1,5 @@
 """
-Call inversions from aligned contigs.
+Call inversions from aligned query sequences.
 
 Inversion calling has two key steps:
 1) Flag: Find signatures of inversions from alignments and/or variant calls.
@@ -9,7 +9,6 @@ Inversion calling has two key steps:
 
 import collections
 import intervaltree
-import gc
 import numpy as np
 import os
 import pandas as pd
@@ -24,9 +23,25 @@ global get_config
 global REF_FA
 
 
-###################
-### Definitions ###
-###################
+#
+# Definitions
+#
+
+# Column names for the inversion call table
+INV_CALL_COLUMNS = [
+    '#CHROM', 'POS', 'END',
+    'ID', 'SVTYPE', 'SVLEN',
+    'HAP',
+    'QRY_REGION', 'QRY_STRAND',
+    'CI',
+    'RGN_REF_INNER', 'RGN_QRY_INNER',
+    'RGN_REF_DISC', 'RGN_QRY_DISC',
+    'FLAG_ID', 'FLAG_TYPE',
+    'ALIGN_INDEX',
+    'CALL_SOURCE',
+    'FILTER',
+    'SEQ'
+]
 
 
 def _input_call_inv_cluster(wildcards):
@@ -116,31 +131,38 @@ rule call_inv_batch_merge:
 rule call_inv_batch:
     input:
         bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
-        bed_aln='results/{asm_name}/align/trim-tigref/aligned_query_{hap}.bed.gz',
-        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
-        fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
+        bed_aln='results/{asm_name}/align/trim-qryref/aligned_query_{hap}.bed.gz',
+        qry_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
+        qry_fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
     output:
         bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
     log:
         log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
-    threads: 4
+    params:
+        align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL)
+    threads: 1
     run:
 
-        # Get params
-        local_config = get_config(wildcards)
+        call_source = 'FLAG-DEN'
 
-        k_size = local_config.get('inv_k_size', 31)
-        inv_region_limit = local_config.get('inv_region_limit', None)
-        inv_min_expand = local_config.get('inv_min_expand', None)
+        # Get params
+        k_size = get_config(wildcards, 'inv_k_size', pavlib.const.INV_K_SIZE)
+
+        region_limit = get_config(wildcards, 'inv_region_limit', pavlib.const.INV_REGION_LIMIT)
+        min_expand = get_config(wildcards, 'inv_min_expand', pavlib.const.INV_MIN_EXPAND_COUNT)
+        init_expand = get_config(wildcards, 'inv_init_expand', pavlib.const.INV_INIT_EXPAND)
+        min_kmers = get_config(wildcards, 'inv_min_kmers', pavlib.const.INV_MIN_KMERS)
+        max_ref_kmer_count = get_config(wildcards, 'inv_max_ref_kmer_count', pavlib.const.INV_MAX_REF_KMER_COUNT)
+
+        kde_bandwidth = get_config(wildcards, 'inv_kde_bandwidth', pavlib.const.INV_KDE_BANDWIDTH)
+        kde_trunc_z = get_config(wildcards, 'inv_kde_trunc_z', pavlib.const.INV_KDE_TRUNC_Z)
+        kde_func = get_config(wildcards, 'inv_kde_func', pavlib.const.INV_KDE_FUNC)
 
         batch = int(wildcards.batch)
 
         density_out_dir = 'results/{asm_name}/inv_caller/density_table'.format(**wildcards)
 
         os.makedirs(density_out_dir, exist_ok=True)
-
-        # Get SRS (state-run-smooth)
-        srs_tree = pavlib.inv.get_srs_tree(get_config(wildcards, 'srs_list', None, True))  # If none, tree contains a default for all region sizes
 
         # Read and subset table to records in this batch
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
@@ -150,21 +172,7 @@ rule call_inv_batch:
             # No records in batch
 
             df_bed = pd.DataFrame(
-                [],
-                columns=[
-                    '#CHROM', 'POS', 'END',
-                    'ID', 'SVTYPE', 'SVLEN',
-                    'HAP',
-                    'QRY_REGION', 'QRY_STRAND',
-                    'CI',
-                    'RGN_REF_INNER', 'RGN_QRY_INNER',
-                    'RGN_REF_DISC', 'RGN_QRY_DISC',
-                    'FLAG_ID', 'FLAG_TYPE',
-                    'ALIGN_INDEX',
-                    'CALL_SOURCE',
-                    'FILTER',
-                    'SEQ'
-                ]
+                [], columns=INV_CALL_COLUMNS
             )
 
         else:
@@ -174,10 +182,14 @@ rule call_inv_batch:
 
             align_lift = pavlib.align.lift.AlignLift(
                 pd.read_csv(input.bed_aln, sep='\t'),
-                svpoplib.ref.get_df_fai(input.fai)
+                svpoplib.ref.get_df_fai(input.qry_fai)
             )
 
             id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
+
+            kde = pavlib.kde.KdeTruncNorm(
+                kde_bandwidth, kde_trunc_z, kde_func
+            )
 
             # Call inversions
             call_list = list()
@@ -190,11 +202,20 @@ rule call_inv_batch:
 
                     try:
                         inv_call = pavlib.inv.scan_for_inv(
-                            region_flag, REF_FA, input.tig_fa, align_lift, k_util,
-                            max_region_size=inv_region_limit,
-                            threads=threads, log=log_file, srs_tree=srs_tree,
-                            min_exp_count=inv_min_expand
+                            region_flag, REF_FA, input.qry_fa,
+                            align_lift=align_lift,
+                            k_util=k_util,
+                            nc_ref=None,
+                            nc_qry=None,
+                            region_limit=region_limit,
+                            min_expand=min_expand,
+                            init_expand=init_expand,
+                            min_kmers=min_kmers,
+                            max_ref_kmer_count=max_ref_kmer_count,
+                            kde=kde,
+                            log=log_file,
                         )
+
 
                     except RuntimeError as ex:
                         log_file.write('RuntimeError in scan_for_inv(): {}\n'.format(ex))
@@ -205,9 +226,9 @@ rule call_inv_batch:
 
                         # Get seq
                         seq = pavlib.seq.region_seq_fasta(
-                            inv_call.region_tig_outer,
-                            input.tig_fa,
-                            rev_compl=inv_call.region_tig_outer.is_rev
+                            inv_call.region_qry_outer,
+                            input.qry_fa,
+                            rev_compl=inv_call.region_qry_outer.is_rev
                         )
 
                         # Get alignment record data
@@ -236,16 +257,16 @@ rule call_inv_batch:
 
                                 wildcards.hap,
 
-                                inv_call.region_tig_outer.to_base1_string(),
-                                '-' if inv_call.region_tig_outer.is_rev else '+',
+                                inv_call.region_qry_outer.to_base1_string(),
+                                '-' if inv_call.region_qry_outer.is_rev else '+',
 
                                 0,
 
                                 inv_call.region_ref_inner.to_base1_string(),
-                                inv_call.region_tig_inner.to_base1_string(),
+                                inv_call.region_qry_inner.to_base1_string(),
 
                                 inv_call.region_ref_discovery.to_base1_string(),
-                                inv_call.region_tig_discovery.to_base1_string(),
+                                inv_call.region_qry_discovery.to_base1_string(),
 
                                 inv_call.region_flag.region_id(),
                                 row['TYPE'],
@@ -281,9 +302,6 @@ rule call_inv_batch:
                             os.path.join(density_out_dir, 'density_{}_{}.tsv.gz'.format(inv_call.id, wildcards.hap)),
                             sep='\t', index=False, compression='gzip'
                         )
-
-                        # Call garbage collector
-                        gc.collect()
 
             # Merge records
             if len(call_list) > 0:
@@ -600,7 +618,9 @@ rule call_inv_flag_insdel_cluster:
         df_match.to_csv(output.bed, sep='\t', index=False, compression='gzip')
 
 
-# Detect clusters of indels and SNVs that common occur when contigs are aligned through inversions in direct orientation
+# Detect clusters of indels and SNVs that common occur when query sequences are aligned through inversions in direct
+# orientation
+#
 # noinspection PyTypeChecker
 rule call_inv_cluster:
     input:
@@ -631,8 +651,8 @@ rule call_inv_cluster:
         df = pd.concat(
             [
                 pd.read_csv(
-                input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN', 'FILTER'),
-                low_memory=False, dtype={'#CHROM': str}
+                    input_file_name, sep='\t', usecols=('#CHROM', 'POS', 'END', 'SVTYPE', 'SVLEN', 'FILTER'),
+                    low_memory=False, dtype={'#CHROM': str}
                 ) for input_file_name in input.bed
             ],
             axis=0

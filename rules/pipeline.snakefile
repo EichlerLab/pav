@@ -5,6 +5,7 @@ Pipeline control functions.
 import pavlib
 
 global ASM_TABLE
+global config
 
 def get_config(wildcards, key=None, default_val=None, default_none=False):
     """
