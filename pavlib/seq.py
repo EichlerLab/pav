@@ -248,6 +248,12 @@ class Region:
         self.pos -= other
         self.end -= other
 
+    def contains(self, other):
+        if other is None:
+            return False
+
+        return other.chrom == self.chrom and other.pos >= self.pos and other.end <= self.end
+
     def copy(self):
         """
         Deep copy this object.

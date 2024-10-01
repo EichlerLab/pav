@@ -58,6 +58,7 @@ class AlignLift:
             3: Minimum position.
             4: Maximum position.
             5: Align record index.
+            6: Alignment record score.
 
         If the lift hits an alignment gap, then the function can try to resolve the lift to the best reference position
         based on the alignment using a strategy outlined by the `gap` parameter.
@@ -81,88 +82,95 @@ class AlignLift:
         lift_coord_list = list()
 
         for pos in coord:
-            pos_org = pos  # Pre-reverse position
+            pos_org = pos  # Pre-reverse position for error reporting
 
             # Find matching records
             match_set = self.qry_tree[query_id][pos:(pos + 1)]
 
-            if len(match_set) == 1:
-                index = list(match_set)[0].data
-
-            elif len(match_set) == 0 and gap:
-                lift_coord_list.append(self._get_ref_gap(query_id, pos))
-                continue
-
-            else:
-                lift_coord_list.append(None)
-                continue
-
-            # Get lift tree
-            if index not in self.qry_cache.keys():
-                self._add_align(index)
-
-            lift_tree = self.qry_cache[index]
-
-            # Get row
-            row = self.df.loc[index]
-
-            # Reverse coordinates of pos if the alignment is reverse-complemented. Translates from QRY_POS-space
-            # to QUERY_POS-space.
-            if row['REV']:
-                pos = self.df_fai[query_id] - pos
-
-            # Get match record
-            match_set = lift_tree[pos]
-
-            if len(match_set) == 1:
-                match_interval = list(match_set)[0]
-
-            elif len(match_set) == 0:
-                # Allow queries to match if they end exactly at the alignment end
-                match_set = lift_tree[pos - 1]
-
-                match_interval = list(match_set)[0] if len(match_set) == 1 else None
-
-                if not match_interval or match_interval.end != pos:
+            if len(match_set) == 0:
+                if gap:
+                    lift_coord_list.append(self._get_ref_gap(query_id, pos))
+                else:
                     lift_coord_list.append(None)
+                continue
 
+            # Get list of lift matches
+            match_list = list()
+
+            for match_element in match_set:
+                index = match_element.data
+
+                # Get lift tree
+                if index not in self.qry_cache.keys():
+                    self._add_align(index)
+
+                lift_tree = self.qry_cache[index]
+
+                # Get row
+                row = self.df.loc[index]
+
+                # Reverse coordinates of pos if the alignment is reverse-complemented. Translates from QRY_POS-space
+                # to QUERY_POS-space.
+                if row['REV']:
+                    pos = self.df_fai[query_id] - pos
+
+                # Get match record
+                lift_set = lift_tree[pos]
+
+                if len(lift_set) == 1:
+                    match_interval = list(lift_set)[0]
+
+                elif len(lift_set) == 0:
+                    # Allow queries to match if they end exactly at the alignment end
+                    lift_set = lift_tree[pos - 1]
+
+                    match_interval = list(lift_set)[0] if len(lift_set) == 1 else None
+
+                    if not match_interval or match_interval.end != pos:
+                        lift_coord_list.append(None)
+
+                        raise RuntimeError(
+                            (
+                                'Found no matches in a lift-tree for a record within a '
+                                'global to-reference tree: {}:{} (index={}, gap={})'
+                            ).format(query_id, pos_org, index, gap)
+                        )
+
+                else:
                     raise RuntimeError(
                         (
-                            'Found no matches in a lift-tree for a record within a '
+                            'Found multiple matches in a lift-tree for a record within a '
                             'global to-reference tree: {}:{} (index={}, gap={})'
-                        ).format(query_id, pos_org, index, gap)
+                        ).format(query_id, pos_org, index,  gap)
                     )
 
-            else:
-                raise RuntimeError(
-                    (
-                        'Found multiple matches in a lift-tree for a record within a '
-                        'global to-reference tree: {}:{} (index={}, gap={})'
-                    ).format(query_id, pos_org, index,  gap)
-                )
+                # Interpolate coordinates
+                if match_interval.data[1] - match_interval.data[0] > 1:
+                    lift_pos = match_interval.data[0] + (pos - match_interval.begin)
 
-            # Interpolate coordinates
-            if match_interval.data[1] - match_interval.data[0] > 1:
-                lift_pos = match_interval.data[0] + (pos - match_interval.begin)
+                    match_list.append((
+                        row['#CHROM'],
+                        lift_pos,
+                        row['REV'],
+                        lift_pos,
+                        lift_pos,
+                        row['INDEX'],
+                        row['SCORE']
+                    ))
 
-                lift_coord_list.append((
-                    row['#CHROM'],
-                    lift_pos,
-                    row['REV'],
-                    lift_pos,
-                    lift_pos,
-                    (row['INDEX'],)
-                ))
+                else:  # Lift from missing bases on the target (insertion or deletion)
+                    match_list.append((
+                        row['#CHROM'],
+                        match_interval.data[1],
+                        row['REV'],
+                        match_interval.data[1],
+                        match_interval.data[1],
+                        row['INDEX'],
+                        row['SCORE']
+                    ))
 
-            else:  # Lift from missing bases on the target (insertion or deletion)
-                lift_coord_list.append((
-                    row['#CHROM'],
-                    match_interval.data[1],
-                    row['REV'],
-                    match_interval.data[1],
-                    match_interval.data[1],
-                    (row['INDEX'],)
-                ))
+            # Append
+            lift_coord_list.append(match_list)
 
         # Return coordinates
         if ret_list:
@@ -174,7 +182,7 @@ class AlignLift:
         """
         Lift coordinates from reference to query.
 
-        Returns tuple(s) of:
+        For each element in `coord`, returns a list of tuples in the form:
             0: Query ID.
             1: Position.
             2: Is reverse complemented. `True` if the alignment was lifted through a reverse-complemented
@@ -182,6 +190,13 @@ class AlignLift:
             3: Minimum position.
             4: Maximum position.
             5: Align record index.
+            6: Alignment record score.
+
+        If `coord` is a `list` or `tuple`, then a list for each position (where each element is a list of tuples, one
+        for each alignment intersect). If `coord` is not a `list` or `tuple`, then there is no outer list and the
+        returned results is a list of tuples for that position. (i.e. same as `lift_to_qry('chrom', (x,))[0]`). For
+        each `coord` element that has no elements, `None` is returned instead of an empty list (a single `None` if
+        `coord` is a single position not in a `list` or `tuple` and has no lift).
 
         :param reference_id: Subject ID.
         :param coord: Subject coordinates. May be a single value, list, or tuple.
@@ -191,7 +206,7 @@ class AlignLift:
         """
 
         # Determine type
-        if issubclass(coord.__class__, list) or issubclass(coord.__class__, tuple):
+        if isinstance(coord, (list, tuple)):
             ret_list = True
         else:
             ret_list = False
@@ -208,52 +223,57 @@ class AlignLift:
                 lift_coord_list.append(None)
                 continue
 
-            if len(match_set) > 1:
-                lift_coord_list.append(None)
-                continue
+            # Get list of lift matches
+            match_list = list()
 
-            # Get lift tree
-            index = list(match_set)[0].data
+            for match_element in match_set:
 
-            if index not in self.ref_cache.keys():
-                self._add_align(index)
+                # Get lift tree
+                index = match_element.data
 
-            lift_tree = self.ref_cache[index]
+                if index not in self.ref_cache.keys():
+                    self._add_align(index)
 
-            # Save row
-            row = self.df.loc[index]
+                lift_tree = self.ref_cache[index]
 
-            # Get match record
-            match_set = lift_tree[pos:(pos + 1)]
+                # Save row
+                row = self.df.loc[index]
 
-            if len(match_set) != 1:
-                raise RuntimeError(
-                    (
-                        'Program bug: Found no matches in a lift-tree for a record withing a '
-                        'global to-query tree: {}:{} (index={})'
-                    ).format(reference_id, pos, index)
-                )
+                # Get match record
+                lift_set = lift_tree[pos:(pos + 1)]
 
-            match_interval = list(match_set)[0]
+                if len(lift_set) != 1:
+                    raise RuntimeError(
+                        (
+                            'Program bug: Found no matches in a lift-tree for a record withing a '
+                            'global to-query tree: {}:{} (index={})'
+                        ).format(reference_id, pos, index)
+                    )
 
-            # Interpolate coordinates
-            if match_interval.data[1] - match_interval.data[0] > 1:
-                qry_pos = match_interval.data[0] + (pos - match_interval.begin)
+                lift_interval = list(lift_set)[0]
 
-            else:  # Lift from missing bases on the target (insertion or deletion)
-                qry_pos = match_interval.data[1]
+                # Interpolate coordinates
+                if lift_interval.data[1] - lift_interval.data[0] > 1:
+                    qry_pos = lift_interval.data[0] + (pos - lift_interval.begin)
 
-            if row['REV']:
-                qry_pos = self.df_fai[row['QRY_ID']] - qry_pos
+                else:  # Lift from missing bases on the target (insertion or deletion)
+                    qry_pos = lift_interval.data[1]
 
-            lift_coord_list.append((
-                row['QRY_ID'],
-                qry_pos,
-                row['REV'],
-                qry_pos,
-                qry_pos,
-                (row['INDEX'],)
-            ))
+                if row['REV']:
+                    qry_pos = self.df_fai[row['QRY_ID']] - qry_pos
+
+                match_list.append((
+                    row['QRY_ID'],
+                    qry_pos,
+                    row['REV'],
+                    qry_pos,
+                    qry_pos,
+                    row['INDEX'],
+                    row['SCORE']
+                ))
+
+            # Add records for this position
+            lift_coord_list.append(match_list)
 
         # Return coordinates
         if ret_list:
@@ -261,7 +281,7 @@ class AlignLift:
         else:
             return lift_coord_list[0]
 
-    def lift_region_to_ref(self, region, gap=False):
+    def lift_region_to_ref(self, region, gap=False, check_orientation=True):
         """
         Lift region to reference.
 
@@ -278,18 +298,37 @@ class AlignLift:
         if ref_pos is None or ref_end is None:
             return None
 
-        if ref_pos[0] != ref_end[0] or (ref_pos[2] is not None and ref_end[2] is not None and ref_pos[2] != ref_end[2]):
+        # Single position
+        if len(ref_pos) != 1 or len(ref_end) != 1:
             return None
 
-        # Return
+        ref_pos = ref_pos[0]
+        ref_end = ref_end[0]
+
+        if ref_pos[0] != ref_end[0]:
+            return None
+
+        # Check orientation
+        is_rev = None
+
+        if ref_pos[2] is not None and ref_end[2] is not None:
+
+            if ref_pos[2] == ref_end[2]:
+                is_rev = ref_pos[2]
+            else:
+                if check_orientation:
+                    return None
+
+        # Return region
         return pavlib.seq.Region(
             ref_pos[0], ref_pos[1], ref_end[1],
-            is_rev=False,
+            is_rev=is_rev,
             pos_min=ref_pos[3], pos_max=ref_pos[4],
             end_min=ref_end[3], end_max=ref_end[4],
             pos_aln_index=(ref_pos[5],),
             end_aln_index=(ref_end[5],)
         )
+
 
     def lift_region_to_qry(self, region):
         """
@@ -304,8 +343,11 @@ class AlignLift:
         query_pos, query_end = self.lift_to_qry(region.chrom, (region.pos, region.end))
 
         # Check lift: Must lift both ends to the same query ID
-        if query_pos is None or query_end is None:
+        if query_pos is None or query_end is None or len(query_pos) != 1 or len(query_end) != 1:
             return None
+
+        query_pos = query_pos[0]
+        query_end = query_end[0]
 
         if query_pos[0] != query_end[0] or query_pos[2] != query_end[2]:
             return None
@@ -408,15 +450,6 @@ class AlignLift:
         while cigar_index < len(cigar_op_list) and cigar_op_list[cigar_index][1] in {'S', 'H'}:
             clipped_bp += cigar_op_list[cigar_index][0]
             cigar_index += 1
-
-        # qry_map_rgn = pavlib.seq.region_from_string(row['QRY_MAP_RGN'])
-        #
-        # if qry_map_rgn.pos != clipped_bp:
-        #     raise RuntimeError(
-        #         'Number of clipped bases ({}) does not match query start position {}: Alignment {}:{} ({}:{})'.format(
-        #             clipped_bp, qry_map_rgn.pos, row['#CHROM'], row['POS'], row['QRY_ID'], qry_map_rgn.pos
-        #         )
-        #     )
 
         # Build trees
         for cigar_len, cigar_op in cigar_op_list:

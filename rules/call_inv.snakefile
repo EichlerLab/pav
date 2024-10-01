@@ -146,13 +146,16 @@ rule call_inv_batch:
         call_source = 'FLAG-DEN'
 
         # Get params
-        k_size = get_config(wildcards, 'inv_k_size', pavlib.const.INV_K_SIZE)
-
         region_limit = get_config(wildcards, 'inv_region_limit', pavlib.const.INV_REGION_LIMIT)
         min_expand = get_config(wildcards, 'inv_min_expand', pavlib.const.INV_MIN_EXPAND_COUNT)
         init_expand = get_config(wildcards, 'inv_init_expand', pavlib.const.INV_INIT_EXPAND)
         min_kmers = get_config(wildcards, 'inv_min_kmers', pavlib.const.INV_MIN_KMERS)
         max_ref_kmer_count = get_config(wildcards, 'inv_max_ref_kmer_count', pavlib.const.INV_MAX_REF_KMER_COUNT)
+        repeat_match_prop = get_config(wildcards, 'inv_repeat_match_prop', pavlib.const.INV_REPEAT_MATCH_PROP)
+        min_inv_kmer_run = get_config(wildcards, 'inv_min_inv_kmer_run', pavlib.const.INV_MIN_INV_KMER_RUN)
+        min_qry_ref_prop = get_config(wildcards, 'inv_min_qry_ref_prop', pavlib.const.INV_MIN_QRY_REF_PROP)
+
+        k_size = get_config(wildcards, 'inv_k_size', pavlib.const.INV_K_SIZE)
 
         kde_bandwidth = get_config(wildcards, 'inv_kde_bandwidth', pavlib.const.INV_KDE_BANDWIDTH)
         kde_trunc_z = get_config(wildcards, 'inv_kde_trunc_z', pavlib.const.INV_KDE_TRUNC_Z)
@@ -171,160 +174,160 @@ rule call_inv_batch:
         if df_flag.shape[0] == 0:
             # No records in batch
 
-            df_bed = pd.DataFrame(
+            pd.DataFrame(
                 [], columns=INV_CALL_COLUMNS
-            )
+            ).to_csv(output.bed, sep='\t', index=False, compression='gzip')
+
+            return
+
+        # Init
+        k_util = kanapy.util.kmer.KmerUtil(k_size)
+
+        align_lift = pavlib.align.lift.AlignLift(
+            pd.read_csv(input.bed_aln, sep='\t'),
+            svpoplib.ref.get_df_fai(input.qry_fai)
+        )
+
+        id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
+
+        kde = pavlib.kde.KdeTruncNorm(
+            kde_bandwidth, kde_trunc_z, kde_func
+        )
+
+        # Call inversions
+        call_list = list()
+
+        with open(log.log, 'w') as log_file:
+            for index, row in df_flag.iterrows():
+
+                # Scan for inversions
+                region_flag = pavlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
+
+                try:
+                    inv_call = pavlib.inv.scan_for_inv(
+                        region_flag, REF_FA, input.qry_fa,
+                        align_lift=align_lift,
+                        k_util=k_util,
+                        nc_ref=None,
+                        nc_qry=None,
+                        region_limit=region_limit,
+                        min_expand=min_expand,
+                        init_expand=init_expand,
+                        min_kmers=min_kmers,
+                        max_ref_kmer_count=max_ref_kmer_count,
+                        kde=kde,
+                        log=log_file,
+                    )
+
+
+                except RuntimeError as ex:
+                    log_file.write('RuntimeError in scan_for_inv(): {}\n'.format(ex))
+                    inv_call = None
+
+                # Save inversion call
+                if inv_call is not None and inv_call.id not in id_set:
+
+                    # Get seq
+                    seq = pavlib.seq.region_seq_fasta(
+                        inv_call.region_qry_outer,
+                        input.qry_fa,
+                        rev_compl=inv_call.region_qry_outer.is_rev
+                    )
+
+                    # Get alignment record data
+                    align_index = ','.join(sorted(
+                        pavlib.util.collapse_to_set(
+                            (
+                                inv_call.region_ref_outer.pos_aln_index,
+                                inv_call.region_ref_outer.end_aln_index,
+                                inv_call.region_ref_inner.pos_aln_index,
+                                inv_call.region_ref_inner.end_aln_index
+                            ),
+                            to_type=str
+                        )
+                    ))
+
+                    # Save call
+                    call_list.append(pd.Series(
+                        [
+                            inv_call.region_ref_outer.chrom,
+                            inv_call.region_ref_outer.pos,
+                            inv_call.region_ref_outer.end,
+
+                            inv_call.id,
+                            'INV',
+                            inv_call.svlen,
+
+                            wildcards.hap,
+
+                            inv_call.region_qry_outer.to_base1_string(),
+                            '-' if inv_call.region_qry_outer.is_rev else '+',
+
+                            0,
+
+                            inv_call.region_ref_inner.to_base1_string(),
+                            inv_call.region_qry_inner.to_base1_string(),
+
+                            inv_call.region_ref_discovery.to_base1_string(),
+                            inv_call.region_qry_discovery.to_base1_string(),
+
+                            inv_call.region_flag.region_id(),
+                            row['TYPE'],
+
+                            align_index,
+
+                            pavlib.inv.CALL_SOURCE,
+
+                            'PASS',
+
+                            seq
+                        ],
+                        index=[
+                            '#CHROM', 'POS', 'END',
+                            'ID', 'SVTYPE', 'SVLEN',
+                            'HAP',
+                            'QRY_REGION', 'QRY_STRAND',
+                            'CI',
+                            'RGN_REF_INNER', 'RGN_QRY_INNER',
+                            'RGN_REF_DISC', 'RGN_QRY_DISC',
+                            'FLAG_ID', 'FLAG_TYPE',
+                            'ALIGN_INDEX',
+                            'CALL_SOURCE',
+                            'FILTER',
+                            'SEQ'
+                        ]
+                    ))
+
+                    id_set.add(inv_call.id)
+
+                    # Save density table
+                    inv_call.df.to_csv(
+                        os.path.join(density_out_dir, 'density_{}_{}.tsv.gz'.format(inv_call.id, wildcards.hap)),
+                        sep='\t', index=False, compression='gzip'
+                    )
+
+        # Merge records
+        if len(call_list) > 0:
+            df_bed = pd.concat(call_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END', 'ID'])
 
         else:
-
-            # Init
-            k_util = kanapy.util.kmer.KmerUtil(k_size)
-
-            align_lift = pavlib.align.lift.AlignLift(
-                pd.read_csv(input.bed_aln, sep='\t'),
-                svpoplib.ref.get_df_fai(input.qry_fai)
+            # Create emtpy data frame
+            df_bed = pd.DataFrame(
+                [],
+                columns=[
+                    '#CHROM', 'POS', 'END',
+                    'ID', 'SVTYPE', 'SVLEN',
+                    'HAP',
+                    'QRY_REGION', 'QRY_STRAND',
+                    'CI',
+                    'RGN_REF_INNER', 'RGN_QRY_INNER',
+                    'RGN_REF_DISC', 'RGN_QRY_DISC',
+                    'FLAG_ID', 'FLAG_TYPE',
+                    'ALIGN_INDEX',
+                    'CALL_SOURCE',
+                    'SEQ'
+                ]
             )
-
-            id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
-
-            kde = pavlib.kde.KdeTruncNorm(
-                kde_bandwidth, kde_trunc_z, kde_func
-            )
-
-            # Call inversions
-            call_list = list()
-
-            with open(log.log, 'w') as log_file:
-                for index, row in df_flag.iterrows():
-
-                    # Scan for inversions
-                    region_flag = pavlib.seq.Region(row['#CHROM'], row['POS'], row['END'])
-
-                    try:
-                        inv_call = pavlib.inv.scan_for_inv(
-                            region_flag, REF_FA, input.qry_fa,
-                            align_lift=align_lift,
-                            k_util=k_util,
-                            nc_ref=None,
-                            nc_qry=None,
-                            region_limit=region_limit,
-                            min_expand=min_expand,
-                            init_expand=init_expand,
-                            min_kmers=min_kmers,
-                            max_ref_kmer_count=max_ref_kmer_count,
-                            kde=kde,
-                            log=log_file,
-                        )
-
-
-                    except RuntimeError as ex:
-                        log_file.write('RuntimeError in scan_for_inv(): {}\n'.format(ex))
-                        inv_call = None
-
-                    # Save inversion call
-                    if inv_call is not None and inv_call.id not in id_set:
-
-                        # Get seq
-                        seq = pavlib.seq.region_seq_fasta(
-                            inv_call.region_qry_outer,
-                            input.qry_fa,
-                            rev_compl=inv_call.region_qry_outer.is_rev
-                        )
-
-                        # Get alignment record data
-                        align_index = ','.join(sorted(
-                            pavlib.util.collapse_to_set(
-                                (
-                                    inv_call.region_ref_outer.pos_aln_index,
-                                    inv_call.region_ref_outer.end_aln_index,
-                                    inv_call.region_ref_inner.pos_aln_index,
-                                    inv_call.region_ref_inner.end_aln_index
-                                ),
-                                to_type=str
-                            )
-                        ))
-
-                        # Save call
-                        call_list.append(pd.Series(
-                            [
-                                inv_call.region_ref_outer.chrom,
-                                inv_call.region_ref_outer.pos,
-                                inv_call.region_ref_outer.end,
-
-                                inv_call.id,
-                                'INV',
-                                inv_call.svlen,
-
-                                wildcards.hap,
-
-                                inv_call.region_qry_outer.to_base1_string(),
-                                '-' if inv_call.region_qry_outer.is_rev else '+',
-
-                                0,
-
-                                inv_call.region_ref_inner.to_base1_string(),
-                                inv_call.region_qry_inner.to_base1_string(),
-
-                                inv_call.region_ref_discovery.to_base1_string(),
-                                inv_call.region_qry_discovery.to_base1_string(),
-
-                                inv_call.region_flag.region_id(),
-                                row['TYPE'],
-
-                                align_index,
-
-                                pavlib.inv.CALL_SOURCE,
-
-                                'PASS',
-
-                                seq
-                            ],
-                            index=[
-                                '#CHROM', 'POS', 'END',
-                                'ID', 'SVTYPE', 'SVLEN',
-                                'HAP',
-                                'QRY_REGION', 'QRY_STRAND',
-                                'CI',
-                                'RGN_REF_INNER', 'RGN_QRY_INNER',
-                                'RGN_REF_DISC', 'RGN_QRY_DISC',
-                                'FLAG_ID', 'FLAG_TYPE',
-                                'ALIGN_INDEX',
-                                'CALL_SOURCE',
-                                'FILTER',
-                                'SEQ'
-                            ]
-                        ))
-
-                        id_set.add(inv_call.id)
-
-                        # Save density table
-                        inv_call.df.to_csv(
-                            os.path.join(density_out_dir, 'density_{}_{}.tsv.gz'.format(inv_call.id, wildcards.hap)),
-                            sep='\t', index=False, compression='gzip'
-                        )
-
-            # Merge records
-            if len(call_list) > 0:
-                df_bed = pd.concat(call_list, axis=1).T.sort_values(['#CHROM', 'POS', 'END', 'ID'])
-
-            else:
-                # Create emtpy data frame
-                df_bed = pd.DataFrame(
-                    [],
-                    columns=[
-                        '#CHROM', 'POS', 'END',
-                        'ID', 'SVTYPE', 'SVLEN',
-                        'HAP',
-                        'QRY_REGION', 'QRY_STRAND',
-                        'CI',
-                        'RGN_REF_INNER', 'RGN_QRY_INNER',
-                        'RGN_REF_DISC', 'RGN_QRY_DISC',
-                        'FLAG_ID', 'FLAG_TYPE',
-                        'ALIGN_INDEX',
-                        'CALL_SOURCE',
-                        'SEQ'
-                    ]
-                )
 
         # Write
         df_bed.to_csv(output.bed, sep='\t', index=False, compression='gzip')
