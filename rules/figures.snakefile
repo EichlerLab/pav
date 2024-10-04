@@ -74,7 +74,7 @@ localrules: figures_inv_all_png
 rule figures_inv_all_png:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'temp/flag/fig/{asm_name}_pass_png.flag', ASM_TABLE,
+            'temp/flag/fig/{asm_name}_pass_png.flag', ASM_TABLE, config,
         )
 
 # Make density and dotplot figures for all inversions in one sample.

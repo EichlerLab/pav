@@ -1,9 +1,7 @@
-setuptools~=60.2.0
-numpy~=1.25.2
-matplotlib~=3.7.2
-pandas~=2.1.0
-pysam~=0.21.0
-intervaltree~=3.1.0
-joblib~=1.3.2
-scipy~=1.11.3
-biopython~=1.81
+# PAV requirements
+
+numpy>=1.26.0
+pandas>=2.0.0
+pysam>=0.22.0
+intervaltree>=3.1.0
+scipy>=1.13.0

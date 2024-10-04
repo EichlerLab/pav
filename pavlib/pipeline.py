@@ -11,13 +11,14 @@ import os
 import pandas as pd
 import re
 
+import pavlib
 import svpoplib
 
-from Bio import SeqIO
+import Bio.SeqIO
 import Bio.bgzf
 
 
-def expand_pattern(pattern, asm_table, **kwargs):
+def expand_pattern(pattern, asm_table, config, **kwargs):
 
     # Check kwargs
     if kwargs is None or len(kwargs) == 0:
@@ -37,12 +38,19 @@ def expand_pattern(pattern, asm_table, **kwargs):
     if 'asm_name' in kwargs.keys() and kwargs['asm_name'] is not None:
         asm_list = set(kwargs['asm_name'])
     else:
-        asm_list = asm_table.index
+        asm_list = set(asm_table.index)
 
     if 'hap' in kwargs.keys() and kwargs['hap'] is not None:
         hap_set = set(kwargs['hap'])
     else:
         hap_set = None
+
+    if config is not None:
+        if 'asm_name' in config:
+            asm_list &= {val.strip() for val in config['asm_name'].split(',') if val.strip()}
+
+        if 'hap' in config:
+            hap_set &= {val.strip() for val in config['hap'].split(',') if val.strip()}
 
     # Process each assembly
     for asm_name in asm_list:
@@ -68,7 +76,6 @@ def get_hap_list(asm_name, asm_table):
 
     :param asm_name: Assembly name.
     :param asm_table: Assembly table (assemblies.tsv) as a Pandas DataFrame.
-    :param config: Pipeline config dictionary.
     """
 
     # Check values
@@ -138,7 +145,7 @@ def get_asm_config(asm_name, hap, asm_table, config):
     if not config_string:
         config_string = None
 
-    config_override = get_config_override_dict(config_string)
+    config_override = pavlib.config.get_config_override_dict(config_string)
 
     # Get filename pattern
     assembly_input = asm_table_entry[f'HAP_{hap}']
@@ -185,7 +192,6 @@ def get_asm_input_list(asm_name, hap, asm_table, config):
     :param hap: Haplotype.
     :param asm_table: Assembly table (assemblies.tsv).
     :param config: Pipeline config.
-    :param config_param: Configuration parameter (returned by get_asm_config()) to get the list of files from.
 
     :return: A list of input files.
     """
@@ -275,7 +281,6 @@ def expand_input(file_name_list):
 
             if file_name_real in fofn_list:
                 raise RuntimeWarning(f'Detected recursive FOFN traversal, ignoring redundant entry: {file_name}')
-                continue
 
             fofn_list.append(file_name_real)
 
@@ -399,113 +404,6 @@ def input_tuples_to_fasta(file_name_tuples, out_file_name):
         Bio.SeqIO.write(input_record_iter(), out_file, 'fasta')
 
     return
-
-
-def get_config_override_dict(config_string):
-    """
-    Get a dictionary of overridden parameters using the CONFIG column of the assembly table.
-
-    :param config_string: Config override string (e.g. attr1=val1;attr2=val2). Must be colon separated and each
-        element must have an equal sign. Whitespace around semi-colons and equal signs is ignored.
-
-    :return: Dict of overridden parameters or an empty dict if no parameters were overridden.
-    """
-
-    config_override = dict()
-
-    # Check string
-    if config_string is None or pd.isnull(config_string) or not config_string.strip():
-        return config_override
-
-    config_string = config_string.strip()
-
-    # Process each config directive
-    tok_list = config_string.split(';')
-
-    for tok in tok_list:
-
-        # Check tok
-        tok = tok.strip()
-
-        if not tok:
-            continue
-
-        if '=' not in tok:
-            raise RuntimeError('Cannot get assembly config: Missing "=" in CONFIG token {}: {}'.format(tok, config_string))
-
-        # Get attribute and value
-        key, val = tok.split('=', 1)
-
-        key = key.strip()
-        val = val.strip()
-
-        if not key:
-            raise RuntimeError('Cannot get assembly config: Missing key (key=value) in CONFIG token {}: {}'.format(tok, config_string))
-
-        if not val:
-            raise RuntimeError('Cannot get assembly config: Missing value (key=value) in CONFIG token {}: {}'.format(tok, config_string))
-
-        # Set
-        config_override[key] = val
-
-    return config_override
-
-
-def get_config_with_override(config, override_config):
-    """
-    Get a config dict with values replaced by overridden values. The dict in parameter `config` is copied if it is
-    modified. The original (unmodified) config or a modified copy is returned.
-
-    :param config: Existing config. Original object will not be modified.
-    :param override_config: A defined set of values that will override entries in `config`.
-
-    :return: A config object.
-    """
-
-    if override_config is None:
-        return config
-
-    if config is None:
-        config = dict()
-
-    config = config.copy()
-
-    for key, val in override_config.items():
-        if key in {'reference'}:
-            raise RuntimeError('The reference configuration parameter cannot be defined per sample.')
-
-        config[key] = val
-
-    return config
-
-
-def get_override_config(config, asm_name, asm_table):
-    """
-    Get a config dict with values replaced by overridden values. The dict in parameter `config` is copied if it is
-    modified. The original (unmodified) config or a modified copy is returned.
-
-    :param config: Existing config. Original object will not be modified.
-    :param asm_name: Name of the assembly.
-
-    :return: A config object.
-    """
-
-    if asm_name is None:
-        raise RuntimeError('Cannot get config overide for assembly: None')
-
-    if asm_table is None:
-        raise RuntimeError('Cannot get config overide for assembly table: None')
-
-    # Get table entry
-    if asm_name not in asm_table.index:
-        return config
-
-    asm_table_entry = asm_table.loc[asm_name]
-
-    if 'CONFIG' not in asm_table_entry:
-        return config
-
-    return get_config_with_override(config, get_config_override_dict(asm_table_entry['CONFIG']))
 
 
 def read_assembly_table(asm_table_filename, config):
@@ -648,32 +546,3 @@ def read_assembly_table(asm_table_filename, config):
     df_filter.columns = [filter_hap_map[col] for col in df_filter.columns]
 
     return pd.concat([df_hap, df_filter, df[['CONFIG']]], axis=1)
-
-
-def get_config(wildcards, config, asm_table, key=None, default_val=None, default_none=False):
-    """
-    Get a config object that might be modified by CONFIG parameters in the assembly table.
-
-    If "key" is None, the full config dictionary is returned. If "key" is defined, then the value of config for
-    that key is returned with an optional default value.
-
-    :param wildcards: Rule wildcards.
-    :param key: Key of the value to get from config.
-    :param default_val: Default value.
-    :param default_none: If True and default_val is None, return None instead of throwing an exception.
-
-    :return: Config object. Original global config, if unmodified, or a modified copy of it.
-    """
-
-    local_config = get_override_config(config, wildcards.asm_name, asm_table)
-
-    if key is None:
-        return local_config
-
-    if key not in local_config:
-        if default_val is None and not default_none:
-            raise RuntimeError('Configuration does not include key "{}" for asm_name "{}" with no default specified'.format(key, wildcards.asm_name))
-
-        return default_val
-
-    return local_config[key]

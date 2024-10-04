@@ -33,7 +33,7 @@ localrules: call_all_bed
 rule call_all_bed:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            'results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz', ASM_TABLE, config,
             vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv'), filter=('pass', 'fail')
         )
 
@@ -43,9 +43,9 @@ rule call_all_bed:
 rule call_merge_haplotypes:
     input:
         bed_batch=lambda wildcards: [
-            'temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{batch}.bed.gz'.format(
-                asm_name=wildcards.asm_name, filter=wildcards.filter, vartype_svtype=wildcards.vartype_svtype, batch=batch
-            ) for batch in range(pavlib.const.MERGE_BATCH_COUNT)
+            'temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{part}-of-{part_count}.bed.gz'.format(
+                asm_name=wildcards.asm_name, filter=wildcards.filter, vartype_svtype=wildcards.vartype_svtype, part=part, part_count=part_count
+            ) for part in range(get_config("merge_partitions", wildcards)) for part_count in (get_config("merge_partitions", wildcards),)
         ]
     output:
         bed='results/{asm_name}/bed_merged/{filter}/{vartype_svtype}.bed.gz',
@@ -76,9 +76,9 @@ rule call_merge_haplotypes:
 rule call_merge_haplotypes_snv:
     input:
         bed_batch=lambda wildcards: [
-            'temp/{asm_name}/bed/batch/{filter}/snv_snv/{batch}.bed.gz'.format(
-                asm_name=wildcards.asm_name, filter=wildcards.filter, batch=batch
-            ) for batch in range(pavlib.const.MERGE_BATCH_COUNT)
+            'temp/{asm_name}/bed/batch/{filter}/snv_snv/{part}-of-{part_count}.bed.gz'.format(
+                asm_name=wildcards.asm_name, filter=wildcards.filter, part=part, part_count=part_count
+            ) for part in range(get_config("merge_partitions", wildcards)) for part_count in (get_config("merge_partitions", wildcards),)
         ]
     output:
         bed='results/{asm_name}/bed_merged/{filter}/snv_snv.bed.gz'
@@ -102,7 +102,7 @@ rule call_merge_haplotypes_snv:
 # noinspection PyUnresolvedReferences
 rule call_merge_haplotypes_batch:
     input:
-        tsv='data/ref/merge_batch.tsv.gz',
+        tsv_part=lambda wildcards: f'data/ref/merge_partitions_{get_config("merge_partitions", wildcards)}.tsv.gz',
         bed_var=lambda wildcards: [
             'results/{asm_name}/bed_hap/{filter}/{hap}/{vartype_svtype}.bed.gz'.format(hap=hap, **wildcards)
                 for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
@@ -116,7 +116,7 @@ rule call_merge_haplotypes_batch:
                 for hap in pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
         ]
     output:
-        bed='temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{batch}.bed.gz'
+        bed='temp/{asm_name}/bed/batch/{filter}/{vartype_svtype}/{part}-of-{part_count}.bed.gz'
     wildcard_constraints:
         filter='pass|fail'
     threads: 12
@@ -125,10 +125,10 @@ rule call_merge_haplotypes_batch:
         hap_list = pavlib.pipeline.get_hap_list(wildcards.asm_name, ASM_TABLE)
 
         # Read batch table
-        df_batch = pd.read_csv(input.tsv, sep='\t')
-        df_batch = df_batch.loc[df_batch['BATCH'] == int(wildcards.batch)]
+        df_part = pd.read_csv(input.tsv_part, sep='\t')
+        df_part = df_part.loc[df_part['BATCH'] == int(wildcards.batch)]
 
-        subset_chrom = set(df_batch['CHROM'])
+        subset_chrom = set(df_part['CHROM'])
 
         # Get variant type
         var_svtype_list = wildcards.vartype_svtype.split('_')
@@ -228,15 +228,15 @@ localrules: call_all_bed_hap
 rule call_all_bed_hap:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/bed_hap/{filter}/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            'results/{asm_name}/bed_hap/{filter}/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE, config,
             filter=('pass', 'fail'), vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv')
         ),
         fa=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz', ASM_TABLE,
+            'results/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz', ASM_TABLE, config,
             vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv')
         ),
         fa_red=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/bed_hap/fail/{hap}/redundant/fa/{vartype_svtype}.fa.gz', ASM_TABLE,
+            'results/{asm_name}/bed_hap/fail/{hap}/redundant/fa/{vartype_svtype}.fa.gz', ASM_TABLE, config,
             vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv')
         )
 
@@ -246,7 +246,7 @@ localrules: call_all_bed_pass
 rule call_all_bed_pass:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'results/{asm_name}/bed_hap/pass/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE,
+            'results/{asm_name}/bed_hap/pass/{hap}/{vartype_svtype}.bed.gz', ASM_TABLE, config,
             vartype_svtype=('svindel_ins', 'svindel_del', 'sv_inv', 'snv_snv')
         )
 
@@ -356,17 +356,15 @@ rule call_intersect_fail_batch:
         fa_fail=lambda wildcards: ['temp/{asm_name}/bed_hap/fail/{hap}/fa/{vartype_svtype}.fa.gz']
             if wildcards.vartype_svtype != 'snv_snv' else [],
         bed_align='results/{asm_name}/align/trim-none/aligned_query_{hap}.bed.gz',
-        tsv_batch='data/ref/merge_batch.tsv.gz'
+        tsv_part='data/ref/partition_{part_count}.tsv.gz'
     output:
-        tsv=temp('temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{batch}.tsv.gz')
+        tsv=temp('temp/{asm_name}/bed_hap/fail/{hap}/intersect/{vartype_svtype}_{part}-of-{part_count}.tsv.gz')
     threads: 1
     run:
 
         # Get chromosome set for this batch
-        df_batch = pd.read_csv(input.tsv_batch, sep='\t', low_memory=False)
-        df_batch = df_batch.loc[df_batch['BATCH'] == int(wildcards.batch)]
-
-        subset_chrom = set(df_batch['CHROM'])
+        df_part = pd.read_csv(input.tsv_part, sep='\t', low_memory=False)
+        subset_chrom = set(df_part.loc[df_part['PARTITION'] == int(wildcards.part), 'CHROM'])
 
         del df_batch
 
@@ -491,7 +489,6 @@ rule call_intersect_fail_batch:
                 pass
 
 # Filter variants from inside inversions
-# noinspection PyTypeChecker
 rule call_integrate_sources:
     input:
         bed_cigar_insdel='temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz',
@@ -500,10 +497,7 @@ rule call_integrate_sources:
         bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
         bed_inv='temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz',
-        bed_cov_tig='results/{asm_name}/align/trim-tig/depth_tig_{hap}.bed.gz',
-        bed_filter=lambda wildcards: pavlib.pipeline.get_asm_config(
-            wildcards.asm_name, wildcards.hap, ASM_TABLE, config
-        )['filter_input']
+        bed_cov_tig='results/{asm_name}/align/trim-tig/depth_tig_{hap}.bed.gz'
     output:
         bed_ins_pass='results/{asm_name}/bed_hap/pass/{hap}/svindel_ins.bed.gz',
         bed_del_pass='results/{asm_name}/bed_hap/pass/{hap}/svindel_del.bed.gz',
@@ -519,49 +513,27 @@ rule call_integrate_sources:
         fa_ins_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/svindel_ins.fa.gz'),
         fa_del_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/svindel_del.fa.gz'),
         fa_inv_fail=temp('temp/{asm_name}/bed_hap/fail/{hap}/fa/sv_inv.fa.gz')
+    params:
+        inv_min=lambda wildcards: get_config('inv_min', wildcards),
+        inv_max=lambda wildcards: get_config('inv_max', wildcards),
+        inv_inner=lambda wildcards: get_config('inv_inner', wildcards),
+        query_filter=lambda wildcards: get_config('query_filter', wildcards),
+        redundant_callset=lambda wildcards: get_config('redundant_callset', wildcards)
     run:
 
-        # Get parameters
-        local_config = get_config(wildcards)
-
-        inv_min = local_config.get('inv_min', 0)
-        inv_max = local_config.get('inv_max', 1e10)
-        inv_inner = local_config.get('inv_inner', 'filter_core')
-        redundant_callset = pavlib.util.as_bool(local_config.get('redundant_callset', False))
-
-        # Check and set inv_inner
-        inv_inner_bool = pavlib.util.as_bool(inv_inner, True)
-
-        if inv_inner_bool is not None:
-            inv_inner = 'no_filter' if inv_inner_bool else 'filter'
-
-        else:
-            if not isinstance(inv_inner, str):
-                raise RuntimeError(f'Parameter "inv_inner" must be bool or string: "{inv_inner}"')
-
-            inv_inner = inv_inner.lower().strip()
-
-            if inv_inner not in {'all', 'none', 'filter_core'}:
-                raise RuntimeError(f'Parameter "inv_inner" must be bool or string containing "no_core": "{inv_inner}"')
-
-        # Check min/max
-        if inv_min is not None and inv_min != 'unlimited':
-            inv_min = int(inv_min)
-        else:
-            inv_min = None
-
-        if inv_max is not None and inv_max != 'unlimited':
-            inv_max = int(inv_max)
-        else:
-            inv_max = None
-
-        # Read tig filter (if present)
+        # Read query filter (if present)
         qry_filter_tree = None
 
-        if len(input.bed_filter) > 0:
+        qry_filter_list = []
+
+        if params.query_filter is not None:
+            qry_filter_list = [file_name.strip() for file_name in params.query_filter.split(';') if file_name.strip()]
+
+        if len(qry_filter_list) > 0:
+
             qry_filter_tree = collections.defaultdict(intervaltree.IntervalTree)
 
-            for filter_filename in input.bed_filter:
+            for filter_filename in qry_filter_list:
                 df_filter = pd.read_csv(filter_filename, sep='\t', header=None, comment='#', usecols=(0, 1, 2))
                 df_filter.columns = ['#CHROM', 'POS', 'END']
 
@@ -623,15 +595,24 @@ rule call_integrate_sources:
                 assert False, f'vartype in control loop does not match a known value: {vartype}'
 
             # Override add_compound
-            if redundant_callset:
+            if params.redundant_callset:
                 filter_compound = False
                 add_compound = False
 
-            elif inv_inner == 'no_filter':
+            elif params.inv_inner == 'none':
                 add_compound = add_compound and not is_inv
 
-            elif inv_inner == 'no_flag_core':
-                no_flag_core = is_inv
+            elif params.inv_inner == 'no_flag_core':
+                flag_inv_inner_only = is_inv
+
+
+
+            raise NotImplementedError(
+                'Filtering under inversions needs to be updated to account for differences in inversion detection '
+                '(e.g. only drop variants if the alignment was not inverted'
+            )
+
+
 
             # Apply filters
             if df.shape[0] > 0:
@@ -653,7 +634,7 @@ rule call_integrate_sources:
                 if filter_compound:
                     pavlib.call.apply_compound_filter(
                         df, compound_filter_tree, filter_dict, compound_dict,
-                        add_compound, no_flag_core
+                        add_compound, flag_inv_inner_only
                     )
 
             # Compound filter
@@ -753,7 +734,6 @@ rule call_integrate_sources:
             del df
 
 
-
 #
 # Call from CIGAR
 #
@@ -761,11 +741,19 @@ rule call_integrate_sources:
 # Merge discovery sets from each batch.
 rule call_cigar_merge:
     input:
-        bed_insdel=expand('temp/{{asm_name}}/cigar/batched/t{{tier}}/insdel_{{hap}}_{batch}.bed.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT)),
-        bed_snv=expand('temp/{{asm_name}}/cigar/batched/t{{tier}}/snv_{{hap}}_{batch}.gz', batch=range(pavlib.cigarcall.CALL_CIGAR_BATCH_COUNT))
+        bed_insdel=lambda wildcards: [
+            'temp/{asm_name}/cigar/partition/insdel_{hap}_{part}-of-{part_count}.bed.gz'.format(
+                part=part, part_count=get_config('cigar_partitions', wildcards), **wildcards
+            ) for part in range(get_config('cigar_partitions', wildcards))
+        ],
+        bed_snv=lambda wildcards: [
+            'temp/{asm_name}/cigar/partition/snv_{hap}_{part}-of-{part_count}.bed.gz'.format(
+                part=part, part_count=get_config('cigar_partitions', wildcards), **wildcards
+            ) for part in range(get_config('cigar_partitions', wildcards))
+        ]
     output:
-        bed_insdel=temp('temp/{asm_name}/cigar/merged/t{tier}/svindel_insdel_{hap}.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/cigar/merged/t{tier}/snv_snv_{hap}.bed.gz')
+        bed_insdel=temp('temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz')
     run:
 
         # INS/DEL
@@ -795,24 +783,28 @@ rule call_cigar_merge:
 
 # Call variants by alignment CIGAR parsing.
 #
-# IDs are not versioned by this rule, versioning must be applied after batches are merged.
+# IDs are not versioned by this rule, versioning must be applied after partitions are merged.
 rule call_cigar:
     input:
-        bed='results/{asm_name}/align/t{tier}_none/align_qry_{hap}.bed.gz',
-        bed_trim='results/{asm_name}/align/t{tier}_qryref/align_qry_{hap}.bed.gz',
-        tig_fa_name='temp/{asm_name}/align/query/query_{hap}.fa.gz'
+        bed='results/{asm_name}/align/trim-none/align_qry_{hap}.bed.gz',
+        bed_trim='results/{asm_name}/align/trim-qryref/align_qry_{hap}.bed.gz',
+        tig_fa_name='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        tsv_part='data/ref/partition_{part_count}.tsv.gz'
     output:
-        bed_insdel=temp('temp/{asm_name}/cigar/batched/t{tier}/insdel_{hap}_{batch}.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/cigar/batched/t{tier}/snv_{hap}_{batch}.gz')
-
+        bed_insdel=temp('temp/{asm_name}/cigar/partition/insdel_{hap}_{part}-of-{part_count}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/partition/snv_{hap}_{part}-of-{part_count}.bed.gz')
     run:
 
-        batch = int(wildcards.batch)
+        partition = int(wildcards.part)
+
+        # Get chromosome set
+        df_part = pd.read_csv(input.tsv_part, sep='\t')
+        chrom_set = set(df_part.loc[df_part['PARTITION'] == partition, 'CHROM'])
 
         # Read
         df_align = pd.read_csv(input.bed, sep='\t', dtype={'#CHROM': str}, keep_default_na=False, low_memory=False)
 
-        df_align = df_align.loc[df_align['CALL_BATCH'] == batch]
+        df_align = df_align.loc[df_align['#CHROM'].isin(chrom_set)]
 
         # Call
         df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap, version_id=False)
@@ -830,62 +822,3 @@ rule call_cigar:
         # Write
         df_insdel.to_csv(output.bed_insdel, sep='\t', index=False, compression='gzip')
         df_snv.to_csv(output.bed_snv, sep='\t', index=False, compression='gzip')
-
-
-#
-# Supporting rules
-#
-
-# Create a table of merge batch assignments
-localrules: call_merge_batch_table
-
-rule call_merge_batch_table:
-    input:
-        tsv='data/ref/contig_info.tsv.gz'
-    output:
-        tsv='data/ref/merge_batch.tsv.gz'
-    run:
-
-        # Read and sort
-        df = pd.read_csv(
-            input.tsv, sep='\t', dtype={'CHROM': str, 'LEN': int}
-        ).sort_values(
-            'LEN', ascending=False
-        ).set_index(
-            'CHROM'
-        )[['LEN']]
-
-        df['BATCH'] = -1
-
-        # Get a list of assignments for each batch
-        list_chr = collections.defaultdict(list)
-        list_size = collections.Counter()
-
-        def get_smallest():
-            """
-            Get the next smallest bin.
-            """
-
-            min_index = 0
-
-            for i in range(pavlib.const.MERGE_BATCH_COUNT):
-
-                if list_size[i] == 0:
-                    return i
-
-                if list_size[i] < list_size[min_index]:
-                    min_index = i
-
-            return min_index
-
-        for chrom in df.index:
-            i = get_smallest()
-            df.loc[chrom, 'BATCH'] = i
-            list_size[i] += df.loc[chrom, 'LEN']
-
-        # Check
-        if np.any(df['BATCH'] < 0):
-            raise RuntimeError('Failed to assign all reference contigs to batches (PROGRAM BUG)')
-
-        # Write
-        df.to_csv(output.tsv, sep='\t', index=True, compression='gzip')

@@ -2,8 +2,11 @@
 Data files including reference and data tables for the reference.
 """
 
+import collections
 import gzip
+import numpy as np
 import os
+import pandas as pd
 
 import Bio.SeqIO
 
@@ -11,6 +14,77 @@ import pavlib
 import svpoplib
 
 global shell
+
+
+#
+# Pre-run targets
+#
+
+def data_init_targets(wildcards=None):
+    """
+    Get a list of input files to be generated before running samples. This target can be used to setup so that each
+    sample can be run independently.
+
+    :param wildcards: Ignored. Function signature needed for Snakemake input function.
+
+    :return: List of run targets.
+    """
+
+    aligner_set = set()
+    part_set = set()
+
+    # Get a set of aligners and partitions
+    for asm_name in ASM_TABLE.index:
+
+        local_config = pavlib.config.get_override_config(asm_name, config, ASM_TABLE)
+
+        aligner_set.add(pavlib.config.get_aligner(asm_name, config, ASM_TABLE))
+
+        part_set.add(
+            pavlib.config.CONFIG_PARAM_DICT['cigar_partitions'].get_value(
+                local_config['cigar_partitions'] if 'cigar_partitions'in local_config else None
+            )
+        )
+
+        part_set.add(
+            pavlib.config.CONFIG_PARAM_DICT['merge_partitions'].get_value(
+                local_config['merge_partitions'] if 'cigar_partitions'in local_config else None
+            )
+        )
+
+    # Construct target list
+    target_list = [
+        'data/ref/contig_info.tsv.gz',
+        'data/ref/n_gap.bed.gz',
+        'data/ref/ref.fa.gz',
+        'data/ref/ref.fa.gz.fai'
+    ]
+
+    if 'lra' in aligner_set:
+        target_list += [
+            'data/ref/ref.fa.gz.gli',
+            'data/ref/ref.fa.gz.mms'
+        ]
+
+    for part in part_set:
+        target_list.append(
+            f'data/ref/partition_{part}.tsv.gz'
+        )
+
+    return target_list
+
+
+
+#
+# Pre-run targets
+#
+
+localrules: data_init
+
+# Generate all pre-target runs
+rule data_init:
+    input:
+        files=data_init_targets
 
 
 #
@@ -116,3 +190,67 @@ rule data_align_ref:
 
         else:
             shell("""samtools faidx {output.ref_fa}""")
+
+#
+# Reference sequence partitions
+#
+
+# Create a table of merge batch assignments
+localrules: call_merge_partition_table
+
+# Create a table with reference sequences split evenly by length into a set number of partitions (labeled 0 to n - 1).
+rule call_merge_partition_table:
+    input:
+        tsv='data/ref/contig_info.tsv.gz'
+    output:
+        tsv_part='data/ref/partition_{part_count}.tsv.gz'
+    run:
+
+        part_count = int(wildcards.part_count)
+
+        if part_count < 1:
+            raise RuntimeError(f'Number of partitions must be at least 1: {part_count}')
+
+        # Read and sort
+        df = pd.read_csv(
+            input.tsv, sep='\t', dtype={'CHROM': str, 'LEN': int}
+        ).sort_values(
+            'LEN', ascending=False
+        ).set_index(
+            'CHROM'
+        )[['LEN']]
+
+        df['PARTITION'] = -1
+
+        # Get a list of assignments for each partition
+        list_chr = collections.defaultdict(list)
+        list_size = collections.Counter()
+
+        def get_smallest():
+            """
+            Get the next smallest bin.
+            """
+
+            min_index = 0
+
+            for i in range(part_count):
+
+                if list_size[i] == 0:
+                    return i
+
+                if list_size[i] < list_size[min_index]:
+                    min_index = i
+
+            return min_index
+
+        for chrom in df.index:
+            i = get_smallest()
+            df.loc[chrom, 'PARTITION'] = i
+            list_size[i] += df.loc[chrom, 'LEN']
+
+        # Check
+        if np.any(df['PARTITION'] < 0):
+            raise RuntimeError('Failed to assign all reference contigs to partitions (PROGRAM BUG)')
+
+        # Write
+        df.to_csv(output.tsv_part, sep='\t', index=True, compression='gzip')

@@ -97,7 +97,7 @@ def _track_get_input_bed(wildcards):
 rule tracks_hap_call_all:
     input:
         bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'tracks/{asm_name}/variant/pre_merge/pass/{varsvtype}_{hap}.bb', ASM_TABLE,
+            'tracks/{asm_name}/variant/pre_merge/pass/{varsvtype}_{hap}.bb', ASM_TABLE, config,
             varsvtype=['sv_insdel', 'sv_inv', 'indel_insdel', 'snv_snv']
         )
 
@@ -175,11 +175,11 @@ rule tracks_hap_call:
 rule tracks_align_all:
     input:
         bed_depth=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'tracks/{asm_name}/align/align_query_tier-{tier}_trim-{trim}.bb', ASM_TABLE,
+            'tracks/{asm_name}/align/align_query_tier-{tier}_trim-{trim}.bb', ASM_TABLE, config,
             trim=('none', 'qry', 'qryref'), tier=('1', '2')
         ),
         bed_depth_t0=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'tracks/{asm_name}/align/align_query_tier-0_trim-{trim}.bb', ASM_TABLE,
+            'tracks/{asm_name}/align/align_query_tier-0_trim-{trim}.bb', ASM_TABLE, config,
             trim=('qry', 'qryref')
         )
 

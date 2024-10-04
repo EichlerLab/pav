@@ -31,7 +31,7 @@ class KdeTruncNorm(object):
     Kernel Density Estimation (KDE) with a truncated-normal distribution. Uses FFT convolution to solve density.
     """
 
-    def __init__(self, bandwidth=100.0, trunc_z=3.0, conv='AUTO'):
+    def __init__(self, bandwidth=100.0, trunc_z=3.0, conv='auto'):
 
         # Check parameters
         if bandwidth <= 0:
@@ -45,16 +45,16 @@ class KdeTruncNorm(object):
 
         # Get convolution method
         if isinstance(conv, str):
-            conv_upper = conv.strip().upper()
+            conv_lower = conv.strip().lower()
 
-            is_auto = conv_upper == 'AUTO'
+            is_auto = conv_lower == 'auto'
 
             self.conv_method = None
 
             if is_auto:
-                conv_upper = 'FFT'
+                conv_lower = 'fft'
 
-            if conv_upper == 'FFT' and self.conv_method is None:
+            if conv_lower == 'fft' and self.conv_method is None:
 
                 spec = importlib.util.find_spec('scipy.signal')
 
@@ -62,12 +62,12 @@ class KdeTruncNorm(object):
                     if not is_auto:
                         raise RuntimeError(f'Error initializing KdeTruncNorm: Missing package for KDE convolution method {conv}: scipy.signal')
                     else:
-                        conv_upper = 'CONV'  # Try next
+                        conv_upper = 'conv'  # Try next
 
                 import scipy.signal
                 self.conv_method = scipy.signal.fftconvolve
 
-            if conv_upper == 'CONV' and self.conv_method is None:
+            if conv_lower == 'conv' and self.conv_method is None:
                 self.conv_method = np.convolve
 
             if self.conv_method is None:

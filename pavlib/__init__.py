@@ -4,13 +4,15 @@ PAV Python library routines.
 
 __all__ = []
 
+from . import inv
+from . import const
+
 from . import align
 from . import asmstat
-from . import cigarcall
 from . import call
-from . import const
+from . import cigarcall
+from . import config
 from . import kde
-from . import inv
 from . import io
 from . import lgsv
 from . import pipeline

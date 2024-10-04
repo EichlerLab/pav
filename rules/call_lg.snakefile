@@ -21,7 +21,7 @@ localrules: call_lg_all
 rule call_lg_all:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz', ASM_TABLE,
+            'temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz', ASM_TABLE, config,
             tier=(0, 1, 2)
         )
 

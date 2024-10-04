@@ -610,7 +610,7 @@ def count_cigar(row, allow_m=False):
     return ref_bp, qry_bp, clip_h_l, clip_s_l, clip_h_r, clip_s_r
 
 
-def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=None):
+def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, score_model=None):
     """
     Read alignment file as a BED file that PAV can process. Drops any records marked as unaligned by the SAM flag.
 
@@ -619,7 +619,6 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
         type str if query names are numeric.
     :param hap: Haplotype assinment for this alignment file (h1 or h2).
     :param min_mapq: Minimum MAPQ. If 0, then all alignments are accepted as long as the unmapped flag is not set.
-    :param tier: Alignment tier for these records.
     :param score_model: Alignment model object (`pavlib.align.score.ScoreModel`) or a configuration string to generate
         a score model object. If `None`, the default score model is used. An alignment score is computed by summing
         the score of each CIGAR operation against this model (match, mismatch, and gap) to create the "SCORE" column.
@@ -686,7 +685,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
                         record.reference_start,
                         record.reference_end,
 
-                        tier, align_index,
+                        align_index,
 
                         record.query_name,
                         qry_len - qry_map_end if record.is_reverse else qry_map_pos,
@@ -708,7 +707,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
                     ],
                     index=[
                         '#CHROM', 'POS', 'END',
-                        'TIER', 'INDEX',
+                        'INDEX',
                         'QRY_ID', 'QRY_POS', 'QRY_END',
                         'RG', 'AO',
                         'MAPQ',
@@ -726,7 +725,7 @@ def get_align_bed(align_file, df_qry_fai, hap, min_mapq=0, tier=0, score_model=N
             [],
             columns=[
                 '#CHROM', 'POS', 'END',
-                'TIER', 'INDEX',
+                'INDEX',
                 'QRY_ID', 'QRY_POS', 'QRY_END',
                 'RG', 'AO',
                 'MAPQ',

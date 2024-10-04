@@ -33,22 +33,16 @@ Type `bool` is boolean (True/False) values and is not case sensitive:
 
 ### Alignments
 
-Alignments are done in two tiers and reconciled. The first tier (tier 1) uses alignment parameters to capture large SVs
-and is the basis for most of the callset. The second tier (tier 2) uses a different set alignment parameters to align
-smaller fragments allowing for better SV resolution, particularly complex SVs.
-
 * min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
   bases the query sequence covers in one alignment record.
-* aligner_tierX ["minimap2"; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
-  "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
-* aligner ["minimap2"; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
-* align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
-  * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
-  * lra tier 1 default: "" (default LRA parameters)
-  * minimap2 tier 2 default: "-x asm5"
-  * If LRA is used for tier 2 (i.e. "aligner_tier2" = "lra"), then "align_params_tier2" must be defined.
-* minimap2_params: Alias for "align_params_tier1", but only if the tier 1 aligner is minimap2. Allows PAV to read 
-  configurations from earlier versions of PAV.
+* aligner ["minimap2"; string]: Alignment program to use ("lra" or "minimap2").
+* align_params [<default depends on aligner>; string]: Alignment parameters.
+  * minimap2 default: "-x asm5"
+  * lra default: ""
+  * Value "pav2" uses legacy alignment parameters before PAV 3.
+* minimap2_params: Alias for "align_params", but only if the aligner is minimap2. Not recommeneded for new
+  configurations, this allows PAV to read legacy configurations.
+
 
 ## Inversions
 
@@ -190,16 +184,13 @@ for the second parameter will give diminishing returns.
 
 * min_trim_qry_len [1000, int]: Ignore query alignments shorter than this size. Parameter is the number of reference
   bases the query sequence covers in one alignment record.
-* aligner_tierX ["minimap2"; string]: Alignment program to use for tier X (where X is 1 or 2). Recognized aligners are
-  "minimap2" or "lra". By default, minimap2 is used for tier 1 and 2.
-* aligner ["minimap2"; string]: Alias for "aligner_tier1". Allows PAV to read configurations from earlier versions of PAV.
-* align_params_tierX [<default depends on tier>; string]: Alignment parameters for tier X (where X is 1 or 2).
-  * minimap2 tier 1 default: "-x asm20 -m 10000 -z 10000,50 -r 50000 --end-bonus=100 -O 5,56 -E 4,1 -B 5"
-  * lra tier 1 default: "" (default LRA parameters)
-  * minimap2 tier 2 default: "-x asm5"
-  * If LRA is used for tier 2 (i.e. "aligner_tier2" = "lra"), then "align_params_tier2" must be defined.
-* minimap2_params: Alias for "align_params_tier1", but only if the tier 1 aligner is minimap2. Allows PAV to read 
-  configurations from earlier versions of PAV.
+* aligner ["minimap2"; string]: Alignment program to use ("lra" or "minimap2").
+* align_params [<default depends on aligner>; string]: Alignment parameters.
+  * minimap2 default: "-x asm5"
+  * lra default: ""
+  * Value "pav2" uses legacy alignment parameters before PAV 3.
+* minimap2_params: Alias for "align_params", but only if the aligner is minimap2. Not recommeneded for new
+  configurations, this allows PAV to read legacy configurations.
 * align_score_model ["affine::match=2,mismatch=4,gap=4:2;24:1"; string"]: A model for scoring alignment records.
   * Alignment records are scored by summing scores across a whole alignment record (i.e. sum of matches, mismatches,
   * The first parameter before "::" is the model, "affine" is the default if omitted ("::" and everything before is
