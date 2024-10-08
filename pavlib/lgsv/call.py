@@ -6,10 +6,7 @@ import numpy as np
 import pavlib
 import svpoplib
 
-DEFAULT_MIN_ANCHOR_SCORE = 1000
-
-
-def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE, verbose=False, dot_basename=None):
+def call_from_align(caller_resources, min_anchor_score=pavlib.const.DEFAULT_MIN_ANCHOR_SCORE, verbose=False, dot_basename=None):
     """
     Create a list of variant calls from alignment table.
 
@@ -25,6 +22,8 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
     variant_call_list = list()
     variant_id_set = set()
 
+    min_anchor_score = pavlib.lgsv.util.get_min_anchor_score(min_anchor_score, caller_resources.score_model)
+
     for query_id in caller_resources.df_align_qry['QRY_ID'].unique():
         if verbose:
             print(f'Query: {query_id}')
@@ -32,6 +31,9 @@ def call_from_align(caller_resources, min_anchor_score=DEFAULT_MIN_ANCHOR_SCORE,
         df_align = caller_resources.df_align_qry.loc[
             caller_resources.df_align_qry['QRY_ID'] == query_id
         ].reset_index(drop=True)
+
+        if list(df_align['QRY_ORDER']) != list(df_align.index):
+            raise RuntimeError(f'Query {query_id} order is out of sync with QRY_ORDER (Program Bug)')
 
         #chain_container = pavlib.lgsv.chain.AnchorChainContainer()
 

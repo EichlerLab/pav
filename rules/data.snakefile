@@ -13,6 +13,8 @@ import Bio.SeqIO
 import pavlib
 import svpoplib
 
+global ASM_TABLE
+global get_override_config
 global shell
 
 
@@ -85,6 +87,55 @@ localrules: data_init
 rule data_init:
     input:
         files=data_init_targets
+
+#
+# Query FASTA files
+#
+
+# Get FASTA files.
+rule align_get_qry_fa:
+    input:
+        fa=lambda wildcards: pavlib.pipeline.get_rule_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, get_override_config(wildcards.asm_name))
+    output:
+        fa='data/query/{asm_name}/query_{hap}.fa.gz',
+        fai='data/query/{asm_name}/query_{hap}.fa.gz.fai',
+        gzi='data/query/{asm_name}/query_{hap}.fa.gz.gzi'
+    run:
+
+        # Get input files
+        # noinspection PyUnresolvedReferences
+        input_list = input.fa if 'fa' in input.keys() else []
+
+        input_tuples, fofn_list = pavlib.pipeline.expand_input(
+            pavlib.pipeline.get_asm_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, config)
+        )
+
+        # Report input sources
+        if input_tuples is not None:
+            for file_name, file_format in input_tuples:
+                print(f'Input: {wildcards.asm_name} {wildcards.hap}: {file_name} ({file_format})')
+        else:
+            print(f'No input sources: {wildcards.asm_name} {wildcards.hap}')
+
+        # Link or generate FASTA
+        is_link = False
+
+        if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz'):
+            os.symlink(os.path.abspath(input_tuples[0][0]), output.fa)
+            is_link = True
+
+        else:
+            # Merge/write FASTA (or empty files if there is no input)
+            pavlib.pipeline.input_tuples_to_fasta(input_tuples, output.fa)
+            is_link = False
+
+        # Index
+        if is_link and os.path.isfile(input_tuples[0][1] + '.fai') and os.path.isfile(input_tuples[0][1] + '.gzi'):
+            os.symlink(os.path.abspath(input_tuples[0][1] + '.fai'), output.fai)
+            os.symlink(os.path.abspath(input_tuples[0][1] + '.gzi'), output.gzi)
+
+        else:
+            shell("""samtools faidx {output.fa}""")
 
 
 #

@@ -17,10 +17,11 @@ import pavlib
 import svpoplib
 import kanapy
 
+global ASM_TABLE
+global REF_FA
 global expand
 global temp
 global get_config
-global REF_FA
 
 
 #
@@ -38,7 +39,7 @@ INV_CALL_COLUMNS = [
     'RGN_REF_DISC', 'RGN_QRY_DISC',
     'FLAG_ID', 'FLAG_TYPE',
     'ALIGN_INDEX',
-    'CALL_SOURCE',
+    'CALL_SOURCE', 'KDE_SCORE',
     'FILTER',
     'SEQ'
 ]
@@ -55,14 +56,13 @@ def _input_call_inv_cluster(wildcards):
 
     if wildcards.vartype == 'indel':
         return [
-            'temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'.format(**wildcards),
+            'temp/{asm_name}/cigar/svindel_insdel_{hap}.bed.gz'.format(**wildcards),
         ]
 
     elif wildcards.vartype == 'snv':
         return [
-            'temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz'.format(**wildcards),
+            'temp/{asm_name}/cigar/snv_snv_{hap}.bed.gz'.format(**wildcards),
         ]
-
 
     raise RuntimeError('Unknown variant type {} for input into call_inv_cluster: Expected "indel" or "snv"'.format(
         wildcards.vartype
@@ -93,8 +93,6 @@ def _call_inv_accept_flagged_region(row, allow_single_cluster=False, match_any=s
 
     return True
 
-BATCH_COUNT_DEFAULT = 60
-
 
 #############
 ### Rules ###
@@ -105,21 +103,55 @@ BATCH_COUNT_DEFAULT = 60
 # Call inversions
 #
 
-# Merge batches.
-# noinspection PyTypeChecker
-rule call_inv_batch_merge:
+# Call all inversions from variant call signatures
+rule call_inv_sig_all:
     input:
-        bed=lambda wildcards: expand('temp/{{asm_name}}/inv_caller/batch/{{hap}}/inv_call_{batch}.bed.gz', batch=range(int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT))))
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz', ASM_TABLE, config
+        )
+
+
+# Gather partitions.
+# noinspection PyTypeChecker
+rule call_inv_gather:
+    input:
+        bed=lambda wildcards: [
+            f'temp/{wildcards.asm_name}/inv_caller/part/{wildcards.hap}/inv_call_{part}-of-{part_count}.bed.gz'
+                for part in range(get_config('inv_sig_part_count', wildcards)) for part_count in (get_config('inv_sig_part_count', wildcards),)
+        ]
     output:
         bed=temp('temp/{asm_name}/inv_caller/sv_inv_{hap}.bed.gz')
+    params:
+        inv_max_overlap=lambda wildcards: get_config('inv_max_overlap', wildcards)
     run:
 
         df = pd.concat(
             [pd.read_csv(file_name, sep='\t') for file_name in input.bed],
             axis=0
+        ).sort_values(
+            ['KDE_SCORE']
         )
 
-        df.drop_duplicates('ID', inplace=True)
+        # Drop overlapping variants (may be discovered from two separate flagged sites)
+        if df.shape[0] > 0:
+            inv_tree = collections.defaultdict(intervaltree.IntervalTree)
+
+            df_list = list()
+
+            for index, row in df.iterrows():
+                keep = True
+
+                for interval in inv_tree[row['#CHROM']].overlap(row['POS'], row['END']):
+                    if svpoplib.variant.reciprocal_overlap(row['POS'], row['END'], interval.begin, interval.end) >= params.inv_max_overlap:
+                        keep = False
+                        break
+
+                if keep:
+                    df_list.append(row)
+
+            df = pd.concat(df_list, axis=1).T
+
+        df['ID'] = svpoplib.variant.get_variant_id(df)
 
         df.sort_values(
             ['#CHROM', 'POS', 'END', 'ID']
@@ -127,52 +159,49 @@ rule call_inv_batch_merge:
             output.bed, sep='\t', index=False, compression='gzip'
         )
 
-# Call inversions in batches of flagged regions.
-rule call_inv_batch:
+
+# Call inversions in partitnions of flagged regions.
+rule call_inv_part:
     input:
-        bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz',
-        bed_aln='results/{asm_name}/align/trim-qryref/aligned_query_{hap}.bed.gz',
-        qry_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
-        qry_fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
+        bed_flag='results/{asm_name}/inv_caller/flagged_regions_{hap}_parts-{part_count}.bed.gz',
+        bed_aln='results/{asm_name}/align/trim-qryref/align_qry_{hap}.bed.gz',
+        fa_qry='data/query/{asm_name}/query_{hap}.fa.gz',
+        fai_qry='data/query/{asm_name}/query_{hap}.fa.gz.fai'
     output:
-        bed=temp('temp/{asm_name}/inv_caller/batch/{hap}/inv_call_{batch}.bed.gz')
+        bed=temp('temp/{asm_name}/inv_caller/part/{hap}/inv_call_{part}-of-{part_count}.bed.gz')
     log:
-        log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{batch}.log'
+        log='log/{asm_name}/inv_caller/log/{hap}/inv_call_{part}-of-{part_count}.log'
     params:
-        align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL)
+        align_score=lambda wildcards: get_config('align_score_model', wildcards),
+        k_size=lambda wildcards: get_config('inv_k_size', wildcards),
+        region_limit=lambda wildcards: get_config('inv_region_limit', wildcards),
+        kde_func=lambda wildcards: get_config('inv_kde_func', wildcards),
+        kde_bandwidth=lambda wildcards: get_config('inv_kde_bandwidth', wildcards),
+        kde_trunc_z=lambda wildcards: get_config('inv_kde_trunc_z', wildcards),
+        min_expand=lambda wildcards: get_config('inv_min_expand', wildcards),
+        init_expand=lambda wildcards: get_config('inv_init_expand', wildcards),
+        min_kmers=lambda wildcards: get_config('inv_min_kmers', wildcards),
+        max_ref_kmer_count=lambda wildcards: get_config('inv_max_ref_kmer_count', wildcards),
+        repeat_match_prop=lambda wildcards: get_config('inv_repeat_match_prop', wildcards),
+        min_inv_kmer_run=lambda wildcards: get_config('inv_min_inv_kmer_run', wildcards),
+        min_qry_ref_prop=lambda wildcards: get_config('inv_min_qry_ref_prop', wildcards)
     threads: 1
     run:
 
         call_source = 'FLAG-DEN'
 
-        # Get params
-        region_limit = get_config(wildcards, 'inv_region_limit', pavlib.const.INV_REGION_LIMIT)
-        min_expand = get_config(wildcards, 'inv_min_expand', pavlib.const.INV_MIN_EXPAND_COUNT)
-        init_expand = get_config(wildcards, 'inv_init_expand', pavlib.const.INV_INIT_EXPAND)
-        min_kmers = get_config(wildcards, 'inv_min_kmers', pavlib.const.INV_MIN_KMERS)
-        max_ref_kmer_count = get_config(wildcards, 'inv_max_ref_kmer_count', pavlib.const.INV_MAX_REF_KMER_COUNT)
-        repeat_match_prop = get_config(wildcards, 'inv_repeat_match_prop', pavlib.const.INV_REPEAT_MATCH_PROP)
-        min_inv_kmer_run = get_config(wildcards, 'inv_min_inv_kmer_run', pavlib.const.INV_MIN_INV_KMER_RUN)
-        min_qry_ref_prop = get_config(wildcards, 'inv_min_qry_ref_prop', pavlib.const.INV_MIN_QRY_REF_PROP)
-
-        k_size = get_config(wildcards, 'inv_k_size', pavlib.const.INV_K_SIZE)
-
-        kde_bandwidth = get_config(wildcards, 'inv_kde_bandwidth', pavlib.const.INV_KDE_BANDWIDTH)
-        kde_trunc_z = get_config(wildcards, 'inv_kde_trunc_z', pavlib.const.INV_KDE_TRUNC_Z)
-        kde_func = get_config(wildcards, 'inv_kde_func', pavlib.const.INV_KDE_FUNC)
-
-        batch = int(wildcards.batch)
+        part = int(wildcards.part)
 
         density_out_dir = 'results/{asm_name}/inv_caller/density_table'.format(**wildcards)
 
         os.makedirs(density_out_dir, exist_ok=True)
 
-        # Read and subset table to records in this batch
+        # Read and subset table to records in this partition
         df_flag = pd.read_csv(input.bed_flag, sep='\t', header=0)
-        df_flag = df_flag.loc[df_flag['BATCH'] == batch]
+        df_flag = df_flag.loc[df_flag['PARTITION'] == part]
 
         if df_flag.shape[0] == 0:
-            # No records in batch
+            # No records in partition
 
             pd.DataFrame(
                 [], columns=INV_CALL_COLUMNS
@@ -181,17 +210,15 @@ rule call_inv_batch:
             return
 
         # Init
-        k_util = kanapy.util.kmer.KmerUtil(k_size)
+        k_util = kanapy.util.kmer.KmerUtil(params.k_size)
 
         align_lift = pavlib.align.lift.AlignLift(
             pd.read_csv(input.bed_aln, sep='\t'),
-            svpoplib.ref.get_df_fai(input.qry_fai)
+            svpoplib.ref.get_df_fai(input.fai_qry)
         )
 
-        id_set = set()  # The caller can find the same inversion through different flagged regions, track and drop duplicates
-
         kde = pavlib.kde.KdeTruncNorm(
-            kde_bandwidth, kde_trunc_z, kde_func
+            params.kde_bandwidth, params.kde_trunc_z, params.kde_func
         )
 
         # Call inversions
@@ -205,18 +232,18 @@ rule call_inv_batch:
 
                 try:
                     inv_call = pavlib.inv.scan_for_inv(
-                        region_flag, REF_FA, input.qry_fa,
+                        region_flag, REF_FA, input.fa_qry,
                         align_lift=align_lift,
                         k_util=k_util,
                         nc_ref=None,
                         nc_qry=None,
-                        region_limit=region_limit,
-                        min_expand=min_expand,
-                        init_expand=init_expand,
-                        min_kmers=min_kmers,
-                        max_ref_kmer_count=max_ref_kmer_count,
+                        region_limit=params.region_limit,
+                        min_expand=params.min_expand,
+                        init_expand=params.init_expand,
+                        min_kmers=params.min_kmers,
+                        max_ref_kmer_count=params.max_ref_kmer_count,
                         kde=kde,
-                        log=log_file,
+                        log=log_file
                     )
 
 
@@ -225,12 +252,12 @@ rule call_inv_batch:
                     inv_call = None
 
                 # Save inversion call
-                if inv_call is not None and inv_call.id not in id_set:
+                if inv_call is not None:
 
                     # Get seq
                     seq = pavlib.seq.region_seq_fasta(
                         inv_call.region_qry_outer,
-                        input.qry_fa,
+                        input.fa_qry,
                         rev_compl=inv_call.region_qry_outer.is_rev
                     )
 
@@ -276,7 +303,8 @@ rule call_inv_batch:
 
                             align_index,
 
-                            pavlib.inv.CALL_SOURCE,
+                            call_source,
+                            inv_call.score,
 
                             'PASS',
 
@@ -292,13 +320,11 @@ rule call_inv_batch:
                             'RGN_REF_DISC', 'RGN_QRY_DISC',
                             'FLAG_ID', 'FLAG_TYPE',
                             'ALIGN_INDEX',
-                            'CALL_SOURCE',
+                            'CALL_SOURCE', 'KDE_SCORE',
                             'FILTER',
                             'SEQ'
                         ]
                     ))
-
-                    id_set.add(inv_call.id)
 
                     # Save density table
                     inv_call.df.to_csv(
@@ -314,19 +340,7 @@ rule call_inv_batch:
             # Create emtpy data frame
             df_bed = pd.DataFrame(
                 [],
-                columns=[
-                    '#CHROM', 'POS', 'END',
-                    'ID', 'SVTYPE', 'SVLEN',
-                    'HAP',
-                    'QRY_REGION', 'QRY_STRAND',
-                    'CI',
-                    'RGN_REF_INNER', 'RGN_QRY_INNER',
-                    'RGN_REF_DISC', 'RGN_QRY_DISC',
-                    'FLAG_ID', 'FLAG_TYPE',
-                    'ALIGN_INDEX',
-                    'CALL_SOURCE',
-                    'SEQ'
-                ]
+                columns=INV_CALL_COLUMNS
             )
 
         # Write
@@ -347,31 +361,29 @@ rule call_inv_merge_flagged_loci:
         bed_cluster_indel='temp/{asm_name}/inv_caller/flag/cluster_indel_{hap}.bed.gz',
         bed_cluster_snv='temp/{asm_name}/inv_caller/flag/cluster_snv_{hap}.bed.gz'
     output:
-        bed='results/{asm_name}/inv_caller/flagged_regions_{hap}.bed.gz'
+        bed='results/{asm_name}/inv_caller/flagged_regions_{hap}_parts-{part_count}.bed.gz'
+    params:
+        flank=lambda wildcards: get_config('inv_sig_merge_flank', wildcards),  # Merge windows within this many bp
+        inv_sig_filter=lambda wildcards: get_config('inv_sig_filter', wildcards)   # Filter flagged regions
     run:
-
-        # Parameters
-        flank = int(get_config(wildcards, 'inv_sig_merge_flank', 500))  # Merge windows within this many bp
-        batch_count = int(get_config(wildcards, 'inv_sig_batch_count', BATCH_COUNT_DEFAULT))  # Batch signature regions into this many batches for the caller. Marked here so that this file can be cross-referenced with the inversion caller log
-        inv_sig_filter = get_config(wildcards, 'inv_sig_filter', 'svindel')   # Filter flagged regions
 
         # Get region filter parameters
         allow_single_cluster = False
         match_any = set()
 
-        if inv_sig_filter is not None:
-            if inv_sig_filter == 'single_cluster':
+        if params.inv_sig_filter is not None:
+            if params.inv_sig_filter == 'single_cluster':
                 allow_single_cluster = True
 
-            elif inv_sig_filter == 'svindel':
+            elif params.inv_sig_filter == 'svindel':
                 match_any.add('MATCH_SV')
                 match_any.add('MATCH_INDEL')
 
-            elif inv_sig_filter == 'sv':
+            elif params.inv_sig_filter == 'sv':
                 match_any.add('MATCH_SV')
 
             else:
-                raise RuntimeError(f'Unrecognized region filter: {inv_sig_filter} (must be "single_cluster", "svindel", or "sv")')
+                raise RuntimeError(f'Unrecognized region filter: {params.inv_sig_filter} (must be "single_cluster", "svindel", or "sv")')
 
         # Read
         df_insdel_sv = pd.read_csv(input.bed_insdel_sv, sep='\t')
@@ -420,7 +432,7 @@ rule call_inv_merge_flagged_loci:
 
         for index, row in df.iterrows():
 
-            if (row['POS'] < end + flank) and (row['#CHROM'] == chrom):
+            if (row['POS'] < end + params.flank) and (row['#CHROM'] == chrom):
 
                 # Add to existing region
                 type_set |= row['TYPE']
@@ -477,18 +489,20 @@ rule call_inv_merge_flagged_loci:
                 axis=1
             )
 
-            # Group into batches
-            df_merged['BATCH'] = -1
+            # Group into partitions
+            df_merged['PARTITION'] = -1
 
-            batch = 0
+            part = 0
 
             for index, row in df_merged.iterrows():
                 if row['TRY_INV']:
-                    df_merged.loc[index, 'BATCH'] = batch
-                    batch = (batch + 1) % batch_count
+                    df_merged.loc[index, 'PARTITION'] = part
+                    part = (part + 1) % int(wildcards.part_count)
 
         else:
-            df_merged = pd.DataFrame([], columns=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV', 'TRY_INV', 'BATCH'])
+            df_merged = pd.DataFrame([], columns=['#CHROM', 'POS', 'END', 'ID', 'SVTYPE', 'SVLEN', 'TYPE', 'COUNT_INDEL', 'COUNT_SNV', 'TRY_INV', 'PARTITION'])
+
+        del df_merged['TRY_INV']
 
         df_merged['TYPE'] = df_merged['TYPE'].apply(lambda vals: ','.join(sorted(vals)))
 
@@ -501,13 +515,13 @@ rule call_inv_merge_flagged_loci:
 # sequence.
 rule call_inv_flag_insdel_cluster:
     input:
-        bed='temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'
+        bed='temp/{asm_name}/cigar/svindel_insdel_{hap}.bed.gz'
     output:
         bed=temp('temp/{asm_name}/inv_caller/flag/insdel_{vartype}_{hap}.bed.gz')
     params:
-        flank_cluster=lambda wildcards: int(get_config(wildcards, 'inv_sig_insdel_cluster_flank', 2)), # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
-        flank_merge=lambda wildcards: int(get_config(wildcards, 'inv_sig_insdel_merge_flank', 2000)),  # Merge clusters within this distance
-        cluster_min_svlen=lambda wildcards: int(get_config(wildcards, 'inv_sig_cluster_svlen_min', 4))    # Discard indels less than this size
+        flank_cluster=lambda wildcards: get_config('inv_sig_insdel_cluster_flank', wildcards),  # For each INS, multiply SVLEN by this to get the distance to the nearest DEL it may intersect
+        flank_merge=lambda wildcards: get_config('inv_sig_insdel_merge_flank', wildcards),      # Merge clusters within this distance
+        cluster_min_svlen=lambda wildcards: get_config('inv_sig_cluster_svlen_min', wildcards)  # Discard indels less than this size
     wildcard_constraints:
         vartype='sv|indel'
     run:
@@ -631,10 +645,10 @@ rule call_inv_cluster:
     output:
         bed=temp('temp/{asm_name}/inv_caller/flag/cluster_{vartype}_{hap}.bed.gz')
     params:
-        cluster_win=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_win', 200),            # Cluster variants within this many bases
-        cluster_win_min=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_win_min', 500),    # Window must reach this size
-        cluster_min_snv=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_snv_min', 20),     # Minimum number if SNVs in window (if vartype == snv)
-        cluster_min_indel=lambda wildcards: get_config(wildcards, 'inv_sig_cluster_indel_min', 10)  # Minimum number of indels in window (if vartype == indel)
+        cluster_win=lambda wildcards: get_config( 'inv_sig_cluster_win', wildcards),            # Cluster variants within this many bases
+        cluster_win_min=lambda wildcards: get_config('inv_sig_cluster_win_min', wildcards),    # Window must reach this size
+        cluster_min_snv=lambda wildcards: get_config('inv_sig_cluster_snv_min', wildcards),     # Minimum number if SNVs in window (if vartype == snv)
+        cluster_min_indel=lambda wildcards: get_config('inv_sig_cluster_indel_min', wildcards)  # Minimum number of indels in window (if vartype == indel)
     wildcard_constraints:
         vartype='indel|snv'
     run:

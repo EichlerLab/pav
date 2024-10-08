@@ -491,8 +491,8 @@ rule call_intersect_fail_batch:
 # Filter variants from inside inversions
 rule call_integrate_sources:
     input:
-        bed_cigar_insdel='temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz',
-        bed_cigar_snv='temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz',
+        bed_cigar_insdel='temp/{asm_name}/cigar/svindel_insdel_{hap}.bed.gz',
+        bed_cigar_snv='temp/{asm_name}/cigar/snv_snv_{hap}.bed.gz',
         bed_lg_ins='temp/{asm_name}/lg_sv/sv_ins_{hap}.bed.gz',
         bed_lg_del='temp/{asm_name}/lg_sv/sv_del_{hap}.bed.gz',
         bed_lg_inv='temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz',
@@ -738,8 +738,16 @@ rule call_integrate_sources:
 # Call from CIGAR
 #
 
+# Call all variants from CIGAR operations
+rule call_sm_all:
+    input:
+        bed=lambda wildcards: pavlib.pipeline.expand_pattern(
+            'temp/{asm_name}/cigar/svindel_insdel_{hap}.bed.gz', ASM_TABLE, config
+        )
+
+
 # Merge discovery sets from each batch.
-rule call_cigar_merge:
+rule call_cigar_gather:
     input:
         bed_insdel=lambda wildcards: [
             'temp/{asm_name}/cigar/partition/insdel_{hap}_{part}-of-{part_count}.bed.gz'.format(
@@ -752,8 +760,8 @@ rule call_cigar_merge:
             ) for part in range(get_config('cigar_partitions', wildcards))
         ]
     output:
-        bed_insdel=temp('temp/{asm_name}/cigar/merged/svindel_insdel_{hap}.bed.gz'),
-        bed_snv=temp('temp/{asm_name}/cigar/merged/snv_snv_{hap}.bed.gz')
+        bed_insdel=temp('temp/{asm_name}/cigar/svindel_insdel_{hap}.bed.gz'),
+        bed_snv=temp('temp/{asm_name}/cigar/snv_snv_{hap}.bed.gz')
     run:
 
         # INS/DEL
@@ -788,7 +796,7 @@ rule call_cigar:
     input:
         bed='results/{asm_name}/align/trim-none/align_qry_{hap}.bed.gz',
         bed_trim='results/{asm_name}/align/trim-qryref/align_qry_{hap}.bed.gz',
-        tig_fa_name='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        qry_fa_name='data/query/{asm_name}/query_{hap}.fa.gz',
         tsv_part='data/ref/partition_{part_count}.tsv.gz'
     output:
         bed_insdel=temp('temp/{asm_name}/cigar/partition/insdel_{hap}_{part}-of-{part_count}.bed.gz'),
@@ -807,7 +815,7 @@ rule call_cigar:
         df_align = df_align.loc[df_align['#CHROM'].isin(chrom_set)]
 
         # Call
-        df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.tig_fa_name, wildcards.hap, version_id=False)
+        df_snv, df_insdel = pavlib.cigarcall.make_insdel_snv_calls(df_align, REF_FA, input.qry_fa_name, wildcards.hap, version_id=False)
 
         # Read trimmed alignments
         df_trim = pd.read_csv(

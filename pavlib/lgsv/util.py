@@ -143,6 +143,7 @@ def record_to_paf(row_seg, ref_fai, qry_fai):
         ]
     )
 
+
 class SeqCache:
     """
     Keep a cache of a sequence string in upper-case. Stores the last instance of the sequence and the ID. When a
@@ -194,6 +195,7 @@ class SeqCache:
 
         return self.seq
 
+
 def dot_graph_writer(out_file, df_align, chain_set, optimal_interval_list, sv_dict, graph_name='Unnamed_Graph', forcelabels=True, anchor_width=2.5):
 
     # Header
@@ -226,7 +228,7 @@ def dot_graph_writer(out_file, df_align, chain_set, optimal_interval_list, sv_di
 
         width = anchor_width if index in variant_anchor_set else 1
 
-        out_file.write(f'    n{index} [label="{index} ({row["INDEX"]}) - {row["#CHROM"]}:{row["POS"]}-{row["END"]} {"-" if row["REV"] else "+"} t{row["TIER"]} s={row["SCORE"]}", penwidth={width}, color="{color}"]\n')
+        out_file.write(f'    n{index} [label="{index} ({row["INDEX"]}) - {row["#CHROM"]}:{row["POS"]}-{row["END"]} {"-" if row["REV"] else "+"} s={row["SCORE"]}", penwidth={width}, color="{color}"]\n')
 
     # Add candidate edges
     for start_index, end_index in chain_set:
@@ -264,3 +266,35 @@ def dot_graph_writer(out_file, df_align, chain_set, optimal_interval_list, sv_di
     # Done
     out_file.write('}\n')
 
+
+def get_min_anchor_score(min_anchor_score, score_model):
+
+    if isinstance(min_anchor_score, str):
+        min_anchor_score_str = min_anchor_score.strip()
+
+        if len(min_anchor_score_str) == 0:
+            raise ValueError('min_anchor_score parameter is empty')
+
+        if min_anchor_score_str.lower().endswith('bp'):
+            try:
+                min_anchor_score_bp = abs(float(min_anchor_score_str[:-2].strip()))
+            except ValueError:
+                raise ValueError(f'min_anchor_score is a number before "bp": {min_anchor_score}')
+
+            if min_anchor_score_bp <= 0.0:
+                return 0.0
+
+            return score_model.match(min_anchor_score_bp)
+
+        else:
+            try:
+                return abs(float(min_anchor_score))
+            except ValueError:
+                raise ValueError(f'min_anchor_score is a string that does not represent a numeric value: {min_anchor_score}')
+
+    else:
+        try:
+            # noinspection PyTypeChecker
+            return float(min_anchor_score)
+        except ValueError:
+            raise ValueError(f'min_anchor_score is not a string or numeric: type={type(min_anchor_score)}')

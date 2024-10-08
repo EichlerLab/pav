@@ -4,7 +4,6 @@ PAV Python library routines.
 
 __all__ = []
 
-from . import inv
 from . import const
 
 from . import align
@@ -14,6 +13,7 @@ from . import cigarcall
 from . import config
 from . import kde
 from . import io
+from . import inv
 from . import lgsv
 from . import pipeline
 from . import plot

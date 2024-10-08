@@ -88,7 +88,7 @@ Signatures of small inversions include:
   inversion call. See the four recognized signatures above.
     * single_cluster: Accept signatures from only clustered SNVs or clustered indels. This will cause PAV to search
       sites and maximize sensitivity for small inversions. There is a steep performance cost, and possibly a
-      sharp increase in false-positive inversions as well. Use this parameter with caution and purpose.
+      sharp increase in false-positive inversions as well. Use this parameter with caution.
     * svindel: Accept signatures with matched SVs or matched indels.
     * sv: Only accept signatures with matched SVs.
 * inv_sig_merge_flank [500; int]: When searching for clustered SNVs or indels, cluster variants within this many bp.

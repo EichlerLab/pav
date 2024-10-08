@@ -4,6 +4,7 @@ Call alignment-truncating events (large SVs).
 
 import os
 import pandas as pd
+import tarfile
 
 import pavlib
 
@@ -21,37 +22,35 @@ localrules: call_lg_all
 rule call_lg_all:
     input:
         bed=lambda wildcards: pavlib.pipeline.expand_pattern(
-            'temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz', ASM_TABLE, config,
-            tier=(0, 1, 2)
+            'temp/{asm_name}/lg_sv/svindel_ins_{hap}.bed.gz', ASM_TABLE, config
         )
 
 
 # Call alignment-truncating SVs.
 rule call_lg_discover:
     input:
-        bed_qry='results/{asm_name}/align/t{tier}_qry/align_qry_{hap}.bed.gz',
-        bed_qryref='results/{asm_name}/align/t{tier}_qryref/align_qry_{hap}.bed.gz',
-        fa_qry='temp/{asm_name}/align/query/query_{hap}.fa.gz',
-        fai_qry='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai',
+        bed_qry='results/{asm_name}/align/trim-qry/align_qry_{hap}.bed.gz',
+        bed_qryref='results/{asm_name}/align/trim-qryref/align_qry_{hap}.bed.gz',
+        fa_qry='data/query/{asm_name}/query_{hap}.fa.gz',
+        fai_qry='data/query/{asm_name}/query_{hap}.fa.gz.fai',
         fa_ref='data/ref/ref.fa.gz',
         fai_ref='data/ref/ref.fa.gz.fai'
     output:
-        bed_ins=temp('temp/{asm_name}/lg_sv/t{tier}/svindel_ins_{hap}.bed.gz'),
-        bed_del=temp('temp/{asm_name}/lg_sv/t{tier}/svindel_del_{hap}.bed.gz'),
-        bed_inv=temp('temp/{asm_name}/lg_sv/t{tier}/sv_inv_{hap}.bed.gz'),
-        bed_cpx=temp('temp/{asm_name}/lg_sv/t{tier}/sv_cpx_{hap}.bed.gz'),
-        bed_cpx_seg=temp('temp/{asm_name}/lg_sv/t{tier}/segment_cpx_{hap}.bed.gz'),
-        bed_cpx_ref=temp('temp/{asm_name}/lg_sv/t{tier}/reftrace_cpx_{hap}.bed.gz')
+        bed_ins=temp('temp/{asm_name}/lg_sv/svindel_ins_{hap}.bed.gz'),
+        bed_del=temp('temp/{asm_name}/lg_sv/svindel_del_{hap}.bed.gz'),
+        bed_inv=temp('temp/{asm_name}/lg_sv/sv_inv_{hap}.bed.gz'),
+        bed_cpx=temp('temp/{asm_name}/lg_sv/sv_cpx_{hap}.bed.gz'),
+        bed_cpx_seg=temp('temp/{asm_name}/lg_sv/segment_cpx_{hap}.bed.gz'),
+        bed_cpx_ref=temp('temp/{asm_name}/lg_sv/reftrace_cpx_{hap}.bed.gz')
     params:
-        align_score=lambda wildcards: get_config(wildcards, 'align_score_model', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL),
-        min_anchor_score=lambda wildcards: get_config(wildcards, 'min_anchor_score', "1000bp"),
-        lg_dot_graph=lambda wildcards: get_config(wildcards, 'lg_dot_graph', 'False')
-    #threads: 12
+        align_score=lambda wildcards: get_config('align_score_model', wildcards),
+        min_anchor_score=lambda wildcards: get_config('min_anchor_score', wildcards),
+        lg_dot_graph=lambda wildcards: get_config('lg_dot_graph', wildcards)
     run:
 
         # Set graph file output
-        if pavlib.util.as_bool(params.lg_dot_graph):
-            dot_basename = f'temp/{wildcards.asm_name}/lg_sv/t{wildcards.tier}/graph/lgsv_{wildcards.hap}_'
+        if params.lg_dot_graph:
+            dot_basename = f'temp/{wildcards.asm_name}/lg_sv/graph/lgsv_{wildcards.hap}_'
             dot_dirname = os.path.dirname(dot_basename)
             os.makedirs(dot_dirname, exist_ok=True)
         else:
@@ -61,35 +60,7 @@ rule call_lg_discover:
         score_model = pavlib.align.score.get_score_model(params.align_score)
 
         # Get minimum anchor score
-        if isinstance(params.min_anchor_score, str):
-            min_anchor_score_str = params.min_anchor_score.strip()
-
-            if len(min_anchor_score_str) == 0:
-                raise RuntimeError('Parameter "min_anchor_score" is empty')
-
-            if min_anchor_score_str.lower().endswith('bp'):
-                min_anchor_score_bp = abs(float(min_anchor_score_str[:-2]))
-
-                if min_anchor_score_bp == 0:
-                    raise RuntimeError(f'Parameter "min_anchor_score" is zero: {params.min_anchor_score}')
-
-                min_anchor_score = score_model.match(min_anchor_score_bp)
-
-            else:
-                try:
-                    min_anchor_score = abs(float(params.min_anchor_score))
-                except ValueError:
-                    raise RuntimeError(f'Parameter "min_anchor_score" is a string that does not represent a numeric value: type={min_anchor_score}')
-
-        else:
-            try:
-                # noinspection PyTypeChecker
-                min_anchor_score = float(params.min_anchor_score)
-            except ValueError:
-                raise RuntimeError(f'Parameter "min_anchor_score" is not a string or numeric: type={type(min_anchor_score)}')
-
-            if min_anchor_score < 0:
-                raise RuntimeError(f'Parameter "min_anchor_score" is negative: {min_anchor_score}')
+        min_anchor_score = pavlib.lgsv.util.get_min_anchor_score(params.min_anchor_score, score_model)
 
         # Read alignments - Trim QRY
         df_align_qry = pd.read_csv(
@@ -98,7 +69,7 @@ rule call_lg_discover:
             dtype={'#CHROM': str, 'QRY_ID': str}
         )
 
-        df_align_qry.sort_values(['QRY_ID', 'QRY_POS', 'QRY_END'], inplace=True)
+        df_align_qry.sort_values(['QRY_ID', 'QRY_ORDER'], inplace=True)
         df_align_qry.reset_index(inplace=True, drop=True)
 
         # Read alignments - Trim QRY/REF
@@ -202,10 +173,10 @@ rule call_lg_discover:
 
         # Compress graph dot files
         if dot_basename is not None:
-            dot_tar_filename = f'results/{wildcards.asm_name}/lg_sv/lgsv_graph_{wildcards.hap}_t{wildcards.tier}.tar'
+            dot_tar_filename = f'results/{wildcards.asm_name}/lg_sv/lgsv_graph_{wildcards.hap}.tar'
 
             os.makedirs(os.path.dirname(dot_tar_filename), exist_ok=True)
 
-            shell(
-                """tar -cf {dot_tar_filename} {dot_dirname}/*"""
-            )
+            with tarfile.open(dot_tar_filename,'w') as tar_file:
+                for file in os.listdir(dot_dirname):
+                    tar_file.add(os.path.join(dot_dirname, file))

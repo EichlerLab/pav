@@ -1,0 +1,32 @@
+FIELD	TYPE	NAME	DESC	LONG_DESC
+#CHROM	string	chrom	Reference chromosome	Reference chromosome
+POS	uint	chromStart	Start position	Start position
+END	uint	chromEnd	End position	End position
+ID	string	name	Variant ID	Variant ID
+SCORE	uint	score	Score	Score
+STRAND	char[1]	strand	#NAME?	Strand
+POS_THICK	uint	thickStart	Coding region start	Coding region start
+END_THICK	uint	thickEnd	Coding region end	Coding region end
+COL	uint	reserved	"Blue (insertion), red (deletion), green (inversion)"	"Blue (insertion), red (deletion), green (inversion)"
+SVTYPE	string	svType	SV type	Variant type
+SVLEN	uint	svLen	SV length	Variant size
+HAP	string	haplotype	Haplotype	Haplotype variant was discovered on.
+QRY_REGION	lstring	qryRegion	Query region	Query region
+QRY_STRAND	char[1]	qryStrand	Query orientation	Orientation vs reference of lead contig
+SEG_N	uint	segN	N Segment	Number of segements in the CSV
+STRUCT_REF	lstring	structRef	Ref Struct	Reference structure
+STRUCT_QRY	lstring	structQry	Qry Struct	Query structure
+VAR_SCORE	float	scoreVar	Variant score	Variant alignment score
+ANCHOR_SCORE_MIN	float	scoreAncMin	Anchor min score	Minimim score of anchoring alignments
+ANCHOR_SCORE_MAX	float	scoreAncMax	Anchor max score	Maximum score of anchoring alignments
+TYPE	string	segType	Seg. type	Type of this segement in the CPX variant
+DEPTH	uint	segDepth	Seg. depth	Total segment depth
+INDEX	lstring	segAlignInd	Seg. Align idx	"Alignment index for this segment or ""."" if no alignment segment"
+FWD_COUNT	uint	segFwdCt	Seg. Fwd depth	Alignment depth - forward orientation
+REV_COUNT	uint	segRevCt	Seg. Rev depth	Alignment depth - reverse orientation
+SVSUBTYPE	string	svSubtype	SV subtype	SV subtype
+CALL_SOURCE	string	svSource	Call source	PAV submodule variant was called in
+REGION_REF_INNER	lstring	rgnRefInner	Rgn Ref Inner	INV inner region (ref)
+REGION_QRY_INNER	lstring	rgnQryInner	Rgn Qry Inner	INV inner region (qry)
+REGION_QRY_OUTER	lstring	rgnQryOuter	Rgn Qry Outer	INV outer region (qry)
+ALIGN_SIZE_GAP	string	alnGap	Align gap	Difference between reference and query regions for INV

@@ -120,18 +120,18 @@ class ConfigParam(object):
             try:
                 val = int(val)
             except ValueError:
-                raise RuntimeError(f'Failed casting {self.name} to int: {val}')
+                raise RuntimeError(f'Failed casting {self.name} to int: {str(val)}')
 
         elif self.val_type == 'float':
             try:
                 val = float(val)
             except ValueError:
-                raise RuntimeError(f'Failed casting {self.name} to float: {val}')
+                raise RuntimeError(f'Failed casting {self.name} to float: {str(val)}')
         elif self.val_type == 'bool':
             val = pavlib.util.as_bool(val, fail_to_none=True)
 
             if val is None:
-                raise RuntimeError(f'Failed casting {self.name} to bool: {val}')
+                raise RuntimeError(f'Failed casting {self.name} to bool: {str(val)}')
 
         elif self.val_type == 'str':
             val = str(val)
@@ -144,7 +144,7 @@ class ConfigParam(object):
             if not self.val_type == 'str':
                 raise RuntimeError(f'Cannot specify `to_lower=True` for non-string type {self.name}: {self.val_type}')
 
-            val = val.to_lower()
+            val = val.lower()
 
         # Check allowed values
         if self.allowed is not None and val not in self.allowed:
@@ -182,7 +182,8 @@ CONFIG_PARAM_LIST = [
                 description='Parameters for the aligner. Default depends on aligner (minimap2: "-x asm5", lra: ""). '
                             'Keyword "pav2" reverts to legacy parameters used by PAV versions 1 & 2'),
     ConfigParam('align_score_model', 'str', pavlib.align.score.DEFAULT_ALIGN_SCORE_MODEL,
-                description='Default alignment score model as a string argument to pavlib.align.score.get_score_model()',
+                description='Default alignment score model as a string argument to pavlib.align.score.get_score_model(). '
+                            'These parameters are also used for scoring large variants.',
                 advanced=True),
     ConfigParam('redundant_callset', 'bool', False,
                 description='Per haplotype assembly, callset is nonredundant per assembled sequence instead of globally '
@@ -205,6 +206,42 @@ CONFIG_PARAM_LIST = [
                             'file contains regions in query-coordinates (assembled sequence) matching sequences in the '
                             'input FASTA file. Any variants intersecting these loci are dropped from the callset. May '
                             'be used to  apply quality filtering for known mis-assembled loci.'),
+    ConfigParam('min_anchor_score', 'str', pavlib.const.DEFAULT_MIN_ANCHOR_SCORE,
+                description='Minimum score of an aligned segement to allow it to be used as an anchor. This value may '
+                            'be the absolute score value or a relative value adjusted for the score of a perfectly '
+                            'aligned segment of some length (e.g. "1000bp" would be the score of 1000 aligned bases '
+                            'with no gaps or mismatches, i.e. 2000 with default alignment parameters with match=2). '
+                            'Any alignment record with a score of at least this value may be used as an anchor for '
+                            'alignment-truncating variants.'),
+    ConfigParam('lg_dot_graph', 'bool', True,
+                description='Write a "dot" file describing the graph structure of each query sequence. The dot file '
+                            'be transformed to an image with "graphviz" (https://graphviz.org/). The file can be found '
+                            'in "results/{asm_name}/lg_sv/lgsv_graph_{hap}.tar"'),
+
+    # Inversion site flagging from variant call clusters
+    ConfigParam('inv_sig_cluster_win', 'int', 200,
+                description='Cluster variants within this many bases'),
+    ConfigParam('inv_sig_cluster_win_min', 'int', 500,
+                description='Window must reach this size'),
+    ConfigParam('inv_sig_cluster_snv_min', 'int', 20,
+                description='Minimum number if SNVs in window'),
+    ConfigParam('inv_sig_cluster_indel_min', 'int', 10,
+                description='Minimum number of indels in window'),
+    ConfigParam('inv_sig_insdel_cluster_flank', 'int', 2,
+                description='For each insertion, multiply SVLEN by this to get the distance to the nearest deletion it may intersect'),
+    ConfigParam('inv_sig_insdel_merge_flank', 'int', 2000,
+                description='Merge clusters within this distance (bp)'),
+    ConfigParam('inv_sig_cluster_svlen_min', 'int', 4,
+                description='Discard indels less than this size'),
+    ConfigParam('inv_sig_merge_flank', 'int', 500,
+                description='Merge windows within this many bp'),
+    ConfigParam('inv_sig_part_count', 'int', 10,
+                description='Partition signature regions into this many partitions for the caller. Marked here so that this file can be cross-referenced with the inversion caller log'),
+    ConfigParam('inv_sig_filter', 'str', 'svindel',
+                description='Filter flagged regions'),
+    ConfigParam('inv_max_overlap', 'float', 0.2,
+                min=0.0, max=1.0,
+                description='Maximum allowed reciprocal overlap between inversions in the same haplotype'),
 
     # Inversions
     ConfigParam('inv_min', 'int', 0, min=0, description='Minimum inversion size'),
@@ -215,43 +252,43 @@ CONFIG_PARAM_LIST = [
                     'full inversion including repeats if "full", and do not filter if "none"',
                 advanced=True),
 
-    ConfigParam('inv_region_limit', 'int', pavlib.inv.REGION_LIMIT,
-                description='maximum region size when searching for inversions',
+    ConfigParam('inv_region_limit', 'int', pavlib.const.INV_REGION_LIMIT,
+                description='maximum region size when searching for inversions. Value 0 ignores limits and allows regions to be any size',
                 advanced=True),
-    ConfigParam('inv_min_expand', 'int', pavlib.inv.MIN_EXPAND_COUNT,
+    ConfigParam('inv_min_expand', 'int', pavlib.const.INV_MIN_EXPAND_COUNT,
                 description='The default number of region expansions to try (including the initial expansion) and '
                             'finding only fwd k-mer states after smoothing before giving up on the region.',
                 advanced=True),
-    ConfigParam('inv_init_expand', 'int', pavlib.inv.INIT_EXPAND,
+    ConfigParam('inv_init_expand', 'int', pavlib.const.INV_INIT_EXPAND,
                 description='Expand the flagged region by this (bp) before starting.',
                 advanced=True),
-    ConfigParam('inv_min_kmers', 'int', pavlib.inv.MIN_KMERS,
+    ConfigParam('inv_min_kmers', 'int', pavlib.const.INV_MIN_KMERS,
                 description='Minimum number of k-mers with a distinct state (sum of FWD, FWDREV, and REV). Stop if the '
                             'number of k-mers is less after filtering uninformative and high-count k-mers.',
                 advanced=True),
-    ConfigParam('inv_max_ref_kmer_count', 'int', pavlib.inv.MAX_REF_KMER_COUNT,
+    ConfigParam('inv_max_ref_kmer_count', 'int', pavlib.const.INV_MAX_REF_KMER_COUNT,
                 description='If canonical reference k-mers have a higher count than this, they are discarded',
                 advanced=True),
-    ConfigParam('inv_repeat_match_prop', 'float', pavlib.inv.REPEAT_MATCH_PROP,
+    ConfigParam('inv_repeat_match_prop', 'float', pavlib.const.INV_REPEAT_MATCH_PROP,
                 description='When scoring INV structures, give a bonus to inverted repeats that are similar in size '
                             'scaled by this factor',
                 advanced=True),
-    ConfigParam('inv_min_inv_kmer_run', 'int', pavlib.inv.MIN_INV_KMER_RUN,
+    ConfigParam('inv_min_inv_kmer_run', 'int', pavlib.const.INV_MIN_INV_KMER_RUN,
                 description='Minimum continuous run of strictly inverted k-mers',
                 advanced=True),
-    ConfigParam('inv_min_qry_ref_prop', 'float', pavlib.inv.MIN_QRY_REF_PROP,
+    ConfigParam('inv_min_qry_ref_prop', 'float', pavlib.const.INV_MIN_QRY_REF_PROP,
                 description='Minimum query and reference region size proportion',
                 advanced=True),
 
-    ConfigParam('inv_k_size', 'int', pavlib.inv.K_SIZE, description='K-mer size', advanced=True),
+    ConfigParam('inv_k_size', 'int', pavlib.const.INV_K_SIZE, description='K-mer size', advanced=True),
 
-    ConfigParam('inv_kde_bandwidth', 'float', pavlib.inv.KDE_BANDWIDTH,
+    ConfigParam('inv_kde_bandwidth', 'float', pavlib.const.INV_KDE_BANDWIDTH,
                 description='Convolution KDE bandwidth',
                 advanced=True),
-    ConfigParam('inv_kde_trunc_z', 'float', pavlib.inv.KDE_TRUNC_Z,
+    ConfigParam('inv_kde_trunc_z', 'float', pavlib.const.INV_KDE_TRUNC_Z,
                 description='Convolution KDE truncated normal Z-score based on a standard normal (N(0,1)) distribution',
                 advanced=True),
-    ConfigParam('inv_kde_func', 'str', pavlib.inv.KDE_FUNC, allowed={'auto', 'fft', 'conv'}, to_lower=True,
+    ConfigParam('inv_kde_func', 'str', pavlib.const.INV_KDE_FUNC, allowed={'auto', 'fft', 'conv'}, to_lower=True,
                 description='Convolution method. "fft" uses a Fast-Fourier Transform, "conv" is a standard truncated '
                             'normal distribution. "auto" defaults to "fft" if scipy.signal is available and "conv" '
                             'otherwise.',
@@ -497,7 +534,7 @@ def get_aligner(wildcards, config, asm_table):
 
 def get_aligner_params(wildcards, config, asm_table, aligner=None):
     """
-    Get parameters for an alignment tier.
+    Get alignment parameters.
 
     :param wildcards: Rule wildcards. If this is a string object, it is assumed to be the assembly name.
     :param config: Pipeline config.
@@ -576,9 +613,9 @@ def get_aligner_input(wildcards, config, asm_table, aligner=None):
     # Return list of input file (FASTA file is first)
     if aligner == 'minimap2':
         return [
-            'temp/{asm_name}/align/query/query_{hap}.fa.gz',
-            'temp/{asm_name}/align/query/query_{hap}.fa.gz.fai',
-            'temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi'
+            'data/query/{asm_name}/query_{hap}.fa.gz',
+            'data/query/{asm_name}/query_{hap}.fa.gz.fai',
+            'data/query/{asm_name}/query_{hap}.fa.gz.gzi'
         ]
 
     if aligner == 'lra':

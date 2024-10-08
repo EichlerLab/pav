@@ -1,0 +1,16 @@
+FIELD	TYPE	NAME	DESC	LONG_DESC
+#CHROM	string	chrom	Reference chromosome	Reference chromosome
+POS	uint	chromStart	Start position	Start position
+END	uint	chromEnd	End position	End position
+ID	string	name	Variant ID	Variant ID
+SCORE	uint	score	Score	Score
+STRAND	char[1]	strand	#NAME?	Strand
+POS_THICK	uint	thickStart	Coding region start	Coding region start
+END_THICK	uint	thickEnd	Coding region end	Coding region end
+COL	uint	reserved	"Blue (insertion), red (deletion), green (inversion)"	"Blue (insertion), red (deletion), green (inversion)"
+SVTYPE	string	svtype	Record type	Region type (region)
+SVLEN	uint	svlen	Length	Region length
+TYPE	string	type	Flag  type	Evidence for flagged region
+COUNT_INDEL	int	cntIndel	Indels	Number of clustered indels
+COUNT_SNV	int	cntSnv	SNVs	Number of clustered SNVs
+PARTITION	int	part	Partition	Inversion call partition (-1 is no partition)

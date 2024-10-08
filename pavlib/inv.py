@@ -11,39 +11,6 @@ import svpoplib
 
 
 #
-# Parameter defaults
-#
-
-K_SIZE = 31
-INIT_EXPAND = 4000        # Expand the flagged region by this much before starting.
-EXPAND_FACTOR = 1.5       # Expand by this factor while searching
-
-REGION_LIMIT = None       # Maximum region size
-
-MIN_KMERS = 1000          # Minimum number of k-mers with a distinct state (sum of FWD, FWDREV, and REV). Stop if
-                              # the number of k-mers is less after filtering uninformative and high-count k-mers.
-
-MIN_INV_KMER_RUN = 100    # States must have a continuous run of this many strictly inverted k-mers
-
-MIN_QRY_REF_PROP = 0.6    # The query and reference region sizes must be within this factor (reciprocal) or the event
-                              # is likely unbalanced (INS or DEL) and would already be in the callset
-
-MIN_EXPAND_COUNT = 3      # The default number of region expansions to try (including the initial expansion) and
-                              # finding only fwd k-mer states after smoothing before giving up on the region.
-
-MAX_REF_KMER_COUNT = 10   # If canonical reference k-mers have a higher count than this, they are discarded
-
-KDE_BANDWIDTH = 100.0     # Convolution KDE bandwidth for
-
-KDE_TRUNC_Z = 3.0         # Convolution KDE truncated normal at Z (in standard normal, scaled by bandwidth)
-
-REPEAT_MATCH_PROP = 0.15  # When scoring INV structures, give a bonus to inverted repeats that are similar in size scaled by this factor
-
-KDE_FUNC = 'auto'         # Convolution method. "fft" is a Fast-Fourier Transform, "conv" is a standard linear convolution.
-                          #  "auto" uses "fft" if available and falls back to "conv" otherwise.
-
-
-#
 # Constants
 #
 
@@ -106,6 +73,7 @@ class InvCall:
             region_qry_outer, region_qry_inner,
             region_ref_discovery, region_qry_discovery,
             region_flag,
+            score,
             df, df_rl
     ):
 
@@ -120,6 +88,8 @@ class InvCall:
         self.region_qry_discovery = region_qry_discovery
 
         self.region_flag = region_flag
+
+        self.score = score
 
         self.df = df
         self.df_rl = df_rl
@@ -163,6 +133,8 @@ def get_inv_from_record(row, df_density, df_rl=None):
 
         region_flag=pavlib.seq.region_from_id(row['FLAG_ID']),
 
+        score=None,
+
         df=df_density,
         df_rl=df_rl
     )
@@ -181,14 +153,14 @@ def scan_for_inv(
         stop_on_lift_fail=True,
         kde=None,
         log=None,
-        region_limit=REGION_LIMIT,
-        min_expand=MIN_EXPAND_COUNT,
-        init_expand=INIT_EXPAND,
-        min_kmers=MIN_KMERS,
-        max_ref_kmer_count=MAX_REF_KMER_COUNT,
-        repeat_match_prop=REPEAT_MATCH_PROP,
-        min_inv_kmer_run=MIN_INV_KMER_RUN,
-        min_qry_ref_prop=MIN_QRY_REF_PROP
+        region_limit=pavlib.const.INV_REGION_LIMIT,
+        min_expand=pavlib.const.INV_MIN_EXPAND_COUNT,
+        init_expand=pavlib.const.INV_INIT_EXPAND,
+        min_kmers=pavlib.const.INV_MIN_KMERS,
+        max_ref_kmer_count=pavlib.const.INV_MAX_REF_KMER_COUNT,
+        repeat_match_prop=pavlib.const.INV_REPEAT_MATCH_PROP,
+        min_inv_kmer_run=pavlib.const.INV_MIN_INV_KMER_RUN,
+        min_qry_ref_prop=pavlib.const.INV_MIN_QRY_REF_PROP
     ):
     """
     Scan region for inversions. Start with a flagged region (`region_flag`) where variants indicated that an inversion
@@ -241,7 +213,7 @@ def scan_for_inv(
     """
 
     if k_util is None:
-        k_util = kanapy.util.kmer.KmerUtil(K_SIZE)
+        k_util = kanapy.util.kmer.KmerUtil(pavlib.const.INV_K_SIZE)
 
     if kde is None:
         kde = pavlib.kde.KdeTruncNorm()
@@ -269,6 +241,8 @@ def scan_for_inv(
 
     # Scan and expand
     df_rl = None
+    df = None
+    region_qry = None
 
     while inv_iterations <= min_expand:
 
@@ -356,7 +330,6 @@ def scan_for_inv(
         if df_rl.shape[0] > 2 and df_rl.iloc[0]['STATE'] == 0 and df_rl.iloc[-1]['STATE'] == 0:
             break  # Stop searching and expanding
 
-
     # Stop if no inverted sequence was found
     if df_rl is None or not np.any(df_rl['STATE'] == 2):
         _write_log(f'No inverted states found: {region_ref}', log)
@@ -391,8 +364,6 @@ def scan_for_inv(
         region_ref_outer = region_ref_inner
         _write_log(f'Failed lifting outer INV region to reference: {region_qry_outer}: Using inner coordinates', log)
 
-    print(f'INV Found: inner={region_ref_inner}, outer={region_ref_outer} (qry inner={region_qry_inner}, outer={region_qry_outer})')
-
     # Check size proportions
     if len(region_ref_inner) < len(region_qry_inner) * min_qry_ref_prop:
         _write_log(
@@ -419,23 +390,31 @@ def scan_for_inv(
         return None
 
     # Return inversion call
+    _write_log(
+        f'INV Found: inner={region_ref_inner}, outer={region_ref_outer} (qry inner={region_qry_inner}, outer={region_qry_outer})',
+        log
+    )
+
     inv_call = InvCall(
         region_ref_outer, region_ref_inner,
         region_qry_outer, region_qry_inner,
         region_ref, region_qry,
-        region_flag, df, df_rl
+        region_flag,
+        inv_walk.walk_score,
+        df, df_rl
     )
 
     _write_log('Found inversion: {}'.format(inv_call), log)
 
     return inv_call
 
+
 def init_state_table(
         region_ref, region_qry,
         ref_fa_name, qry_fa_name,
         is_rev,
         k_util=None,
-        max_ref_kmer_count=MAX_REF_KMER_COUNT,
+        max_ref_kmer_count=pavlib.const.INV_MAX_REF_KMER_COUNT,
         log=None
 ):
     """
@@ -453,7 +432,7 @@ def init_state_table(
     """
 
     if k_util is None:
-        k_util = kanapy.util.kmer.KmerUtil(K_SIZE)
+        k_util = kanapy.util.kmer.KmerUtil(pavlib.const.INV_K_SIZE)
 
     # Get reference k-mer counts
     ref_kmer_count = pavlib.seq.ref_kmers(region_ref, ref_fa_name, k_util)
@@ -576,6 +555,7 @@ NEXT_WALK_STATE = {  # State transition given the current walk state and the nex
     (WS_REP_R, KDE_STATE_FWD): WS_FLANK_R      # Right inverted repeat -> right flank
 }
 
+
 class InvWalkState(object):
     """
     Tracks the state of a walk from the left-most run-length (RL) encoded record to a current state.
@@ -619,7 +599,8 @@ class InvWalkState(object):
         trace_str = ', '.join([f'{te[0]}:{WS_STATE_REPR[te[1]]}' for te in self.trace_list])
         return f'InvWalkState(walk_state={self.walk_state}, rl_index={self.rl_index}, walk_score={self.walk_score}, l_rep_len={self.l_rep_len}, l_rep_score={self.l_rep_score} trace_list=[{trace_str}])'
 
-def resolve_inv_from_rl(df_rl, df, repeat_match_prop=0.2, min_inv_kmer_run=MIN_INV_KMER_RUN, final_state_node_list=None):
+
+def resolve_inv_from_rl(df_rl, df, repeat_match_prop=0.2, min_inv_kmer_run=pavlib.const.INV_MIN_INV_KMER_RUN, final_state_node_list=None):
     """
     Resolve the optimal walk along run-length (RL) encoded states. This walk sets the inversion breakpoints.
 
@@ -733,6 +714,7 @@ def resolve_inv_from_rl(df_rl, df, repeat_match_prop=0.2, min_inv_kmer_run=MIN_I
 
     # Report max state (or None if no inversion found)
     return max_score_node
+
 
 def walk_to_regions(inv_walk, df_rl, region_qry, k_size=0):
     """
@@ -872,7 +854,7 @@ def expand_region(region_ref, df_rl, df_fai):
     :param df_fai: Reference sequence index.
 
     """
-    expand_bp = np.int32(len(region_ref) * EXPAND_FACTOR)
+    expand_bp = np.int32(len(region_ref) * pavlib.const.INV_EXPAND_FACTOR)
 
     if df_rl is not None and df_rl.shape[0] > 2:
         # More than one state. Expand disproportionately if reference was found up or downstream.

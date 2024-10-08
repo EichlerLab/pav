@@ -97,7 +97,7 @@ rule figures_inv_all_sample:
 # are in reference orientation (pointing up) or inverted orientation (pointing down).
 rule figures_inv_den:  # Replacing with one rule per dot or density
     input:
-        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
+        qry_fa='data/query/{asm_name}/query_{hap}.fa.gz',
         bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz'
     output:
         fig_den='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_den.{ext}'
@@ -148,7 +148,7 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
         inv_call = pavlib.inv.get_inv_from_record(inv_row, df_density)
 
         # Get contig sequence
-        with pysam.FastaFile(input.tig_fa) as fa_file:
+        with pysam.FastaFile(input.qry_fa) as fa_file:
             seq_tig = fa_file.fetch(
                 inv_call.region_tig_discovery.chrom,
                 inv_call.region_tig_discovery.pos,
@@ -168,8 +168,8 @@ rule figures_inv_den:  # Replacing with one rule per dot or density
 rule figures_inv_dot:
     input:
         bed_inv='results/{asm_name}/bed_hap/{filter}/{hap}/sv_inv.bed.gz',
-        tig_fa='temp/{asm_name}/align/query_{hap}.fa.gz',
-        tig_fai='temp/{asm_name}/align/query_{hap}.fa.gz.fai'
+        qry_fa='data/query/{asm_name}/query_{hap}.fa.gz',
+        qry_fai='data/query/{asm_name}/query_{hap}.fa.gz.fai'
     output:
         fig_dot='figures/inv/{asm_name}/{filter}/{inv_id}_{hap}_dot.{ext}'
     run:
@@ -189,7 +189,7 @@ rule figures_inv_dot:
 
         # Get FAIs
         ref_fai = svpoplib.ref.get_df_fai(REF_FAI)
-        tig_fai = svpoplib.ref.get_df_fai(input.tig_fai)
+        tig_fai = svpoplib.ref.get_df_fai(input.qry_fai)
 
         # Get inversion call object
         inv_call = pavlib.inv.get_inv_from_record(inv_row, None)
@@ -253,7 +253,7 @@ rule figures_inv_dot:
         )
 
         # Get tig region
-        with pysam.FastaFile(input.tig_fa) as fa_file:
+        with pysam.FastaFile(input.qry_fa) as fa_file:
             seq_tig = fa_file.fetch(
                 region_tig.chrom,
                 region_tig.pos,

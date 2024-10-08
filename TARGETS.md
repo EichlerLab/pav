@@ -21,3 +21,17 @@
 * Export a single alignment: "results/{asm_name}/align/export/pav_align_trim-{trim}_{hap}.{ext}"
   * ext may be "cram", "bam", or "sam.gz" ("sam" is not recognized)
   * All files are indexed (SAM is bgzipped and tabix indexed)
+
+## Variant calling
+
+* call_lg_all: Run variant calling for large alignment-truncating variants
+* call_sm_all: Run variant calling for small intra-alignment variants (from alignment CIGAR strings)
+* call_inv_sig_all: Run variant calling for inversions from flagged loci (not alignment-truncating INVs)
+
+## Tracks
+
+* tracks_invflag_all: Tracks of inversion flagged regions. Sites PAV tries to resolve an inversion that did not cause
+  the alignment to break across the inverted locus.
+* tracks_align_all: Alignment tracks.
+* tracks_hap_call_all: Variant calls per haplotype.
+* tracks_all: All tracks.

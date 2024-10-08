@@ -362,6 +362,15 @@ def trim_alignments(df, qry_fai, min_trim_qry_len=1, match_qry=False, mode='both
     df = df.loc[(df['END'] - df['POS']) > 0]  # Should never occur, but don't allow 0-length records
     df = df.loc[(df['QRY_END'] - df['QRY_POS']) > 0]
 
+    # Set query order
+    df.sort_values(['QRY_ID', 'QRY_POS', 'QRY_END'], inplace=True)
+
+    df['QRY_ORDER'] = -1
+
+    for qry_id in df['QRY_ID'].unique():
+        df.loc[df['QRY_ID'] == qry_id, 'QRY_ORDER'] = df.loc[df['QRY_ID'] == qry_id, 'QRY_POS'].rank().astype(int) - 1
+
+    # Sort in reference order
     df.sort_values(['#CHROM', 'POS', 'END', 'QRY_ID'], ascending=[True, True, False, True], inplace=True)
 
     # Check sanity

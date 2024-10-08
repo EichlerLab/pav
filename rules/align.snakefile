@@ -61,7 +61,7 @@ rule align_depth_bed:
 rule align_trim_qryref:
     input:
         bed='results/{asm_name}/align/trim-qry/align_qry_{hap}.bed.gz',
-        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        qry_fai='data/query/{asm_name}/query_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/trim-qryref/align_qry_{hap}.bed.gz'
     params:
@@ -85,7 +85,7 @@ rule align_trim_qryref:
 rule align_trim_qry:
     input:
         bed='results/{asm_name}/align/trim-none/align_qry_{hap}.bed.gz',
-        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        qry_fai='data/query/{asm_name}/query_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/trim-qry/align_qry_{hap}.bed.gz'
     params:
@@ -108,7 +108,7 @@ rule align_trim_qry:
 rule align_get_bed:
     input:
         sam='temp/{asm_name}/align/trim-none/align_qry_{hap}.sam.gz',
-        qry_fai='temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'
+        qry_fai='data/query/{asm_name}/query_{hap}.fa.gz.fai'
     output:
         bed='results/{asm_name}/align/trim-none/align_qry_{hap}.bed.gz',
         align_head='results/{asm_name}/align/trim-none/align_qry_{hap}.headers.gz'
@@ -123,7 +123,7 @@ rule align_get_bed:
                 [],
                 columns=[
                     '#CHROM', 'POS', 'END',
-                    'TIER', 'INDEX',
+                    'INDEX',
                     'QRY_ID', 'QRY_POS', 'QRY_END',
                     'RG', 'AO',
                     'MAPQ',
@@ -235,7 +235,7 @@ rule align_map:
 # Uncompress query sequences for aligners that cannot read gzipped FASTAs.
 rule align_uncompress_qry:
     input:
-        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz'
+        fa='data/query/{asm_name}/query_{hap}.fa.gz'
     output:
         fa='temp/{asm_name}/align/query/query_{hap}.fa'
     run:
@@ -247,52 +247,6 @@ rule align_uncompress_qry:
         else:
             with open(output.fa, 'w') as out_file:
                 pass
-
-# Get FASTA files.
-rule align_get_qry_fa:
-    input:
-        fa=lambda wildcards: pavlib.pipeline.get_rule_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, get_override_config(wildcards.asm_name))
-    output:
-        fa=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz'),
-        fai=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz.fai'),
-        gzi=temp('temp/{asm_name}/align/query/query_{hap}.fa.gz.gzi')
-    run:
-
-        # Get input files
-        # noinspection PyUnresolvedReferences
-        input_list = input.fa if 'fa' in input.keys() else []
-
-        input_tuples, fofn_list = pavlib.pipeline.expand_input(
-            pavlib.pipeline.get_asm_input_list(wildcards.asm_name, wildcards.hap, ASM_TABLE, config)
-        )
-
-        # Report input sources
-        if input_tuples is not None:
-            for file_name, file_format in input_tuples:
-                print(f'Input: {wildcards.asm_name} {wildcards.hap}: {file_name} ({file_format})')
-        else:
-            print(f'No input sources: {wildcards.asm_name} {wildcards.hap}')
-
-        # Link or generate FASTA
-        is_link = False
-
-        if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz'):
-            os.symlink(os.path.abspath(input_tuples[0][0]), output.fa)
-            is_link = True
-
-        else:
-            # Merge/write FASTA (or empty files if there is no input)
-            pavlib.pipeline.input_tuples_to_fasta(input_tuples, output.fa)
-            is_link = False
-
-        # Index
-        if is_link and os.path.isfile(input_tuples[0][1] + '.fai') and os.path.isfile(input_tuples[0][1] + '.gzi'):
-            os.symlink(os.path.abspath(input_tuples[0][1] + '.fai'), output.fai)
-            os.symlink(os.path.abspath(input_tuples[0][1] + '.gzi'), output.gzi)
-
-        else:
-            shell("""samtools faidx {output.fa}""")
-
 
 #
 # Export alignments (optional feature)
@@ -340,7 +294,7 @@ rule align_export_all:
 rule align_export:
     input:
         bed='results/{asm_name}/align/trim-{trim}/align_qry_{hap}.bed.gz',
-        fa='temp/{asm_name}/align/query/query_{hap}.fa.gz',
+        fa='data/query/{asm_name}/query_{hap}.fa.gz',
         align_head='results/{asm_name}/align/trim-none/align_qry_{hap}.headers.gz',
         ref_fa='data/ref/ref.fa.gz'
     output:
