@@ -155,6 +155,7 @@ def scan_for_inv(
         log=None,
         region_limit=pavlib.const.INV_REGION_LIMIT,
         min_expand=pavlib.const.INV_MIN_EXPAND_COUNT,
+        max_expand=np.inf,
         init_expand=pavlib.const.INV_INIT_EXPAND,
         min_kmers=pavlib.const.INV_MIN_KMERS,
         max_ref_kmer_count=pavlib.const.INV_MAX_REF_KMER_COUNT,
@@ -188,12 +189,13 @@ def scan_for_inv(
     :param kde: Kernel density estimator function. Expected to be a `pavlib.kde.KdeTruncNorm` object, but can
         be any object with a similar signature. If `None`, a default `kde` estimator is used.
     :param log: Log file (open file handle) or `None` for no log.
-
     :param region_limit: Max region size. If inversion (+ flank) exceeds this size, stop searching for inversions.
         If `None`, set to default, `MAX_REGION_SIZE`. If 0, ignore max and scale to arbitrarily large inversions.
     :param min_expand: The number of region expansions to try (including the initial expansion) and finding only
         forward-oriented k-mer states after smoothing before giving up on the region. `None` sets the default value,
         `pavlib.const.INV_MIN_EXPAND_COUNT`.
+    :param max_expand: Maximum number of expansions before giving up. If `None`, no expansion limit. Set to 0 to explore
+        only the query region with no expansions.
     :param init_expand: Initial expand bp. The flagged region is first expanded by this value before searching for
         an inversion. This ensures the region reaches into flanks, which is needed for the inversion method.
     :param min_kmers: Minimum number of informative k-mers in the inversion region. Uninformative k-mers are removed
@@ -239,12 +241,15 @@ def scan_for_inv(
     else:
         nc_tree_ref = None
 
+    if max_expand is None:
+        max_expand = np.inf
+
     # Scan and expand
     df_rl = None
     df = None
     region_qry = None
 
-    while inv_iterations <= min_expand:
+    while inv_iterations <= min_expand and inv_iterations <= max_expand:
 
         # Expand from last search
         if inv_iterations > 0:
