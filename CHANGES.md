@@ -1,6 +1,6 @@
 # PAV changes
 
-## 2.4.1.3
+## 2.4.2
 * Added "no_link_qry" configuration parameter to force PAV to re-write query (assembly) FASTA files if this parameter
   is set to True. By default (no_link_qry = False), an acceptable input FASTA file is linked (single compressed FASTA
   as input).
