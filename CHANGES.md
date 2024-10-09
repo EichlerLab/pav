@@ -1,5 +1,10 @@
 # PAV changes
 
+## 2.4.1.3
+* Added "no_link_qry" configuration parameter to force PAV to re-write query (assembly) FASTA files if this parameter
+  is set to True. By default (no_link_qry = False), an acceptable input FASTA file is linked (single compressed FASTA
+  as input).
+
 ## 2.4.1.2
 * VCF writes failed variants with a FILTER
   * INFO/COMPOUND lists larger variants that caused smaller ones underneath it to be removed.

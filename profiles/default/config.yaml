@@ -32,7 +32,7 @@ set-resources:
   - align_postcut_sam:mem_mb=12288
   - align_ref_lra_index:mem_mb=32768
   - align_sort_cram:mem_mb=12288
-  - align_get_tig_fa:mem_mb=1024
+  - align_get_tig_fa:mem_mb=4096
   - align_get_tig_fa:runtime=720
   - call_cigar:mem_mb=12288
   - call_cigar:runtime=120

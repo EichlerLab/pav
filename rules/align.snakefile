@@ -244,6 +244,8 @@ rule align_get_tig_fa:
         fa=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz'),
         fai=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.fai'),
         gzi=temp('temp/{asm_name}/align/contigs_{hap}.fa.gz.gzi')
+    params:
+        no_link_qry=lambda wildcards: pavlib.util.as_bool(get_config(wildcards, 'no_link_qry', False))
     run:
 
         # Get input files
@@ -263,7 +265,7 @@ rule align_get_tig_fa:
         # Link or generate FASTA
         is_link = False
 
-        if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz'):
+        if len(input_tuples) == 1 and input_tuples[0][1] == 'fasta' and input_tuples[0][0].lower().endswith('.gz') and not params.no_link_qry:
             os.symlink(os.path.abspath(input_tuples[0][0]), output.fa)
             is_link = True
 
