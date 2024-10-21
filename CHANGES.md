@@ -1,7 +1,10 @@
 # PAV changes
 
-## 2.4.4
+## 2.4.5
 * Corrected bug in VCF output for inversions and VCF output format for other variant types. 
+
+## 2.4.4
+* Bad container build, re-released as 2.4.5
 
 ## 2.4.3
 * Added "no_link_qry" configuration parameter to force PAV to re-write query (assembly) FASTA files if this parameter
