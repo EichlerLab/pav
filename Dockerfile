@@ -44,7 +44,7 @@ COPY Snakefile Dockerfile *.md ${PAV_BASE}/
 FROM python:3.11.0-bullseye AS pav
 LABEL pav_stage=pav
 
-ENV PAV_VERSION="2.4.3"
+ENV PAV_VERSION="2.4.4"
 ENV PAV_BASE=/opt/pav
 
 LABEL org.jax.becklab.author="Peter Audano<peter.audano@jax.org>"

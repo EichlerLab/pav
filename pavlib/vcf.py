@@ -4,11 +4,13 @@ import gzip
 import numpy as np
 import os
 import pandas as pd
+import pysam
 
 import Bio.bgzf
 
 import pavlib
 import svpoplib
+
 
 def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, ref_tsv, symbolic_alt=('sv_inv'), symbolic_seq=None):
     """
@@ -195,11 +197,20 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
 
         # REF
         if 'REF' not in df.columns:
-            df['REF'] = list(svpoplib.vcf.ref_base(df, reference_filename))
+            if not is_symbolic_alt:
+                df['REF'] = list(svpoplib.vcf.ref_base(df, reference_filename))
+            else:
+
+                def get_ref_base_by_row(row):
+                    pos = max([0, row['POS'] - 1])
+                    return ref_file.fetch(row['#CHROM'], pos, pos + 1).upper()
+
+                with pysam.FastaFile(reference_filename) as ref_file:
+                    df['REF'] = df.apply(get_ref_base_by_row, axis=1)
 
         # ALT
         if vartype != 'snv':
-            if symbolic_alt:
+            if is_symbolic_alt:
 
                 df['ALT'] = df['SVTYPE'].apply(lambda val: f'<{val}>')
 

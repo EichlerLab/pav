@@ -68,7 +68,7 @@ rule vcf_write_vcf:
                 _VCF_INPUT_PATTERN_BED.format(
                     asm_name=wildcards.asm_name, merge=merge, filter='pass', varsvtype=varsvtype
                 ),
-                _VCF_INPUT_PATTERN_BED.format(
+                _VCF_INPUT_PATTERN_FA.format(
                     asm_name=wildcards.asm_name, merge=merge, filter='pass', varsvtype=varsvtype
                 ) if varsvtype in {'svindel_ins', 'svindel_del'} else None
             )
@@ -78,7 +78,7 @@ rule vcf_write_vcf:
                 _VCF_INPUT_PATTERN_BED.format(
                     asm_name=wildcards.asm_name, merge=merge, filter='fail', varsvtype=varsvtype
                 ),
-                _VCF_INPUT_PATTERN_BED.format(
+                _VCF_INPUT_PATTERN_FA.format(
                     asm_name=wildcards.asm_name, merge=merge, filter='fail', varsvtype=varsvtype
                 ) if varsvtype in {'svindel_ins', 'svindel_del'} else None
             )
