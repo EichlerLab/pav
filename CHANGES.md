@@ -1,5 +1,8 @@
 # PAV changes
 
+## 2.4.6
+* Corrected VCF formatting errors.
+
 ## 2.4.5
 * Corrected bug in VCF output for inversions and VCF output format for other variant types. 
 
