@@ -121,10 +121,12 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
         if 'FILTER' not in df.columns:
             df['FILTER'] = 'PASS'
 
-        df['FILTER'] = df['FILTER'].apply(lambda val: val.strip() if not pd.isnull(val) and val.strip() != '' else 'PASS')
+        df['FILTER'] = df['FILTER'].apply(lambda val:
+              val.strip().replace(',', ';') if not pd.isnull(val) and val.strip() != '' else 'PASS'
+        )
 
         uk_filter = {
-            val for index, row in df.iterrows() for val in set(row['FILTER'].split(','))
+            val for index, row in df.iterrows() for val in set(row['FILTER'].split(';'))
         } - known_filter_set
 
         if uk_filter:
@@ -271,13 +273,14 @@ def write_merged_vcf(asm_name, input_dict, output_filename, reference_filename, 
     info_header_list.append(('ID', '1', 'String', 'Variant ID'))
     info_header_list.append(('SVTYPE', '1', 'String', 'Variant type'))
     info_header_list.append(('SVLEN', '.', 'Integer', 'Variant length'))
-    info_header_list.append(('HAP', '.', 'STR', 'List of haplotype names variant was identified in'))
-    info_header_list.append(('HAP_VARIANTS', '.', 'STR', 'List of variant IDs identifiying the variant merged in for each haplotype (INFO/HAP order)'))
-    info_header_list.append(('COV_MEAN', '.', 'STR', 'Mean coverage for each haplotype under the whole variant (not just breakpoints, INFO/HAP order)'))
-    info_header_list.append(('COV_PROP', '.', 'STR', 'Proportion of reference bases under the whole variant with at least one aligned query (assembly sequence) (INFO/HAP order)'))
-    info_header_list.append(('QRY_REGION', '.', 'STR', 'Region of the query (assembly sequence) where this variant was found (chrom:pos-end, 1-based, closed coordinates, not BED) (INFO/HAP order)'))
-    info_header_list.append(('QRY_STRAND', '.', 'STR', 'Orientation of the aligned query (assembly sequence) at this site (INFO/HAP order)'))
-    info_header_list.append(('CALL_SOURCE', '.', 'STR', 'How variant was called - CIGAR, ALIGN_TRUNC, etc (INFO/HAP order)'))
+    info_header_list.append(('HAP', '.', 'String', 'List of haplotype names variant was identified in'))
+    info_header_list.append(('HAP_VARIANTS', '.', 'String', 'List of variant IDs identifiying the variant merged in for each haplotype (INFO/HAP order)'))
+    info_header_list.append(('COV_MEAN', '.', 'String', 'Mean coverage for each haplotype under the whole variant (not just breakpoints, INFO/HAP order)'))
+    info_header_list.append(('COV_PROP', '.', 'String', 'Proportion of reference bases under the whole variant with at least one aligned query (assembly sequence) (INFO/HAP order)'))
+    info_header_list.append(('QRY_REGION', '.', 'String', 'Region of the query (assembly sequence) where this variant was found (chrom:pos-end, 1-based, closed coordinates, not BED) (INFO/HAP order)'))
+    info_header_list.append(('QRY_STRAND', '.', 'String', 'Orientation of the aligned query (assembly sequence) at this site (INFO/HAP order)'))
+    info_header_list.append(('CALL_SOURCE', '.', 'String', 'How variant was called - CIGAR, ALIGN_TRUNC, etc (INFO/HAP order)'))
+    info_header_list.append(('COMPOUND', '.', 'String', 'ID of the variant covering this event if FILTER is COMPOUND. May be multiple IDs. For all variants covering others, if they are removed, then all COMPOUND filtered variants matching those IDs might be safely recovered unless they were removed by other filters.'))
 
     info_header_list.append(('INNER_REF', '.', 'String', 'Inversion inner breakpoint in reference coordinates (INFO/HAP order)'))
     info_header_list.append(('INNER_TIG', '.', 'String', 'Inversion inner breakpoint in contig coordinates (INFO/HAP order)'))
